@@ -1,4 +1,6 @@
 import sys
+import argparse
+
 def word_count(path):
     word_count = {}
     with open(path, 'r', encoding='utf-8') as f:
@@ -43,3 +45,45 @@ def get_language_vocab(src_path, tgt_path):
     assert len(src_vocab.intersection(tgt_vocab)) == 0
 
     return src_vocab, tgt_vocab
+
+
+def get_embedding_vocab(emb_path):
+    vocab = set()
+    with open(emb_path, 'r') as f:
+        f.readline()
+        for line in f:
+            word, emb = line.rstrip().split(' ', 1)
+            if "@@" in word:
+                continue
+            vocab.add(word)
+
+    return vocab
+
+def output_vocab(vocab, output_path):
+    with open(output_path, 'r') as f:
+        for word in vocab:
+            f.writelines(word + '\n')
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--src_text")
+    parser.add_argument("--tgt_text")
+    parser.add_argument("--src_emb")
+    parser.add_argument("--tgt_emb")
+    parser.add_argument("--src_out")
+    parser.add_argument("--tgt_out")
+    args = parser.parse_args()
+
+    
+
+    src_text_vocab, tgt_text_vocab = get_language_vocab(args.src_text, args.tgt_text)
+
+    src_emb_vocab = get_embedding_vocab(args.src_emb)
+    tgt_emb_vocab = get_embedding_vocab(args.tgt_emb)
+    src_vocab = src_text_vocab.intersection(src_emb_vocab)
+    tgt_vocab = tgt_emb_vocab.intersection(tgt_emb_vocab)
+
+    output_vocab(src_vocab, args.src_out)
+    output_vocab(tgt_vocab, args.tgt_out)
+
+

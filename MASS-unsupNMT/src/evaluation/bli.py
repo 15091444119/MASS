@@ -289,6 +289,13 @@ def load_map_embeddings(path, emb_size=-1, vocab=None):
     id2word = {idx:word for word, idx in word2id.items()}
     return embeddings, id2word, word2id
             
+def read_vocab(vocab_path):
+    vocab = set()
+    with open(vocab_path, 'r') as f:
+        for line in f:
+            vocab.add(line.rstrip())
+    return vocab
+
 
 if __name__ == "__main__":
 
@@ -309,8 +316,9 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    src_vocab, tgt_vocab = get_language_vocab(args.src_text, args.tgt_text)
-    
+    src_vocab = read_vocab(args.src_vocab)
+    tgt_vocab = read_vocab(args.tgt_vocab)
+
     if args.method == "xlm":
         evaluator = XlmBliEvaluator()
         scores = evaluator.eval(args.reload, args.model_name, args.dict, args.preprocess, args.metric, src_vocab, tgt_vocab)
