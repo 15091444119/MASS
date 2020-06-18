@@ -60,7 +60,7 @@ def get_embedding_vocab(emb_path):
     return vocab
 
 def output_vocab(vocab, output_path):
-    with open(output_path, 'r') as f:
+    with open(output_path, 'w') as f:
         for word in vocab:
             f.writelines(word + '\n')
 
@@ -81,7 +81,7 @@ if __name__ == "__main__":
     src_emb_vocab = get_embedding_vocab(args.src_emb)
     tgt_emb_vocab = get_embedding_vocab(args.tgt_emb)
     src_vocab = src_text_vocab.intersection(src_emb_vocab)
-    tgt_vocab = tgt_emb_vocab.intersection(tgt_emb_vocab)
+    tgt_vocab = tgt_text_vocab.intersection(tgt_emb_vocab)
 
     output_vocab(src_vocab, args.src_out)
     output_vocab(tgt_vocab, args.tgt_out)

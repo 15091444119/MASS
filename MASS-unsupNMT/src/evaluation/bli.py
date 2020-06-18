@@ -236,9 +236,9 @@ class XlmBliEvaluator():
         """
         # check source words are all different from target vocab:
         for source_word in source_vocab:
-            assert source_word not in target_vocab
+            assert source_word not in target_vocab, source_word
         for target_word in target_vocab:
-            assert target_word not in source_vocab
+            assert target_word not in source_vocab, target_word
 
         src_embeddings = []
         tgt_embeddings = []
@@ -304,8 +304,8 @@ if __name__ == "__main__":
     parser.add_argument("--preprocess", default="ucu")
     parser.add_argument("--metric", default="nn")
     parser.add_argument("--dict", help="bilingual dictionary")
-    parser.add_argument("--src_text")
-    parser.add_argument("--tgt_text")
+    parser.add_argument("--src_vocab")
+    parser.add_argument("--tgt_vocab")
     if parser.parse_known_args()[0].method == "xlm":
         parser.add_argument("--reload", help="xlm model path")
         parser.add_argument("--model_name", type=str, choices=["model", "encoder", "decoder"], help='reload a xlm encoder or a xlm translation model')
