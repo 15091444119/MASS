@@ -181,6 +181,16 @@ class XlmBliEvaluator():
         pass
 
     def eval(self, path, model_name, dict_path, preprocess, metric, source_vocab, target_vocab):
+        """
+        Params:
+            path: reload path
+            model_name: eval encoder or decoder embedding / or model for xlm
+            dict_path:
+            preprocess: "ucu"/"u"/..
+            metric: "csls", "nn"
+            source_vocab: set of source words
+            target_voacb: set of target words
+        """
         embeddings, dico = self.load_xlm_embedding(path, model_name)
         src_embeddings, tgt_embeddings, src_id2word, src_word2id, tgt_id2word, tgt_word2id = self.split_language(embeddings, dico, source_vocab, target_vocab)
         scores = eval_bli(
