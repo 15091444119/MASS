@@ -1,19 +1,23 @@
-Wiki=
-lg=
-DestDir=
+set -e
+set -u
+Wiki="/home/zhouzh/data/raw_data/mono/downloaded_raw_wiki/bz2/enwiki-latest-pages-articles.xml.bz2"
+lg=encn # we convert traditional chinese to simplified chinese so we add cn to the language prefix
+toklg=en
+DestDir="/home/zhouzh/data/tokenized_data/mono"
+ToolsPath="/home/data_ti4_c/zhouzh/low-resource-mt/tools"
 Tokenize=$ToolsPath/tokenize.sh
 LowerRemoveAccent=$ToolsPath/lowercase_and_remove_accent.py
-T2S=python3 $ToolsPath/convert_t2s.py
-SplitSentence=python3 $ToolsPath/split_sentence.py
+T2S="python3 $ToolsPath/convert_t2s.py"
+SplitSentence="python3 $ToolsPath/split_sentence.py"
 
 if [ ! -f $DestDir/$lg.all ]; then
-  python $ToolsPath/wikiextractor/WikiExtractor.py $WikiZh--processes 8 -q -o - \
+  python3 $ToolsPath/wikiextractor/WikiExtractor.py $Wiki --processes 8 -q -o - \
   | sed "/^\s*\$/d" \
   | grep -v "^<doc id=" \
   | grep -v "</doc>\$" \
   | $T2S \
-  | $Tokenize $lg \
-  | python $LowerRemoveAccent \
+  | $Tokenize $toklg \
+  | python3 $LowerRemoveAccent \
   > $DestDir/$lg.all
 fi
 
