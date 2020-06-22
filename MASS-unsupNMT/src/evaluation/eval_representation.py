@@ -10,6 +10,10 @@ from src.data.dictionary import Dictionary
 from src.model.transformer import TransformerModel, get_masks
 
 from src.fp16 import network_to_half
+from collections import OrderedDict
+import logging
+
+logger = logging.getLogger()
 
 
 def get_parser():
@@ -49,39 +53,43 @@ def get_sen_representation(encoded, lengths, method):
         torch.tensor of size: [bs, dim]
     """
     assert len(encoded.size()) == 3
-    assert len(lengths.size()) == 2
+    assert len(lengths.size()) == 1
     assert encoded.size(0) == lengths.size(0)
-    assert encoded.size(1) == lengths.size(1)
 
     if method == "max":
         mask, _ = get_masks(encoded.size(1), lengths, causal=False) # [bs, len]
-        mask = mask.unsqueeze(-1).expand_as(encoded)
+        mask = (mask == 0).unsqueeze(-1).expand_as(encoded)
+        if torch.cuda.is_available():
+            mask = mask.cuda()
 
         # set masked positions to -inf
-        encoded = torch.masked_fill(mask, -float('inf'))
-        return torch.max(encoded, dim=1) # max pool along length
+        encoded = encoded.masked_fill(mask, -float('inf'))
+        encoded, _ = torch.max(encoded, dim=1) # max pool along length
+        return encoded
 
     elif method == "avg":
         mask, _ = get_masks(encoded.size(1), lengths, causal=False) # [bs, len]
+        if torch.cuda.is_available():
+            mask = mask.cuda()
 
         # set masked positions to zero
-        encoded = encoded * mask.unsqueeze(-1)
+        encoded = encoded * mask.unsqueeze(-1).to(encoded.dtype)
 
         encoded = torch.sum(encoded, dim=1) # [bs, dim]
-        encoded = encoded / lengths.unsqueeze(-1)
+        encoded = encoded / lengths.unsqueeze(-1).to(encoded.dtype)
         return encoded
         
     elif method == "cls":
         return encoded[:,0,:]
 
-def get_all_layer_representation(encoder, decoder, dico, lang2id, src_lang, tgt_lang, path, method='avg'):
+def get_all_layer_representation(encoder, decoder, params, dico, src_lang, tgt_lang, path, method='avg'):
     # read sentences from stdin
     src_sent = []
     with open(path, 'r') as f:
         for line in f:
             assert len(line.strip().split()) > 0
             src_sent.append(line)
-        logger.info("Read %i sentences from {}. ".format(len(src_sent), path))
+        logger.info("Read %{} sentences from {}. ".format(len(src_sent), path))
     
     all_layer_sen_representation = [[] for i in range(encoder.n_layers + 1)] 
 
@@ -97,33 +105,34 @@ def get_all_layer_representation(encoder, decoder, dico, lang2id, src_lang, tgt_
             if lengths[j] > 2:  # if sentence not empty
                 batch[1:lengths[j] - 1, j].copy_(s)
             batch[lengths[j] - 1, j] = params.eos_index
-        langs = batch.clone().fill_(params.src_id)
+        langs = batch.clone().fill_(params.lang2id[src_lang])
 
         # encode source batch and translate it
-        encoded = encoder.get_all_layer_outputs(x=batch.cuda(), lengths=lengths.cuda(), langs=langs.cuda(), causal=False)
-        encoded = encoded.transpose(0, 1) # [bs, len, dim]
+        encoded, _ = encoder.get_all_layer_outputs(x=batch.cuda(), lengths=lengths.cuda(), langs=langs.cuda(), causal=False)
         
         for layer_id, layer_encoded in enumerate(encoded):
-            layer_sen_representation = get_sen_representation(layer_encoded, lengths, method)
+            layer_sen_representation = get_sen_representation(layer_encoded, lengths.cuda(), method)
             all_layer_sen_representation[layer_id].append(layer_sen_representation)
         
-        for layer_id in len(all_layer_sen_representation):
-            all_layer_sen_representation[layer_id] = torch.cat(all_layer_sen_representation[layer_id], dim=0)
+    for layer_id in range(len(all_layer_sen_representation)):
+        all_layer_sen_representation[layer_id] = torch.cat(all_layer_sen_representation[layer_id], dim=0)
 
     return all_layer_sen_representation
 
 def representations_cos_average(src_representation, tgt_representation):
     """ Average cos similarity of source sentences and target sentences """
     assert src_representation.size(0) == tgt_representation.size(0)
-    src_representation = torch.tensor(src_representation)
-    tgt_representation = torch.tensor(tgt_representation)
-    cos_simi = torch.cosine_similarity(src_representation, tgt_representation, dim=-1)
+    logger.info("{}".format(src_representation.size(0)))
+    #tgt_representation_reverse =torch.clone(tgt_representation)
+    #for i in range(tgt_representation.size(0)):
+    #    tgt_representation_reverse[i] = tgt_representation[tgt_representation.size(0) - 1 - i]
+    cos_simi = torch.nn.functional.cosine_similarity(src_representation, tgt_representation, dim=-1)
     return cos_simi.mean().item()
 
 def main(params):
 
     # initialize the experiment
-    logger = initialize_exp(params)
+    initialize_exp(params)
 
     # generate parser / parse parameters
     parser = get_parser()
@@ -133,19 +142,27 @@ def main(params):
     logger.info("Supported languages: %s" % ", ".join(model_params.lang2id.keys()))
 
     # update dictionary parameters
-    for name in ['n_words', 'bos_index', 'eos_index', 'pad_index', 'unk_index', 'mask_index']:
+    for name in ['n_words', 'bos_index', 'eos_index', 'pad_index', 'unk_index', 'mask_index', 'lang2id']:
         setattr(params, name, getattr(model_params, name))
 
     # build dictionary / build encoder / build decoder / reload weights
     dico = Dictionary(reloaded['dico_id2word'], reloaded['dico_word2id'], reloaded['dico_counts'])
     encoder = TransformerModel(model_params, dico, is_encoder=True, with_output=True).cuda().eval()
     decoder = TransformerModel(model_params, dico, is_encoder=False, with_output=True).cuda().eval()
-    encoder.load_state_dict(reloaded['encoder'])
-    decoder.load_state_dict(reloaded['decoder'])
+    def package_module(modules):
+        state_dict = OrderedDict()
+        for k, v in modules.items():
+            if k.startswith('module.'):
+                state_dict[k[7:]] = v
+            else:
+                state_dict[k] = v
+        return state_dict
+    encoder.load_state_dict(package_module(reloaded['encoder']))
+    decoder.load_state_dict(package_module(reloaded['decoder']))
 
 
-    src_all_layer_representation = get_all_layer_representation(encoder, decoder, dico, model_params.lang2id, params.src_lang, params.tgt_lang, params.src_text) 
-    tgt_all_layer_representation = get_all_layer_representation(encoder, decoder, dico, model_params.lang2id, params.tgt_lang, params.src_lang, params.tgt_text) 
+    src_all_layer_representation = get_all_layer_representation(encoder, decoder, params, dico, params.src_lang, params.tgt_lang, params.src_text) 
+    tgt_all_layer_representation = get_all_layer_representation(encoder, decoder, params, dico, params.tgt_lang, params.src_lang, params.tgt_text) 
 
     for layer_id, (src_layer_representation, tgt_layer_representation) in enumerate(zip(src_all_layer_representation, tgt_all_layer_representation)):
         avg_cos = representations_cos_average(src_layer_representation, tgt_layer_representation)
