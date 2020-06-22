@@ -11,6 +11,7 @@ from src.model.transformer import TransformerModel, get_masks
 
 from src.fp16 import network_to_half
 from collections import OrderedDict
+from .tsne import tsne
 import logging
 
 logger = logging.getLogger()
@@ -89,6 +90,8 @@ def get_all_layer_representation(encoder, decoder, params, dico, src_lang, tgt_l
         for line in f:
             assert len(line.strip().split()) > 0
             src_sent.append(line)
+            if len(src_sent) == 100:
+                break
         logger.info("Read %{} sentences from {}. ".format(len(src_sent), path))
     
     all_layer_sen_representation = [[] for i in range(encoder.n_layers + 1)] 
@@ -167,6 +170,9 @@ def main(params):
     for layer_id, (src_layer_representation, tgt_layer_representation) in enumerate(zip(src_all_layer_representation, tgt_all_layer_representation)):
         avg_cos = representations_cos_average(src_layer_representation, tgt_layer_representation)
         logger.info("Layer{} average cos similarity:{}".format(layer_id, avg_cos))
+        src_tgt_representation = torch.cat([src_layer_representation, tgt_layer_representation], dim=0).cpu().numpy()
+        labels = [0 for i in range(src_layer_representation.size(0))] + [1 for i in range(tgt_layer_representation.size(0))]
+        tsne(src_tgt_representation, labels, "./tmp1000-{}".format(layer_id))
 
     logger.info("Done")
     
