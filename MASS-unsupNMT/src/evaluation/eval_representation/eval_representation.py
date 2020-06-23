@@ -11,7 +11,7 @@ from src.model.transformer import TransformerModel, get_masks
 
 from src.fp16 import network_to_half
 from collections import OrderedDict
-from .tsne import tsne
+from .tsne import tsne, bilingual_tsne
 import logging
 
 logger = logging.getLogger()
@@ -120,7 +120,7 @@ def get_all_layer_representation(encoder, decoder, params, dico, src_lang, tgt_l
     for layer_id in range(len(all_layer_sen_representation)):
         all_layer_sen_representation[layer_id] = torch.cat(all_layer_sen_representation[layer_id], dim=0)
 
-    return all_layer_sen_representation
+    return src_sent, all_layer_sen_representation
 
 def representations_cos_average(src_representation, tgt_representation):
     """ Average cos similarity of source sentences and target sentences """
@@ -164,15 +164,18 @@ def main(params):
     decoder.load_state_dict(package_module(reloaded['decoder']))
 
 
-    src_all_layer_representation = get_all_layer_representation(encoder, decoder, params, dico, params.src_lang, params.tgt_lang, params.src_text) 
-    tgt_all_layer_representation = get_all_layer_representation(encoder, decoder, params, dico, params.tgt_lang, params.src_lang, params.tgt_text) 
+    src_sents, src_all_layer_representation = get_all_layer_representation(encoder, decoder, params, dico, params.src_lang, params.tgt_lang, params.src_text) 
+    tgt_sents, tgt_all_layer_representation = get_all_layer_representation(encoder, decoder, params, dico, params.tgt_lang, params.src_lang, params.tgt_text) 
 
     for layer_id, (src_layer_representation, tgt_layer_representation) in enumerate(zip(src_all_layer_representation, tgt_all_layer_representation)):
         avg_cos = representations_cos_average(src_layer_representation, tgt_layer_representation)
         logger.info("Layer{} average cos similarity:{}".format(layer_id, avg_cos))
+        """
         src_tgt_representation = torch.cat([src_layer_representation, tgt_layer_representation], dim=0).cpu().numpy()
         labels = [0 for i in range(src_layer_representation.size(0))] + [1 for i in range(tgt_layer_representation.size(0))]
         tsne(src_tgt_representation, labels, "./tmp1000-{}".format(layer_id))
+        """
+        bilingual_tsne(src_layer_representation.cpu().numpy(), tgt_layer_representation.cpu().numpy(), src_sents, tgt_sents, 5, "./5")
 
     logger.info("Done")
     
