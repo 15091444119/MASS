@@ -36,21 +36,21 @@ def bilingual_tsne(src_rep, tgt_rep, src_sentences, tgt_sentences, plot_num, sav
     for i in range(plot_num):
         x = src_plotted_rep[i, 0]
         y = src_plotted_rep[i, 1]
-        plt.scatter(x, y, c=0)
-        plt.annotate(src_sentences[i], xy = (x, y), xytext = (x + 0.1, y + 0.1))
+        plt.scatter(x, y, c='b', marker=".")
+        plt.annotate(str(i), xy = (x, y), xytext = (x + 0.1, y + 0.1))
 
     for i in range(plot_num):
         x = tgt_plotted_rep[i, 0]
         y = tgt_plotted_rep[i, 1]
-        plt.scatter(x, y, c=0)
-        plt.annotate(tgt_sentences[i], xy = (x, y), xytext = (x + 0.1, y + 0.1))
+        plt.scatter(x, y, c='r', marker=".")
+        plt.annotate(str(i), xy = (x, y), xytext = (x + 0.1, y + 0.1))
     plt.savefig(save_prefix)
     plt.close()
 
 def test_bilingual_tsne():
     src_rep = np.array([[1, 2], [2, 3]])
     tgt_rep = np.array([[1, 1], [2, 2]])
-    src_sentencens = ["12", "23"]
+    src_sentencens = ["12中文", "23"]
     tgt_sentences = ["11", "22"]
     bilingual_tsne(src_rep, tgt_rep, src_sentencens, tgt_sentences, 2, "./2")
     bilingual_tsne(src_rep, tgt_rep, src_sentencens, tgt_sentences, 1, "./1")

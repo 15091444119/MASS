@@ -175,7 +175,7 @@ def main(params):
         labels = [0 for i in range(src_layer_representation.size(0))] + [1 for i in range(tgt_layer_representation.size(0))]
         tsne(src_tgt_representation, labels, "./tmp1000-{}".format(layer_id))
         """
-        bilingual_tsne(src_layer_representation.cpu().numpy(), tgt_layer_representation.cpu().numpy(), src_sents, tgt_sents, 5, "./5")
+        bilingual_tsne(src_layer_representation.cpu().numpy(), tgt_layer_representation.cpu().numpy(), src_sents, tgt_sents, 5, "./5-{}".format(layer_id))
 
     logger.info("Done")
     
