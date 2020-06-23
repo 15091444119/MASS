@@ -83,24 +83,22 @@ def get_sen_representation(encoded, lengths, method):
     elif method == "cls":
         return encoded[:,0,:]
 
-def get_all_layer_representation(encoder, decoder, params, dico, src_lang, tgt_lang, path, method='avg'):
-    # read sentences from stdin
-    src_sent = []
-    with open(path, 'r') as f:
-        for line in f:
-            assert len(line.strip().split()) > 0
-            src_sent.append(line)
-            if len(src_sent) == 100:
-                break
-        logger.info("Read %{} sentences from {}. ".format(len(src_sent), path))
+def get_all_layer_representation(encoder, decoder, params, dico, src_lang, tgt_lang, src_path, tgt_path, method='avg'):
+
+    def read_data(path):
+        # read sentences from stdin
+        sent = []
+        with open(path, 'r') as f:
+            for line in f:
+                assert len(line.strip().split()) > 0
+                sent.append(line)
+            logger.info("Read %{} sentences from {}. ".format(len(sent), path))
+        return sent
     
-    all_layer_sen_representation = [[] for i in range(encoder.n_layers + 1)] 
-
-    for i in range(0, len(src_sent), params.batch_size):
-
+    def get_batch(params, dico, sent, lang):
         # prepare batch
         word_ids = [torch.LongTensor([dico.index(w) for w in s.strip().split()])
-                    for s in src_sent[i:i + params.batch_size]]
+                    for s in sent]
         lengths = torch.LongTensor([len(s) + 2 for s in word_ids])
         batch = torch.LongTensor(lengths.max().item(), lengths.size(0)).fill_(params.pad_index)
         batch[0] = params.eos_index
@@ -108,19 +106,40 @@ def get_all_layer_representation(encoder, decoder, params, dico, src_lang, tgt_l
             if lengths[j] > 2:  # if sentence not empty
                 batch[1:lengths[j] - 1, j].copy_(s)
             batch[lengths[j] - 1, j] = params.eos_index
-        langs = batch.clone().fill_(params.lang2id[src_lang])
+        langs = batch.clone().fill_(params.lang2id[lang])
+        return batch, lengths, langs
+
+    encoder_all_layer_sen_representation = [[] for i in range(encoder.n_layers + 1)] 
+    decoder_all_layer_sen_representation = [[] for i in range(decoder.n_layers + 1)] 
+
+    src_sent = read_data(src_path)
+    tgt_sent = read_data(tgt_path)
+
+    assert len(src_sent) == len(tgt_sent)
+
+    for i in range(0, len(src_sent), params.batch_size):
+        x, x_lengths, x_langs = get_batch(params, dico, src_sent[i:i + params.batch_size], src_lang)
+        y, y_lengths, y_langs = get_batch(params, dico, tgt_sent[i:i + params.batch_size], tgt_lang)
 
         # encode source batch and translate it
-        encoded, _ = encoder.get_all_layer_outputs(x=batch.cuda(), lengths=lengths.cuda(), langs=langs.cuda(), causal=False)
-        
+        encoded, last_layer = encoder.get_all_layer_outputs(x=x.cuda(), lengths=x_lengths.cuda(), langs=x_langs.cuda(), causal=False)
         for layer_id, layer_encoded in enumerate(encoded):
-            layer_sen_representation = get_sen_representation(layer_encoded, lengths.cuda(), method)
-            all_layer_sen_representation[layer_id].append(layer_sen_representation)
-        
-    for layer_id in range(len(all_layer_sen_representation)):
-        all_layer_sen_representation[layer_id] = torch.cat(all_layer_sen_representation[layer_id], dim=0)
+            layer_sen_representation = get_sen_representation(layer_encoded, x_lengths.cuda(), method)
+            encoder_all_layer_sen_representation[layer_id].append(layer_sen_representation)
 
-    return src_sent, all_layer_sen_representation
+        decoded, _ = decoder.get_all_layer_outputs(x=y, lengths=y_lengths, langs=y_langs, causal=True, src_enc=last_layer, src_len=x_lengths.cuda())
+        
+        for layer_id, layer_decoded in enumerate(decoded):
+            layer_sen_representation = get_sen_representation(layer_decoded, y_lengths.cuda(), method)
+            decoder_all_layer_sen_representation[layer_id].append(layer_sen_representation)
+        
+    for layer_id in range(len(encoder_all_layer_sen_representation)):
+        encoder_all_layer_sen_representation[layer_id] = torch.cat(encoder_all_layer_sen_representation[layer_id], dim=0)
+
+    for layer_id in range(len(decoder_all_layer_sen_representation)):
+        decoder_all_layer_sen_representation[layer_id] = torch.cat(decoder_all_layer_sen_representation[layer_id], dim=0)
+
+    return src_sent, tgt_sent, encoder_all_layer_sen_representation, decoder_all_layer_sen_representation
 
 def representations_cos_average(src_representation, tgt_representation):
     """ Average cos similarity of source sentences and target sentences """
@@ -163,19 +182,16 @@ def main(params):
     encoder.load_state_dict(package_module(reloaded['encoder']))
     decoder.load_state_dict(package_module(reloaded['decoder']))
 
+    src_sents, tgt_sents, s2t_encoder_all_layer_representation, s2t_decoder_all_layer_representation = get_all_layer_representation(encoder, decoder, params, dico, params.src_lang, params.tgt_lang, params.src_text, params.tgt_text) 
+    src_sents, src_sents, s2s_encoder_all_layer_representation, s2s_decoder_all_layer_representation = get_all_layer_representation(encoder, decoder, params, dico, params.src_lang, params.src_lang, params.src_text, params.src_text) 
 
-    src_sents, src_all_layer_representation = get_all_layer_representation(encoder, decoder, params, dico, params.src_lang, params.tgt_lang, params.src_text) 
-    tgt_sents, tgt_all_layer_representation = get_all_layer_representation(encoder, decoder, params, dico, params.tgt_lang, params.src_lang, params.tgt_text) 
-
-    for layer_id, (src_layer_representation, tgt_layer_representation) in enumerate(zip(src_all_layer_representation, tgt_all_layer_representation)):
-        avg_cos = representations_cos_average(src_layer_representation, tgt_layer_representation)
+    for layer_id, (s2t_decoder_rep, s2s_decoder_rep) in enumerate(zip(s2t_decoder_all_layer_representation, s2s_decoder_all_layer_representation)):
+        avg_cos = representations_cos_average(s2t_decoder_rep, s2s_decoder_rep)
         logger.info("Layer{} average cos similarity:{}".format(layer_id, avg_cos))
-        """
-        src_tgt_representation = torch.cat([src_layer_representation, tgt_layer_representation], dim=0).cpu().numpy()
-        labels = [0 for i in range(src_layer_representation.size(0))] + [1 for i in range(tgt_layer_representation.size(0))]
-        tsne(src_tgt_representation, labels, "./tmp1000-{}".format(layer_id))
-        """
-        bilingual_tsne(src_layer_representation.cpu().numpy(), tgt_layer_representation.cpu().numpy(), src_sents, tgt_sents, 5, "./5-{}".format(layer_id))
+        cated_representation = torch.cat([s2t_decoder_rep, s2s_decoder_rep], dim=0).cpu().numpy()
+        labels = [0 for i in range(s2t_decoder_rep.size(0))] + [1 for i in range(s2s_decoder_rep.size(0))]
+        tsne(cated_representation, labels, "./tmp1000-{}".format(layer_id))
+        #bilingual_tsne(src_layer_representation.cpu().numpy(), tgt_layer_representation.cpu().numpy(), src_sents, tgt_sents, 5, "./5-{}".format(layer_id))
 
     logger.info("Done")
     
