@@ -201,7 +201,7 @@ class MassRepEvaluator():
         for layer_id, (rep1, rep2) in enumerate(zip(all_layer_rep1, all_layer_rep2)):
             # cos similarity
             cos = representations_cos_average(rep1, rep2)
-            logger.info("{}-{} Cos:{}".format(rep1_name, rep2_name, cos))
+            logger.info("{}-{} Layer:{} Cos:{}".format(rep1_name, rep2_name, layer_id, cos))
 
             # tsne
             cated_rep = torch.cat([rep1, rep2], dim=0).cpu().numpy()
@@ -239,8 +239,6 @@ def main(params):
     initialize_exp(params)
 
     # generate parser / parse parameters
-    parser = get_parser()
-    params = parser.parse_args()
     reloaded = torch.load(params.model_path)
     model_params = AttrDict(reloaded['params'])
     logger.info("Supported languages: %s" % ", ".join(model_params.lang2id.keys()))
@@ -263,7 +261,7 @@ def main(params):
         return state_dict
     encoder.load_state_dict(package_module(reloaded['encoder']))
     decoder.load_state_dict(package_module(reloaded['decoder']))
-
+    
     evaluator = MassRepEvaluator(encoder, decoder, params, dico)
     evaluator.eval_encoder(params.src_lang, params.tgt_lang, params.src_text, params.tgt_text, params.dump_path)
     evaluator.eval_encoder_decoder(params.src_lang, params.tgt_lang, params.src_text, params.tgt_text, params.dump_path)
