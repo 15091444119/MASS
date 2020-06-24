@@ -42,7 +42,11 @@ def get_parser():
     parser.add_argument("--src_text", type=str, default="", help="Source language")
     parser.add_argument("--tgt_text", type=str, default="", help="Target language")
     
+    # sentence representation method
+    parser.add_argument("--sen_rep_method", type=str, default="avg")
 
+    # use debug mode    
+    parser.add_argument("--debug", action="store_true", default=False)
     return parser
 
 def get_sen_representation(encoded, lengths, method):
@@ -95,12 +99,13 @@ def representations_cos_average(src_representation, tgt_representation):
 
 
 class MassRepEvaluator():
-    def __init__(self, encoder, decoder, params, dico, sen_rep_method):
+    def __init__(self, encoder, decoder, params, dico):
         self.encoder = encoder
         self.decoder = decoder
         self.params = params
         self.dico = dico
-        self.sen_rep_method = sen_rep_method
+        self.sen_rep_method = params.sen_rep_method
+        self.debug = params.debug
     
     def read_data(self, path):
         sent = []
@@ -108,6 +113,9 @@ class MassRepEvaluator():
             for line in f:
                 assert len(line.strip().split()) > 0
                 sent.append(line)
+                if self.debug:
+                    if len(sent) == 100:
+                        break
             logger.info("Read %{} sentences from {}. ".format(len(sent), path))
         return sent
 
@@ -268,9 +276,9 @@ def main(params):
     encoder.load_state_dict(package_module(reloaded['encoder']))
     decoder.load_state_dict(package_module(reloaded['decoder']))
 
-    evaluator = MassRepEvaluator(encoder, decoder, params, dico, "avg")
-    evaluator.eval_encoder(params.src_lang, params.tgt_lang, params.src_text, params.tgt_text, params.dumped_path)
-    evaluator.eval_encoder_decoder(params.src_lang, params.tgt_lang, params.src_text, params.tgt_text, params.dumped_path)
+    evaluator = MassRepEvaluator(encoder, decoder, params, dico)
+    evaluator.eval_encoder(params.src_lang, params.tgt_lang, params.src_text, params.tgt_text, params.dump_path)
+    evaluator.eval_encoder_decoder(params.src_lang, params.tgt_lang, params.src_text, params.tgt_text, params.dump_path)
 
 if __name__ == '__main__':
 
