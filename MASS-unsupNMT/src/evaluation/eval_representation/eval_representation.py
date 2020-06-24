@@ -90,7 +90,7 @@ def get_sen_representation(encoded, lengths, method):
 def representations_cos_average(src_representation, tgt_representation):
     """ Average cos similarity of source sentences and target sentences """
     assert src_representation.size(0) == tgt_representation.size(0)
-    logger.info("{}".format(src_representation.size(0)))
+    #logger.info("{}".format(src_representation.size(0)))
     #tgt_representation_reverse =torch.clone(tgt_representation)
     #for i in range(tgt_representation.size(0)):
     #    tgt_representation_reverse[i] = tgt_representation[tgt_representation.size(0) - 1 - i]
@@ -191,17 +191,22 @@ class MassRepEvaluator():
         src_all_layer_rep = self.encode_src(src_sent, src_lang)
         tgt_all_layer_rep = self.encode_src(tgt_sent, tgt_lang)
 
-        for layer_id, (src_rep, tgt_rep) in enumerate(zip(src_all_layer_rep, tgt_all_layer_rep)):
-            # cos similarity
-            cos = representations_cos_average(src_rep, tgt_rep)
-            logger.info("Encoder layer:{} Cos:{}".format(layer_id, cos))
-
-            # tsne
-            cated_rep = torch.cat([src_rep, tgt_rep], dim=0).cpu().numpy()
-            labels = [0 for i in range(len(src_sent))] + [1 for i in range(len(tgt_sent))]
-            tsne(cated_rep, labels, os.path.join(tsne_saved_dir, "eval_encoder_layer{}".format(layer_id)))
+        self.eval_cos_draw_tsne(src_all_layer_rep, tgt_all_layer_rep, "eval_encoder_src", "eval_encoder_tgt", tsne_saved_dir)
     
         logger.info("Eval encoder: Done.")
+
+    def eval_cos_draw_tsne(self, all_layer_rep1, all_layer_rep2, rep1_name, rep2_name, tsne_saved_dir):
+        """ evaluate cos similarity and draw tsne given rep1 and rep2 in each layer """
+
+        for layer_id, (rep1, rep2) in enumerate(zip(all_layer_rep1, all_layer_rep2)):
+            # cos similarity
+            cos = representations_cos_average(rep1, rep2)
+            logger.info("{}-{} Cos:{}".format(rep1_name, rep2_name, cos))
+
+            # tsne
+            cated_rep = torch.cat([rep1, rep2], dim=0).cpu().numpy()
+            labels = [0 for i in range(rep1.size(0))] + [1 for i in range(rep2.size(0))]
+            tsne(cated_rep, labels, os.path.join(tsne_saved_dir, "{}-{}-{}".format(rep1_name, rep2_name, layer_id)))
 
     def eval_encoder_decoder(self, src_lang, tgt_lang, src_path, tgt_path, tsne_saved_dir):
         logger.info("Eval encoder decoder: Start...")
@@ -209,38 +214,21 @@ class MassRepEvaluator():
         src_sent = self.read_data(src_path)
         tgt_sent = self.read_data(tgt_path)
 
+        # calculate representation
         s2t_encoder_rep, s2t_decoder_rep = self.encode_src_tgt(src_sent, tgt_sent, src_lang, tgt_lang)
         s2s_encoder_rep, s2s_decoder_rep = self.encode_src_tgt(src_sent, src_sent, src_lang, src_lang)
         t2s_encoder_rep, t2s_decoder_rep = self.encode_src_tgt(tgt_sent, src_sent, tgt_lang, src_lang)
         t2t_encoder_rep, t2t_decoder_rep = self.encode_src_tgt(tgt_sent, tgt_sent, tgt_lang, tgt_lang)
 
         # encoder
-        for layer_id, (s2t_rep, s2s_rep, t2s_rep, t2t_rep) in enumerate(zip(s2t_encoder_rep, s2s_encoder_rep, t2s_encoder_rep, t2t_encoder_rep)):
-            # cos similarity compared with s2s
-            cos_s2t_s2s = representations_cos_average(s2t_rep, s2s_rep)
-            cos_t2s_s2s = representations_cos_average(t2s_rep, s2s_rep)
-            cos_t2t_s2s = representations_cos_average(t2t_rep, s2s_rep)
-            logger.info("Encoder layer:{} Cos s2t-s2s:{} Cos t2s-s2s:{} Cos t2t-s2s:{}".format(layer_id, cos_s2t_s2s, cos_t2s_s2s, cos_t2t_s2s))
-
-            # draw tsne
-            cated_rep = torch.cat([s2t_rep, s2s_rep, t2s_rep, t2t_rep], dim=0).cpu().numpy()
-            labels = [0 for i in range(len(src_sent))] + [1 for i in range(len(src_sent))] + \
-                [2 for i in range(len(src_sent))] + [3 for i in range(len(src_sent))]
-            tsne(cated_rep, labels, os.path.join(tsne_saved_dir, "eval_encoder_decoder_encoder_layer{}".format(layer_id)))
+        self.eval_cos_draw_tsne(s2t_encoder_rep, s2s_encoder_rep, "s2t_encoder_decoder_encoder", "s2s_encoder_decoder_encoder", tsne_saved_dir)
+        self.eval_cos_draw_tsne(t2s_encoder_rep, s2s_encoder_rep, "t2s_encoder_decoder_encoder", "s2s_encoder_decoder_encoder", tsne_saved_dir)
+        self.eval_cos_draw_tsne(t2t_encoder_rep, s2s_encoder_rep, "t2t_encoder_decoder_encoder", "s2s_encoder_decoder_encoder", tsne_saved_dir)
 
         # decoder
-        for layer_id, (s2t_rep, s2s_rep, t2s_rep, t2t_rep) in enumerate(zip(s2t_decoder_rep, s2s_decoder_rep, t2s_decoder_rep, t2t_decoder_rep)):
-            # cos similarity compared with s2s
-            cos_s2t_s2s = representations_cos_average(s2t_rep, s2s_rep)
-            cos_t2s_s2s = representations_cos_average(t2s_rep, s2s_rep)
-            cos_t2t_s2s = representations_cos_average(t2t_rep, s2s_rep)
-            logger.info("Decoder layer:{} Cos s2t-s2s:{} Cos t2s-s2s:{} Cos t2t-s2s:{}".format(layer_id, cos_s2t_s2s, cos_t2s_s2s, cos_t2t_s2s))
-
-            # draw tsne
-            cated_rep = torch.cat([s2t_rep, s2s_rep, t2s_rep, t2t_rep], dim=0).cpu().numpy()
-            labels = [0 for i in range(len(src_sent))] + [1 for i in range(len(src_sent))] + \
-                [2 for i in range(len(src_sent))] + [3 for i in range(len(src_sent))]
-            tsne(cated_rep, labels, os.path.join(tsne_saved_dir, "eval_encoder_decoder_decoder_layer{}".format(layer_id)))
+        self.eval_cos_draw_tsne(s2t_decoder_rep, s2s_decoder_rep, "s2t_encoder_decoder_decoder", "s2s_encoder_decoder_decoder", tsne_saved_dir)
+        self.eval_cos_draw_tsne(t2s_decoder_rep, s2s_decoder_rep, "t2s_encoder_decoder_decoder", "s2s_encoder_decoder_decoder", tsne_saved_dir)
+        self.eval_cos_draw_tsne(t2t_decoder_rep, s2s_decoder_rep, "t2t_encoder_decoder_decoder", "s2s_encoder_decoder_decoder", tsne_saved_dir)
 
         logger.info("Eval encoder decoder: Done.")
 
