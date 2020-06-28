@@ -15,7 +15,7 @@ def test_tsne():
     a = np.array([[1, 2, 3], [2, 3, 4]])
     tsne(a, [1, 2], "./tmp")
 
-def bilingual_tsne(src_rep, tgt_rep, src_sentences, tgt_sentences, plot_num, save_prefix):
+def bilingual_tsne_with_sentences(src_rep, tgt_rep, src_sentences, tgt_sentences, plot_num, save_prefix):
     """
     Params:
         src_rep: 2d np array, source representations [bs, dim]
@@ -52,8 +52,8 @@ def test_bilingual_tsne():
     tgt_rep = np.array([[1, 1], [2, 2]])
     src_sentencens = ["12中文", "23"]
     tgt_sentences = ["11", "22"]
-    bilingual_tsne(src_rep, tgt_rep, src_sentencens, tgt_sentences, 2, "./2")
-    bilingual_tsne(src_rep, tgt_rep, src_sentencens, tgt_sentences, 1, "./1")
+    bilingual_tsne_with_sentences(src_rep, tgt_rep, src_sentencens, tgt_sentences, 2, "./2")
+    bilingual_tsne_with_sentences(src_rep, tgt_rep, src_sentencens, tgt_sentences, 1, "./1")
 
 
 if __name__ == "__main__":

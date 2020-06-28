@@ -147,7 +147,7 @@ class MultiHeadAttention(nn.Module):
             for i in range(n_langs):
                 self.out_lin.append(Linear(dim, dim))
 
-    def forward(self, input, mask, kv=None, cache=None, segment_label=None):
+    def forward(self, input, mask, kv=None, cache=None, segment_label=None, return_weights=False):
         """
         Self-attention (if kv is None) or attention over source sentence (provided by kv).
         """
@@ -200,11 +200,56 @@ class MultiHeadAttention(nn.Module):
         context = torch.matmul(weights, v)                                    # (bs, n_heads, qlen, dim_per_head)
         context = unshape(context)                                            # (bs, qlen, dim)
         
-        if self.n_langs is None:
-            return self.out_lin(context)
+        if not return_weights:
+            if self.n_langs is None:
+                return self.out_lin(context)
+            else:
+                return self.out_lin[segment_label](context)
         else:
-            return self.out_lin[segment_label](context)
+             if self.n_langs is None:
+                return self.out_lin(context), weights
+             else:
+                return self.out_lin[segment_label](context), weights
 
+class AttentionWeights():
+    """ attention weights in one batch """
+    
+    def __init__(self, n_sentences, n_layers, n_heads):
+        self.n_sentences = n_sentences
+        self.n_layers = n_layers
+        self.n_heads = n_heads
+        self.attentions = {} 
+
+    def add_weights(self, sentence_id, layer_id, head_id, weights):
+        key = (sentence_id, layer_id, head_id)
+        assert key not in self.attentions
+        self.attentions[key] = weights
+    
+    def get_attention(self, sentence_id, layer_id, head_id, weights):
+        key = (sentence_id, layer_id, head_id)
+        assert key in self.attentions
+        
+        return self.attentions[key]
+
+    def add_layer_weights(self, layer_id, weights, src_lens, tgt_lens):
+        """ Add attention weights of one layer of all the sentences
+        Params:
+            layer_id:
+            weights: (bs, n_heads, q_len, v_len) q is tgt, v is src
+            src_lens: lengths of each source sentence
+            tgt_lens: lengths of each target sentence
+        """
+        bs = weights.size(0)
+        n_heads = weights.size(1)
+        assert bs == self.n_sentences
+        assert n_heads == self.n_heads
+        assert layer_id < self.n_layers
+
+        for sentence_id in range(bs):
+            for head_id in range(n_heads):
+                src_len = src_lens[sentence_id].item()
+                tgt_len = tgt_lens[sentence_id].item()
+                self.add_weights(sentence_id=sentence_id, layer_id=layer_id, head_id=head_id, weights=weights[sentence_id][head_id][:tgt_len, :src_len].transpose(0, 1))
 
 class TransformerFFN(nn.Module):
 
@@ -419,6 +464,103 @@ class TransformerModel(nn.Module):
         tensor = tensor.transpose(0, 1)
 
         return outputs, tensor
+
+    def get_cross_attention(self, x, lengths, langs, causal, src_enc, src_len, positions, cache, enc_mask):
+        """
+        Inputs:
+            `x` LongTensor(slen, bs), containing word indices
+            `lengths` LongTensor(bs), containing the length of each sentence
+            `causal` Boolean, if True, the attention is only done over previous hidden states
+            `positions` LongTensor(slen, bs), containing word positions
+            `langs` LongTensor(slen, bs), containing language IDs
+        """
+        # lengths = (x != self.pad_index).float().sum(dim=1)
+        # mask = x != self.pad_index
+
+        # check inputs
+        slen, bs = x.size()
+        assert lengths.size(0) == bs
+        assert lengths.max().item() <= slen
+        x = x.transpose(0, 1)  # batch size as dimension 0
+        assert (src_enc is None) == (src_len is None)
+        if src_enc is not None:
+            assert self.is_decoder
+            assert src_enc.size(0) == bs
+
+        # generate masks
+        mask, attn_mask = get_masks(slen, lengths, causal)
+        if self.is_decoder and src_enc is not None:
+            src_mask = torch.arange(src_len.max(), dtype=torch.long, device=lengths.device) < src_len[:, None]
+            if enc_mask is not None:
+                src_mask &= enc_mask
+
+        # positions
+        if positions is None:
+            positions = x.new(slen).long()
+            positions = torch.arange(slen, out=positions).unsqueeze(0)
+        else:
+            assert positions.size() == (slen, bs)
+            positions = positions.transpose(0, 1)
+
+        # langs
+        if langs is not None:
+            assert langs.size() == (slen, bs)
+            langs = langs.transpose(0, 1)
+
+        # do not recompute cached elements
+        if cache is not None:
+            _slen = slen - cache['slen']
+            x = x[:, -_slen:]
+            positions = positions[:, -_slen:]
+            if langs is not None:
+                langs = langs[:, -_slen:]
+            mask = mask[:, -_slen:]
+            attn_mask = attn_mask[:, -_slen:]
+
+        # embeddings
+        tensor = self.embeddings(x)
+        tensor = tensor + self.position_embeddings(positions).expand_as(tensor)
+        if langs is not None and self.english_only is False:
+            tensor = tensor + self.lang_embeddings(langs)
+        tensor = self.layer_norm_emb(tensor)
+        tensor = F.dropout(tensor, p=self.dropout, training=self.training)
+        tensor *= mask.unsqueeze(-1).to(tensor.dtype)
+        
+        lang_id = langs.max() if langs is not None else None 
+
+        attention_weights = AttentionWeights(n_sentences=bs, n_layers=self.n_layers, n_heads=self.n_heads)
+        # transformer layers
+        for i in range(self.n_layers):
+            # self attention
+            attn = self.attentions[i](tensor, attn_mask, cache=cache)
+            attn = F.dropout(attn, p=self.dropout, training=self.training)
+            tensor = tensor + attn
+            tensor = self.layer_norm1[i](tensor)
+
+            # encoder attention (for decoder only)
+            if self.is_decoder and src_enc is not None:
+                if self.english_only is True:
+                    attn = self.encoder_attn[i](tensor, src_mask, kv=src_enc, cache=cache)
+                elif self.attention_setting == "v1":
+                    attn, weights = self.encoder_attn[i](tensor, src_mask, kv=src_enc, cache=cache, segment_label=lang_id, return_weights=True)
+                    attention_weights.add_layer_weights(layer_id=i, weights=weights, src_lens=src_len, tgt_lens=lengths)
+                else:
+                    attn = self.encoder_attn[i][lang_id](tensor, src_mask, kv=src_enc, cache=cache)
+                attn = F.dropout(attn, p=self.dropout, training=self.training)
+                tensor = tensor + attn
+                tensor = self.layer_norm15[i](tensor)
+
+            # FFN
+            tensor = tensor + self.ffns[i](tensor)
+            tensor = self.layer_norm2[i](tensor)
+            tensor *= mask.unsqueeze(-1).to(tensor.dtype)
+
+        # update cache length
+        if cache is not None:
+            cache['slen'] += tensor.size(1)
+
+
+        return attention_weights
 
     def fwd(self, x, lengths, causal, src_enc=None, src_len=None, positions=None, langs=None, cache=None, enc_mask=None):
         """
