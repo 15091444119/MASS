@@ -249,7 +249,7 @@ class AttentionWeights():
             for head_id in range(n_heads):
                 src_len = src_lens[sentence_id].item()
                 tgt_len = tgt_lens[sentence_id].item()
-                self.add_weights(sentence_id=sentence_id, layer_id=layer_id, head_id=head_id, weights=weights[sentence_id][head_id][:tgt_len, :src_len].transpose(0, 1))
+                self.add_weights(sentence_id=sentence_id, layer_id=layer_id, head_id=head_id, weights=weights[sentence_id][head_id][:tgt_len, :src_len])
 
 class TransformerFFN(nn.Module):
 

@@ -15,6 +15,8 @@ import seaborn
 import pandas
 import matplotlib.pyplot as plt
 import logging
+import matplotlib as mpl
+mpl.use('Agg') # plot on server
 
 logger = logging.getLogger()
 
@@ -51,12 +53,12 @@ def get_parser():
 def draw_attention(attention_matrix, source_tokens, target_tokens, output_path):
     """ save attention heatmap to a given path
     Params:
-        attention_matrix: 2d numpy array, matrix[i][j] means the attention weight of target_tokens[j] to source_tokens[i]
+        attention_matrix: 2d numpy array, matrix[i][j] means the attention weight of target_tokens[i] to source_tokens[j]
         source_tokens: list of source tokens
         target_tokens: list of target tokens
         output_path: path to save the heatmap
     """
-    data_frame = pandas.DataFrame(attention_matrix, index=source_tokens, columns=target_tokens)
+    data_frame = pandas.DataFrame(attention_matrix, index=target_tokens, columns=source_tokens)
     seaborn.heatmap(
         data=data_frame,
         annot=True,
@@ -151,7 +153,7 @@ class MassAttentionEvaluator():
 
         for layer_id in attention_weights.n_layers:
             for head_id in attention_weights.n_heads:
-                output_path = os.path.join(output_dir, "layer-{}_head-{}".format(layer_id, head_id))
+                output_path = os.path.join(output_dir, "layer-{}_head-{}.jpg".format(layer_id, head_id))
                 draw_attention(attention_weights.get_attention(sentence_id=0, layer=layer_id, head=head_id), src_tokens, tgt_tokens, output_path)
 
 def main(params):
