@@ -225,7 +225,7 @@ class AttentionWeights():
         assert key not in self.attentions
         self.attentions[key] = weights
     
-    def get_attention(self, sentence_id, layer_id, head_id, weights):
+    def get_attention(self, sentence_id, layer_id, head_id):
         key = (sentence_id, layer_id, head_id)
         assert key in self.attentions
         
@@ -465,7 +465,7 @@ class TransformerModel(nn.Module):
 
         return outputs, tensor
 
-    def get_cross_attention(self, x, lengths, langs, causal, src_enc, src_len, positions, cache, enc_mask):
+    def get_cross_attention(self, x, lengths, langs, causal, src_enc, src_len, positions=None, cache=None, enc_mask=None):
         """
         Inputs:
             `x` LongTensor(slen, bs), containing word indices

@@ -36,7 +36,6 @@ def get_parser():
 
     # model / output paths
     parser.add_argument("--model_path", type=str, default="", help="Model path")
-    parser.add_argument("--output_path", type=str, default="", help="Output path")
 
     # source language / target language
     parser.add_argument("--src_lang", type=str, default="", help="Source language")
@@ -44,10 +43,9 @@ def get_parser():
     
     # source text and target text
     parser.add_argument("--src_text", type=str, default="", help="Source language")
-    parser.add_argument("--tgt_text", type=str, default="", help="Target language")
+
+    parser.add_argument("--beam", type=int, default=1)
     
-    # use debug mode    
-    parser.add_argument("--debug", action="store_true", default=False)
     return parser
 
 def draw_attention(attention_matrix, source_tokens, target_tokens, output_path):
@@ -58,14 +56,18 @@ def draw_attention(attention_matrix, source_tokens, target_tokens, output_path):
         target_tokens: list of target tokens
         output_path: path to save the heatmap
     """
+    print(attention_matrix)
     data_frame = pandas.DataFrame(attention_matrix, index=target_tokens, columns=source_tokens)
+    plt.figure(figsize=(10,10))
     seaborn.heatmap(
         data=data_frame,
-        annot=True,
+        annot=False,
         fmt=".3f",
         cmap="YlGnBu",
         vmin=0,
         vmax=1,
+        xticklabels=True,
+        yticklabels=True,
         linewidths=.5
     )
     plt.savefig(output_path)
@@ -77,7 +79,6 @@ class MassAttentionEvaluator():
         self.decoder = decoder
         self.params = params
         self.dico = dico
-        self.debug = params.debug
 
     def get_batch(self, sent, lang):
         """
@@ -139,11 +140,11 @@ class MassAttentionEvaluator():
 
         # target tokens
         tgt_tokens = [eos_token] + [self.dico.id2word[idx.item()] for idx in sent] + [eos_token]
-
+        print(src_tokens, tgt_tokens)
         # decoding and get attention
         word_ids = [sent]
         x2, x2_lens, x2_langs =self.word_ids2batch(word_ids, tgt_lang)
-        attention_outputs = self.decoder.get_cross_attention(x=x2, lengths=x2_lens, langs=x2_langs, causal=True, src_enc=encoded, src_len=x1_lens)
+        attention_outputs = self.decoder.get_cross_attention(x=x2.cuda(), lengths=x2_lens.cuda(), langs=x2_langs.cuda(), causal=True, src_enc=encoded, src_len=x1_lens.cuda())
         
         return src_tokens, tgt_tokens, attention_outputs
 
@@ -151,10 +152,10 @@ class MassAttentionEvaluator():
         
         src_tokens, tgt_tokens, attention_weights = self.translate_get_attention(src_sent, src_lang, tgt_lang)
 
-        for layer_id in attention_weights.n_layers:
-            for head_id in attention_weights.n_heads:
+        for layer_id in range(attention_weights.n_layers):
+            for head_id in range(attention_weights.n_heads):
                 output_path = os.path.join(output_dir, "layer-{}_head-{}.jpg".format(layer_id, head_id))
-                draw_attention(attention_weights.get_attention(sentence_id=0, layer=layer_id, head=head_id), src_tokens, tgt_tokens, output_path)
+                draw_attention(attention_weights.get_attention(sentence_id=0, layer_id=layer_id, head_id=head_id).cpu().numpy(), src_tokens, tgt_tokens, output_path)
 
 def main(params):
 
@@ -188,7 +189,7 @@ def main(params):
     decoder.eval()
     
     evaluator = MassAttentionEvaluator(encoder, decoder, params, dico)
-    with open(params.src_path, 'r') as f:
+    with open(params.src_text, 'r') as f:
         src_sent = f.readline().rstrip()
 
     evaluator.eval_attention(src_sent, params.src_lang, params.tgt_lang, params.dump_path)
