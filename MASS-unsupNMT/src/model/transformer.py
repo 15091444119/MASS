@@ -465,7 +465,7 @@ class TransformerModel(nn.Module):
 
         return outputs, tensor
 
-    def get_cross_attention(self, x, lengths, langs, causal, src_enc, src_len, positions=None, cache=None, enc_mask=None):
+    def get_attention(self, x, lengths, langs, causal, src_enc, src_len, positions=None, cache=None, enc_mask=None):
         """
         Inputs:
             `x` LongTensor(slen, bs), containing word indices
@@ -528,11 +528,15 @@ class TransformerModel(nn.Module):
         
         lang_id = langs.max() if langs is not None else None 
 
-        attention_weights = AttentionWeights(n_sentences=bs, n_layers=self.n_layers, n_heads=self.n_heads)
+        self_attention = AttentionWeights(n_sentences=bs, n_layers=self.n_layers, n_heads=self.n_heads)
+        if self.is_decoder and src_enc is not None:
+            cross_attention = AttentionWeights(n_sentences=bs, n_layers=self.n_layers, n_heads=self.n_heads)
+
         # transformer layers
         for i in range(self.n_layers):
             # self attention
-            attn = self.attentions[i](tensor, attn_mask, cache=cache)
+            attn, weights = self.attentions[i](tensor, attn_mask, cache=cache, return_weights=True)
+            self_attention.add_layer_weights(layer_id=i, weights=weights, src_lens=src_len, tgt_lens=src_len)
             attn = F.dropout(attn, p=self.dropout, training=self.training)
             tensor = tensor + attn
             tensor = self.layer_norm1[i](tensor)
@@ -543,7 +547,7 @@ class TransformerModel(nn.Module):
                     attn = self.encoder_attn[i](tensor, src_mask, kv=src_enc, cache=cache)
                 elif self.attention_setting == "v1":
                     attn, weights = self.encoder_attn[i](tensor, src_mask, kv=src_enc, cache=cache, segment_label=lang_id, return_weights=True)
-                    attention_weights.add_layer_weights(layer_id=i, weights=weights, src_lens=src_len, tgt_lens=lengths)
+                    cross_attention.add_layer_weights(layer_id=i, weights=weights, src_lens=src_len, tgt_lens=lengths)
                 else:
                     attn = self.encoder_attn[i][lang_id](tensor, src_mask, kv=src_enc, cache=cache)
                 attn = F.dropout(attn, p=self.dropout, training=self.training)
@@ -560,7 +564,7 @@ class TransformerModel(nn.Module):
             cache['slen'] += tensor.size(1)
 
 
-        return attention_weights
+        return self_attention, cross_attention
 
     def fwd(self, x, lengths, causal, src_enc=None, src_len=None, positions=None, langs=None, cache=None, enc_mask=None):
         """

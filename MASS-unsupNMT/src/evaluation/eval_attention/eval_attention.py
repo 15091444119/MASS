@@ -3,6 +3,7 @@ import io
 import sys
 import argparse
 import torch
+import numpy as np
 
 from src.utils import AttrDict
 from src.utils import bool_flag, initialize_exp
@@ -11,6 +12,7 @@ from src.model.transformer import TransformerModel, get_masks
 
 from src.fp16 import network_to_half
 from collections import OrderedDict
+from .attention_drawer import draw_multi_layer_multi_head_attention
 import seaborn
 import pandas
 import matplotlib.pyplot as plt
@@ -47,31 +49,6 @@ def get_parser():
     parser.add_argument("--beam", type=int, default=1)
     
     return parser
-
-def draw_attention(attention_matrix, source_tokens, target_tokens, output_path):
-    """ save attention heatmap to a given path
-    Params:
-        attention_matrix: 2d numpy array, matrix[i][j] means the attention weight of target_tokens[i] to source_tokens[j]
-        source_tokens: list of source tokens
-        target_tokens: list of target tokens
-        output_path: path to save the heatmap
-    """
-    print(attention_matrix)
-    data_frame = pandas.DataFrame(attention_matrix, index=target_tokens, columns=source_tokens)
-    plt.figure(figsize=(10,10))
-    seaborn.heatmap(
-        data=data_frame,
-        annot=False,
-        fmt=".3f",
-        cmap="YlGnBu",
-        vmin=0,
-        vmax=1,
-        xticklabels=True,
-        yticklabels=True,
-        linewidths=.5
-    )
-    plt.savefig(output_path)
-    plt.close()
 
 class MassAttentionEvaluator():
     def __init__(self, encoder, decoder, params, dico):
@@ -144,18 +121,25 @@ class MassAttentionEvaluator():
         # decoding and get attention
         word_ids = [sent]
         x2, x2_lens, x2_langs =self.word_ids2batch(word_ids, tgt_lang)
-        attention_outputs = self.decoder.get_cross_attention(x=x2.cuda(), lengths=x2_lens.cuda(), langs=x2_langs.cuda(), causal=True, src_enc=encoded, src_len=x1_lens.cuda())
+        self_attention, cross_attention = self.decoder.get_attention(x=x2.cuda(), lengths=x2_lens.cuda(), langs=x2_langs.cuda(), causal=True, src_enc=encoded, src_len=x1_lens.cuda())
         
-        return src_tokens, tgt_tokens, attention_outputs
+        return src_tokens, tgt_tokens, self_attention, cross_attention
 
-    def eval_attention(self, src_sent, src_lang, tgt_lang, output_dir):
+    def eval_attention(self, src_sent, src_lang, tgt_lang, output_dir, method):
+        """ evaluate all attentions
+        Params:
+            method: "all": all layer and all heads "heads_average": one figure for each layer "layer_average": one figure for each head "all_average": one figure for all weights
+        """
+        assert method in ["all", "heads_average", "layer_average", "all_average"]
         
-        src_tokens, tgt_tokens, attention_weights = self.translate_get_attention(src_sent, src_lang, tgt_lang)
+        src_tokens, tgt_tokens, self_attention, cross_attention = self.translate_get_attention(src_sent, src_lang, tgt_lang)
 
-        for layer_id in range(attention_weights.n_layers):
-            for head_id in range(attention_weights.n_heads):
-                output_path = os.path.join(output_dir, "layer-{}_head-{}.jpg".format(layer_id, head_id))
-                draw_attention(attention_weights.get_attention(sentence_id=0, layer_id=layer_id, head_id=head_id).cpu().numpy(), src_tokens, tgt_tokens, output_path)
+        self_attention_output_prefix = os.path.join(output_dir, "self-attention")
+        draw_multi_layer_multi_head_attention(src_tokens, src_tokens, self_attention, method, self_attention_output_prefix)
+
+        cross_attention_output_prefix = os.path.join(output_dir, "cross-attention")
+        draw_multi_layer_multi_head_attention(src_tokens, tgt_tokens, cross_attention, method, cross_attention_output_prefix)
+        
 
 def main(params):
 
@@ -192,7 +176,7 @@ def main(params):
     with open(params.src_text, 'r') as f:
         src_sent = f.readline().rstrip()
 
-    evaluator.eval_attention(src_sent, params.src_lang, params.tgt_lang, params.dump_path)
+    evaluator.eval_attention(src_sent, params.src_lang, params.tgt_lang, params.dump_path, "all-average")
 
 if __name__ == '__main__':
 
