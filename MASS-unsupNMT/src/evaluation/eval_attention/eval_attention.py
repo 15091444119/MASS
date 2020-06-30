@@ -13,12 +13,7 @@ from src.model.transformer import TransformerModel, get_masks
 from src.fp16 import network_to_half
 from collections import OrderedDict
 from .attention_drawer import draw_multi_layer_multi_head_attention
-import seaborn
-import pandas
-import matplotlib.pyplot as plt
 import logging
-import matplotlib as mpl
-mpl.use('Agg') # plot on server
 
 logger = logging.getLogger()
 
@@ -46,7 +41,8 @@ def get_parser():
     # source text and target text
     parser.add_argument("--src_text", type=str, default="", help="Source language")
 
-    parser.add_argument("--beam", type=int, default=1)
+    parser.add_argument("--beam", type=int, default=5)
+    parser.add_argument("--length_penalty", type=float, default=1)
     
     return parser
 
@@ -135,7 +131,7 @@ class MassAttentionEvaluator():
         src_tokens, tgt_tokens, self_attention, cross_attention = self.translate_get_attention(src_sent, src_lang, tgt_lang)
 
         self_attention_output_prefix = os.path.join(output_dir, "self-attention")
-        draw_multi_layer_multi_head_attention(src_tokens, src_tokens, self_attention, method, self_attention_output_prefix)
+        draw_multi_layer_multi_head_attention(tgt_tokens, tgt_tokens, self_attention, method, self_attention_output_prefix)
 
         cross_attention_output_prefix = os.path.join(output_dir, "cross-attention")
         draw_multi_layer_multi_head_attention(src_tokens, tgt_tokens, cross_attention, method, cross_attention_output_prefix)
@@ -176,7 +172,7 @@ def main(params):
     with open(params.src_text, 'r') as f:
         src_sent = f.readline().rstrip()
 
-    evaluator.eval_attention(src_sent, params.src_lang, params.tgt_lang, params.dump_path, "all-average")
+    evaluator.eval_attention(src_sent, params.src_lang, params.tgt_lang, params.dump_path, "all_average")
 
 if __name__ == '__main__':
 

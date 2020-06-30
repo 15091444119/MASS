@@ -1,12 +1,19 @@
-def draw_multi_layer_multi_head_attention(self, src_tokens, tgt_tokens, attention_weights, method, output_prefix):
-    if method == "all":
-        self._all_attention(src_tokens, tgt_tokens, attention_weights, output_prefix)
-    elif method == "all_average"
-        self._draw_all_average_attention(src_tokens, tgt_tokens, attention_weights, output_prefix)
+import numpy as np
+import seaborn
+import pandas
+import matplotlib.pyplot as plt
+import matplotlib as mpl
+mpl.use('Agg') # plot on server
 
-def _draw_all_average_attention(self, src_tokens, tgt_tokens, attention_weights, output_prefix):
+def draw_multi_layer_multi_head_attention(src_tokens, tgt_tokens, attention_weights, method, output_prefix):
+    if method == "all":
+        _draw_all_attention(src_tokens, tgt_tokens, attention_weights, output_prefix)
+    elif method == "all_average":
+        _draw_all_average_attention(src_tokens, tgt_tokens, attention_weights, output_prefix)
+
+def _draw_all_average_attention(src_tokens, tgt_tokens, attention_weights, output_prefix):
     output_path = output_prefix + "_all-average.jpg"
-    weights_sum = np.zeros(len(tgt_tokens), len(src_tokens))
+    weights_sum = np.zeros((len(tgt_tokens), len(src_tokens)))
     for layer_id in range(attention_weights.n_layers):
         for head_id in range(attention_weights.n_heads):
             weights_sum += attention_weights.get_attention(sentence_id=0, layer_id=layer_id, head_id=head_id).cpu().numpy()
@@ -14,12 +21,12 @@ def _draw_all_average_attention(self, src_tokens, tgt_tokens, attention_weights,
     draw_attention(weights_average, src_tokens, tgt_tokens, output_path)
 
 
-def _draw_all_attention(self, src_tokens, tgt_tokens, attention_weights, output_prefix):
+def _draw_all_attention(src_tokens, tgt_tokens, attention_weights, output_prefix):
     # cross attention
     for layer_id in range(attention_weights.n_layers):
         for head_id in range(attention_weights.n_heads):
             output_path = output_prefix + "_layer-{}_head-{}.jpg".format(layer_id, head_id)
-            draw_attention(attention_weights.get_attention(sentence_id=0, layer_id=layer_id, head_id=head_id).cpu().numpy(), src_tokens, tgt_tokens, output_path
+            draw_attention(attention_weights.get_attention(sentence_id=0, layer_id=layer_id, head_id=head_id).cpu().numpy(), src_tokens, tgt_tokens, output_path)
 
 def draw_attention(attention_matrix, source_tokens, target_tokens, output_path):
     """ save attention heatmap to a given path

@@ -536,7 +536,7 @@ class TransformerModel(nn.Module):
         for i in range(self.n_layers):
             # self attention
             attn, weights = self.attentions[i](tensor, attn_mask, cache=cache, return_weights=True)
-            self_attention.add_layer_weights(layer_id=i, weights=weights, src_lens=src_len, tgt_lens=src_len)
+            self_attention.add_layer_weights(layer_id=i, weights=weights, src_lens=lengths, tgt_lens=lengths)
             attn = F.dropout(attn, p=self.dropout, training=self.training)
             tensor = tensor + attn
             tensor = self.layer_norm1[i](tensor)
