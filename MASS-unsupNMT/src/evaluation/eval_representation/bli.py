@@ -175,9 +175,54 @@ def eval_bli(
 
     return scores
 
+def translate_words(
+    src_embeddings,
+    tgt_embeddings,
+    src_id2word,
+    src_word2id,
+    tgt_id2word,
+    tgt_word2id,
+    src_words_to_translate,
+    preprocess_method="",
+    batch_size=500,
+    metric="nn",
+    csls_topk=10):
+    """ translate words """
+
+    if torch.cuda.is_available():
+        src_embeddings = src_embeddings.cuda()
+        tgt_embeddings = tgt_embeddings.cuda()
+
+    if preprocess_method != "":
+        src_embeddings = preprocess_embedding(src_embeddings, preprocess_method)
+        tgt_embeddings = preprocess_embedding(tgt_embeddings, preprocess_method)
+    
+    print(
+        "Src embedding size:{} Tgt embedding size:{} Src words in dictionary:{} Tgt words in dictionary:{}".format(
+            src_embeddings.size(0),
+            tgt_embeddings.size(0),
+            len(list(dic.keys())),
+            sum([len(value) for key, value in dic.items()])
+        ),
+        file=sys.stderr
+    )
+
+    src_ids_to_translate = []
+    for src_word in src_words_to_translate:
+        if src_word in src_word2id:
+            src_ids_to_translate.append(src_word2id[src_word])
+        else:
+            print("Unseen source word: {}".format(src_word))
+
+    translation = retrieval(src_embeddings, tgt_embeddings, src_ids_to_translate, csls_topk=csls_topk, batch_size=batch_size, metric=metric)
+
+    for src_id, tgt_list in translation.items():
+        for idx, tgt_id in enumerate(tgt_list):
+            print("{}-> {} {}".format(src_id2word[src_id], idx + 1, tgt_id2word[tgt_id]))
+
 class XlmBliEvaluator():
 
-    def __init__(self):
+    def __init__(self, path, model_name, dict_path):
         pass
 
     def eval(self, path, model_name, dict_path, preprocess, metric, source_vocab, target_vocab):
@@ -205,6 +250,23 @@ class XlmBliEvaluator():
             metric=metric
         )
         return scores
+
+    def get_translation_of_chinese(self, path, model_name, words, preprocess, metric):
+        """ use unicode split and translate chinese words , src are chinese ,tgt are english"""
+        embeddings, dico = self.load_xlm_embedding(path. model_name)
+        src_embeddings, tgt_embeddings, src_id2word, src_word2id, tgt_id2word, tgt_word2id = self.unicode_split_chinese_english(embeddings, dico)
+        translate_words(
+            src_embeddings=src_embeddings,
+            tgt_embeddings=tgt_embeddings,
+            src_id2word=src_id2word,
+            src_word2id=src_word2id,
+            tgt_id2word=tgt_id2word,
+            tgt_word2id=tgt_word2id,
+            src_words_to_translate=words,
+            preprocess_method=preprocess,
+            metric=metric
+        )
+
 
     def load_xlm_embedding(self, path, model_name):
         """
@@ -239,6 +301,28 @@ class XlmBliEvaluator():
         model.load_state_dict(state_dict)
 
         return model.embeddings.weight.data, dico
+
+    def unicode_split_chinese_english(self, embeddings, dico, drop_bpe=False):
+        src_embeddings = []
+        tgt_embeddings = []
+        src_id2word = {}
+        tgt_id2word = {}
+
+        for idx, word in dico.id2word.items():
+            if is_chinese(word[0]):
+                src_embeddinggs.append(embeddings[idx])
+                src_id2word[len(src_id2word)] = word
+            elif is_alphabet(word[0]):
+                tgt_embeddings.append(embeddings[idx])
+                tgt_id2word[len(tgt_id2word)] = word
+
+
+        src_word2id = {word:idx for idx, word in src_id2word.items()}
+        tgt_word2id = {word:idx for idx, word in tgt_id2word.items()}
+        src_embeddings = torch.stack(src_embeddings)
+        tgt_embeddings = torch.stack(tgt_embeddings)
+
+        return src_embeddings, tgt_embeddings, src_id2word, src_word2id, tgt_id2word, tgt_word2id
 
     def split_language(self, embeddings, dico, source_vocab, target_vocab):
         """
