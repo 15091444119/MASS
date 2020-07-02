@@ -75,6 +75,8 @@ def calculate_whole_word_seperated_word_translation_acc(alignments, srcs, tgts, 
 
         for word_align in one_one_alignment.rstrip().split(' '):
             src_id, tgt_id = word_align.split('-')
+            src_id = int(src_id)
+            tgt_id = int(tgt_id)
 
             if word_type[src_id] == "whole-word":
                 whole_word_cnt += 1
@@ -150,7 +152,7 @@ def main(params):
     tgts = read_sentences(params.tgt)
     hyps = read_sentences(params.hyps)
     bped_srcs = read_sentences(params.bped_src)
-    ord_types = extract_word_types(srcs, bped_srcs)
+    word_types = extract_word_types(srcs, bped_srcs)
     whole_word_acc, seperated_word_acc = calculate_whole_word_seperated_word_translation_acc(alignments, srcs, tgts, hyps, word_types)
     print("Whole word accuarcy:{} Seperated word accuarcy:{}".format(whole_word_acc, seperated_word_acc))
 
