@@ -147,13 +147,12 @@ def extract_word_types(bped_sentences):
     return word_types
 
 def main(params):
-    params = parse_params()
     alignments = read_alignments(params.alignments)
     srcs = read_sentences(params.src)
     tgts = read_sentences(params.tgt)
     hyps = read_sentences(params.hyps)
     bped_srcs = read_sentences(params.bped_src)
-    word_types = extract_word_types(srcs, bped_srcs)
+    word_types = extract_word_types(bped_srcs)
     whole_word_acc, seperated_word_acc = calculate_whole_word_seperated_word_translation_acc(alignments, srcs, tgts, hyps, word_types)
     print("Whole word accuarcy:{} Seperated word accuarcy:{}".format(whole_word_acc, seperated_word_acc))
 

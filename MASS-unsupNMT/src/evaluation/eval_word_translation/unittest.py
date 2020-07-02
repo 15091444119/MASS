@@ -1,5 +1,7 @@
 import unittest
-from .alignment import extract_word_types, WHOLEWORD, SEPERATEDWORD, calculate_whole_word_seperated_word_translation_acc, filter_alignment_one2one
+from .alignment import extract_word_types, WHOLEWORD, SEPERATEDWORD, calculate_whole_word_seperated_word_translation_acc, filter_alignment_one2one, main
+import os
+import argparse
 
 class TestAlignment(unittest.TestCase):
 
@@ -26,3 +28,14 @@ class TestAlignment(unittest.TestCase):
         alignment = "0-0 0-1 1-2 2-2 3-2 4-4 5-5"
         
         self.assertEqual(filter_alignment_one2one(alignment), "4-4 5-5")
+
+    def test_main(self):
+        cur_dir = os.path.abspath(os.path.dirname(__file__))
+        data_dir = os.path.join(cur_dir, "test_data")
+        src = os.path.join(data_dir, "src")
+        tgt = os.path.join(data_dir, "tgt")
+        bped_src = os.path.join(data_dir, "bped_src")
+        hyp = os.path.join(data_dir, "hyp")
+        alignments = os.path.join(data_dir, "alignments")
+        params = argparse.Namespace(src=src, tgt=tgt, bped_src=bped_src, hyp=hyp, alignments=alignments)
+        main(params)
