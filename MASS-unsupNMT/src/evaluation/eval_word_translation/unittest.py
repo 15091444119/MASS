@@ -8,7 +8,7 @@ class TestAlignment(unittest.TestCase):
         self.assertEqual(extract_word_types(input_case), [[SEPERATEDWORD, WHOLEWORD, SEPERATEDWORD, WHOLEWORD], [SEPERATEDWORD]])
 
     def test_calculate_whole_word_seperated_word_translation_acc(self):
-        alignments = ["0-0 0-1 1-2 2-3 3-4 4-5"]
+        alignments = ["0-0 0-1 1-2 2-3 3-4 4-5 5-6"]
         srcs = ["这是 一个 测试 函数 样例 ."] # srcbpe=["这是 一个 测@@ 试 函@@ 数 样@@ 例 ."]
         tgts = ["here is a test function case ."]
         hyps= ["here was two exam program case ."]
