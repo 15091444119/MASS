@@ -68,6 +68,8 @@ def calculate_whole_word_seperated_word_translation_acc(alignments, srcs, tgts, 
 
     for alignment, src, tgt, hyp, word_type in zip(alignments, srcs, tgts, hyps, word_types):
         one_one_alignment = filter_alignment_one2one(alignment)
+
+
         src = src.rstrip().split(' ')
         tgt = tgt.rstrip().split(' ')
         hyp = hyp.rstrip().split(' ')
@@ -86,8 +88,7 @@ def calculate_whole_word_seperated_word_translation_acc(alignments, srcs, tgts, 
             elif word_type[src_id] == "seperated":
                 seperated_word_cnt += 1
                 if tgt[tgt_id] in hyp:
-                    whole_word_correct_cnt += 1
-    
+                    seperated_word_correct_cnt += 1
     whole_word_acc = whole_word_correct_cnt / whole_word_cnt
     seperated_word_acc = seperated_word_correct_cnt / seperated_word_cnt
 

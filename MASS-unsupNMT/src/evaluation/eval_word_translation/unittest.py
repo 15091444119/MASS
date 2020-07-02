@@ -11,7 +11,7 @@ class TestAlignment(unittest.TestCase):
         alignments = ["0-0 0-1 1-2 2-3 3-4 4-5"]
         srcs = ["这是 一个 测试 函数 样例 ."] # srcbpe=["这是 一个 测@@ 试 函@@ 数 样@@ 例 ."]
         tgts = ["here is a test function case ."]
-        hyps= ["here was a exam program case ."]
+        hyps= ["here was two exam program case ."]
         word_types=[[WHOLEWORD, WHOLEWORD, SEPERATEDWORD, SEPERATEDWORD, SEPERATEDWORD, WHOLEWORD]]
 
         # 这是，因为是一对多，所以不算，只有1-2， 2-3， 3-4 进行了计算
