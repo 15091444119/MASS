@@ -222,7 +222,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.method == "xlm":
-        translate_xlm_chinese(args.reload, args.model_name, ["你好"], args.preprocess, args.metric)
+        translate_xlm_chinese(args.reload, args.model_name, ["你"], args.preprocess, args.metric)
 
     elif args.method == "map":
         src_embs, src_id2word, src_word2id = load_word2vec_embeddings(args.src_embs, emb_size=args.emb_size, vocab=src_vocab)
