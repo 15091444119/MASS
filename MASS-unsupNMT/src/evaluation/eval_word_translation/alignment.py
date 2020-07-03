@@ -156,5 +156,7 @@ def main(params):
     whole_word_acc, seperated_word_acc = calculate_whole_word_seperated_word_translation_acc(alignments, srcs, tgts, hyps, word_types)
     print("Whole word accuarcy:{} Seperated word accuarcy:{}".format(whole_word_acc, seperated_word_acc))
 
-
+if __name__ == "__main__":
+    params = parse_params()
+    main(params)
 
