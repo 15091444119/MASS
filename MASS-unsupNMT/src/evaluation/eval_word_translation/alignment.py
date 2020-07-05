@@ -67,19 +67,21 @@ def calculate_whole_word_seperated_word_translation_acc(alignments, srcs, tgts, 
     assert len(alignments) == len(srcs) == len(tgts) == len(hyps) == len(word_types)
 
     for alignment, src, tgt, hyp, word_type in zip(alignments, srcs, tgts, hyps, word_types):
+        print(alignment)
         one_one_alignment = filter_alignment_one2one(alignment)
+        print(one_one_alignment)
 
 
         src = src.rstrip().split(' ')
         tgt = tgt.rstrip().split(' ')
         hyp = hyp.rstrip().split(' ')
         assert len(src) == len(word_type)
-
+        print("==Src=={}\n==Tgt=={}\n==Hyp{}".format(src, tgt, hyp))
         for word_align in one_one_alignment.rstrip().split(' '):
             src_id, tgt_id = word_align.split('-')
             src_id = int(src_id)
             tgt_id = int(tgt_id)
-
+            print("{}: {}-{}".format(word_type[src_id], src[src_id], tgt[tgt_id]))
             if word_type[src_id] == "whole-word":
                 whole_word_cnt += 1
                 if tgt[tgt_id] in hyp:
@@ -99,7 +101,7 @@ def parse_params():
     parser.add_argument("--src", help="source sentence path")
     parser.add_argument("--tgt", help="target sentence path")
     parser.add_argument("--bped_src", help="bped source sentence path")
-    parser.add_argument("--hyp", help="hyp sentence path")
+    parser.add_argument("--hyps", help="hyp sentence path")
     parser.add_argument("--alignments", help="Alignment result path")
     params = parser.parse_args()
 
