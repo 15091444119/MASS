@@ -72,6 +72,8 @@ def calculate_whole_word_seperated_word_translation_acc(alignments, srcs, tgts, 
         print(alignment)
         one_one_alignment = filter_alignment_one2one(alignment)
         print(one_one_alignment)
+        if one_one_alignment == "":
+            continue
 
 
         src = src.rstrip().split(' ')
