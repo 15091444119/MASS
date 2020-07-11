@@ -82,12 +82,11 @@ def calculate_whole_word_seperated_word_translation_acc(alignments, srcs, bped_s
         hyp = hyp.rstrip().split(' ')
         assert len(src) == len(bped_src)
         assert len(hyp) == len(bped_hyp)
-        print("\nSrc {}\n Tgt {}\n Hyp{}".format(src, tgt, hyp))
+        print("\nbped Src {}\n Tgt {}\n bped Hyp{}".format(bped_src, tgt, bped_hyp))
         for word_align in one_one_alignment.rstrip().split(' '):
             src_id, tgt_id = word_align.split('-')
             src_id = int(src_id)
             tgt_id = int(tgt_id)
-            print("{}-{}-{}".format(src[src_id], ' '.join(bped_src[src_id]), tgt[tgt_id]))
             if len(bped_src[src_id]) == 1:
                 whole_word_cnt += 1
                 if tgt[tgt_id] in hyp:
@@ -96,6 +95,8 @@ def calculate_whole_word_seperated_word_translation_acc(alignments, srcs, bped_s
                 seperated_word_cnt += 1
                 if tgt[tgt_id] in hyp:
                     seperated_word_correct_cnt += 1
+                else: 
+                    print("****{}-{}-{}".format(src[src_id], ' '.join(bped_src[src_id]), tgt[tgt_id]))
         
         for i in range(len(src)):
             if len(bped_src[i]) == 1:
