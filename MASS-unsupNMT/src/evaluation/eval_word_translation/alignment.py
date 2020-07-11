@@ -88,7 +88,7 @@ def calculate_whole_word_seperated_word_translation_acc(alignments, srcs, bped_s
             src_id = int(src_id)
             tgt_id = int(tgt_id)
             print("{}-{}-{}".format(src[src_id], ' '.join(bped_src[src_id]), tgt[tgt_id]))
-            if len(bped_src[src_id] == 1):
+            if len(bped_src[src_id]) == 1:
                 whole_word_cnt += 1
                 if tgt[tgt_id] in hyp:
                     whole_word_correct_cnt += 1
@@ -189,7 +189,7 @@ def main(params):
     bped_srcs = read_sentences(params.bped_src)
     bped_hyps = group_tokens(bped_hyps)
     bped_srcs = group_tokens(bped_srcs)
-    whole_word_acc, seperated_word_acc = calculate_whole_word_seperated_word_translation_acc(alignments, srcs, bped_src, tgts, hyps, bped_hyps)
+    whole_word_acc, seperated_word_acc = calculate_whole_word_seperated_word_translation_acc(alignments, srcs, bped_srcs, tgts, hyps, bped_hyps)
     print("Whole word accuarcy:{} Seperated word accuarcy:{}".format(whole_word_acc, seperated_word_acc))
 
 if __name__ == "__main__":
