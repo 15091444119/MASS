@@ -44,7 +44,7 @@ def filter_alignment_one2one(alignment):
     
     return ' '.join(filtered_alignment)
 
-def calculate_whole_word_seperated_word_translation_acc(alignments, srcs, tgts, hyps, word_types):
+def calculate_whole_word_seperated_word_translation_acc(alignments, srcs, bped_srcs, tgts, hyps, bped_hyps):
     """
         Given the alignment, we choose one-one alignment to generate word-pairs,
         for each word, if it's translation is in hyp, we think this translate is good.
@@ -53,9 +53,10 @@ def calculate_whole_word_seperated_word_translation_acc(alignments, srcs, tgts, 
     Params:
         alignments: fast-align alignment result
         srcs: list of strings containing source sentences
+        bped_srcs: bpe format of src sentences, refer to group_tokens function
         tgts: list of strings containing target sentences
         hyps: list of strings containing model hyp sentences
-        word_types: list of list, each list containes types for words in source sentences, "whole-word" or "seperated"
+        bped_hyps:
     Returns:
         whole word translation accuarcy and seperated word translation accuarcy
     """
@@ -66,9 +67,9 @@ def calculate_whole_word_seperated_word_translation_acc(alignments, srcs, tgts, 
 
     all_seperated_word_cnt = 0
     all_whole_word_cnt = 0
-    assert len(alignments) == len(srcs) == len(tgts) == len(hyps) == len(word_types)
+    assert len(alignments) == len(srcs) == len(tgts) == len(hyps) == len(bped_srcs) == len(bped_hyps)
 
-    for alignment, src, tgt, hyp, word_type in zip(alignments, srcs, tgts, hyps, word_types):
+    for alignment, src, tgt, hyp, bped_src, bped_hyp in zip(alignments, srcs, tgts, hyps, bped_srcs, bped_hyps):
         print(alignment)
         one_one_alignment = filter_alignment_one2one(alignment)
         print(one_one_alignment)
@@ -79,25 +80,28 @@ def calculate_whole_word_seperated_word_translation_acc(alignments, srcs, tgts, 
         src = src.rstrip().split(' ')
         tgt = tgt.rstrip().split(' ')
         hyp = hyp.rstrip().split(' ')
-        assert len(src) == len(word_type)
-        print("==Src=={}\n==Tgt=={}\n==Hyp{}".format(src, tgt, hyp))
+        assert len(src) == len(bped_src)
+        assert len(hyp) == len(bped_hyp)
+        print("\nSrc {}\n Tgt {}\n Hyp{}".format(src, tgt, hyp))
         for word_align in one_one_alignment.rstrip().split(' '):
             src_id, tgt_id = word_align.split('-')
             src_id = int(src_id)
             tgt_id = int(tgt_id)
-            print("{}: {}-{}".format(word_type[src_id], src[src_id], tgt[tgt_id]))
-            if word_type[src_id] == "whole-word":
+            print("{}-{}-{}".format(src[src_id], ' '.join(bped_src[src_id]), tgt[tgt_id]))
+            if len(bped_src[src_id] == 1):
                 whole_word_cnt += 1
                 if tgt[tgt_id] in hyp:
                     whole_word_correct_cnt += 1
-
-            elif word_type[src_id] == "seperated":
+            else:
                 seperated_word_cnt += 1
                 if tgt[tgt_id] in hyp:
                     seperated_word_correct_cnt += 1
-
-        all_seperated_word_cnt += word_type.count(SEPERATEDWORD)
-        all_whole_word_cnt += word_type.count(WHOLEWORD)
+        
+        for i in range(len(src)):
+            if len(bped_src[i]) == 1:
+                all_whole_word_cnt += 1
+            else:
+                all_seperated_word_cnt += 1
     print("word in alignment: whole word number:{} seperated word number: {}".format(whole_word_cnt, seperated_word_cnt))
     print("All whole word: {} All seperated word: {}".format(all_whole_word_cnt, all_seperated_word_cnt))
     whole_word_acc = whole_word_correct_cnt / whole_word_cnt
@@ -111,6 +115,7 @@ def parse_params():
     parser.add_argument("--tgt", help="target sentence path")
     parser.add_argument("--bped_src", help="bped source sentence path")
     parser.add_argument("--hyps", help="hyp sentence path")
+    parser.add_argument("--bped_hyps", help="bped hyp sentence path")
     parser.add_argument("--alignments", help="Alignment result path")
     params = parser.parse_args()
 
@@ -157,14 +162,34 @@ def extract_word_types(bped_sentences):
     
     return word_types
 
+def group_tokens(bped_sentences):
+    """ group tokens of one word in to a list
+    For example
+    He@@ llo , na@@ ncy ! will be saved as [["he@@", "llo"], [","], ["na@@", "cy"], ["!"]]
+    """
+
+    sentences = [] 
+    for bped_sentence in bped_sentences:
+        cur_word = []
+        cur_sentence = []
+        for token in bped_sentence.split(' '):
+            cur_word.append(token)
+            if not token.endswith("@@"):
+                cur_sentence.append(cur_word)
+                cur_word = []
+        sentences.append(cur_sentence)
+    return sentences
+
 def main(params):
     alignments = read_alignments(params.alignments)
     srcs = read_sentences(params.src)
     tgts = read_sentences(params.tgt)
     hyps = read_sentences(params.hyps)
+    bped_hyps = read_sentences(params.bped_hyps)
     bped_srcs = read_sentences(params.bped_src)
-    word_types = extract_word_types(bped_srcs)
-    whole_word_acc, seperated_word_acc = calculate_whole_word_seperated_word_translation_acc(alignments, srcs, tgts, hyps, word_types)
+    bped_hyps = group_tokens(bped_hyps)
+    bped_srcs = group_tokens(bped_srcs)
+    whole_word_acc, seperated_word_acc = calculate_whole_word_seperated_word_translation_acc(alignments, srcs, bped_src, tgts, hyps, bped_hyps)
     print("Whole word accuarcy:{} Seperated word accuarcy:{}".format(whole_word_acc, seperated_word_acc))
 
 if __name__ == "__main__":
