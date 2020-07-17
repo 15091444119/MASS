@@ -51,7 +51,7 @@ def get_token_embedding(model, dico, token):
 
     idx = dico.word2id[token]
 
-    return model.embeddings.weights.data[idx].cpu().numpy()
+    return model.embeddings.weight.data[idx]
 
 def prepare_batch_input(sents, lang_id):
     """ prepare input for mass 

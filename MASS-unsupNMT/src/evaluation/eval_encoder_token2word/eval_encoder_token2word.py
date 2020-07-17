@@ -31,8 +31,11 @@ def main(params):
     emb1 = get_token_embedding(encoder, dico, "对@@")
     emb2 = get_token_embedding(encoder, dico, "不起")
 
-    emb3 = get_token_embedding(encoder, dico, "抱歉")
+    emb3 = get_token_embedding(encoder, dico, "sorry")
 
     print(torch.nn.functional.cosine_similarity(emb1, emb3, dim=-1))
     print(torch.nn.functional.cosine_similarity(emb2, emb3, dim=-1))
 
+if __name__ == "__main__":
+    params = parse_params()
+    main(params)
