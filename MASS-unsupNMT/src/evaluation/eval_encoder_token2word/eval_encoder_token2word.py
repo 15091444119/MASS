@@ -22,19 +22,28 @@ def parse_params():
 
     return params
 
+def get_embedding_similarity_online(encoder, dico):
+    while(True):
+        print("Input two words")
+        word1, word2 = input().rstrip().split()
+        if word1 not in dico.id2word:
+            print("{} not in dictionary".format(word1))
+            continue
+        if word2 not in dico.id2word:
+            print("{} not in dictionary".format(word2))
+            continue
+        emb1 = get_token_embedding(encoder, dico, word1)
+        emb2 = get_token_embedding(encoder, dico, word2)
+        print(torch.nn.functional.cosine_similarity(emb1, emb2, dim=-1))
+
 def main(params):
 
     initialize_exp(params)
 
     dico, model_params, encoder, _ = load_mass_model(params.reloaded)
 
-    emb1 = get_token_embedding(encoder, dico, "对@@")
-    emb2 = get_token_embedding(encoder, dico, "不起")
+    get_embedding_similarity_online(encoder, dico)
 
-    emb3 = get_token_embedding(encoder, dico, "sorry")
-
-    print(torch.nn.functional.cosine_similarity(emb1, emb3, dim=-1))
-    print(torch.nn.functional.cosine_similarity(emb2, emb3, dim=-1))
 
 if __name__ == "__main__":
     params = parse_params()

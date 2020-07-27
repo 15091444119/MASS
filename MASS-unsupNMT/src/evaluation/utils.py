@@ -53,7 +53,8 @@ def get_token_embedding(model, dico, token):
 
     return model.embeddings.weight.data[idx]
 
-def prepare_batch_input(sents, lang_id):
+def prepare_batch_input(sents, lang_id, dico):
+    #TODO get this code right
     """ prepare input for mass 
     params:
         sents: list of strings, each string is a sentence
