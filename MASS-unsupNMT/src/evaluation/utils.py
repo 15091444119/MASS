@@ -53,40 +53,42 @@ def get_token_embedding(model, dico, token):
 
     return model.embeddings.weight.data[idx]
 
-def prepare_batch_input(sents, lang_id, dico):
-    #TODO get this code right
+def prepare_batch_input(sents, lang_id, dico, mass_params):
     """ prepare input for mass 
     params:
         sents: list of strings, each string is a sentence
         lang_id: language id of the input sentences
+        dico: dictionary object
+        mass_params: params reloaded from mass model
     returns:
         batch, lengths, langs
     """
-    token_ids = [torch.LongTensor([self.dico.index(w) for w in s.strip().split()])
+    token_ids = [torch.LongTensor([dico.index(w) for w in s.strip().split()])
                         for s in sents]
     lengths = torch.LongTensor([len(s) + 2 for s in token_ids])
-    batch = torch.LongTensor(lengths.max().item(), lengths.size(0)).fill_(self.params.pad_index)
-    batch[0] = self.params.eos_index
+    batch = torch.LongTensor(lengths.max().item(), lengths.size(0)).fill_(mass_params.pad_index)
+    batch[0] = mass_params.eos_index
     for j, s in enumerate(token_ids):
         if lengths[j] > 2:  # if sentence not empty
             batch[1:lengths[j] - 1, j].copy_(s)
-        batch[lengths[j] - 1, j] = self.params.eos_index
+        batch[lengths[j] - 1, j] = mass_params.eos_index
     langs = batch.clone().fill_(lang_id)
     return batch, lengths, langs
 
-def encode_word(encoder, dico, word, lang_id):
+def encode_tokens(encoder, dico, params, tokens, lang_id):
     """ get encoder output of the word
     Params:
         encoder: transformer encoder
         dico: dictionary object
-        word: a list of tokens which consist the word
+        params: mass_params
+        word: a list of tokens which consist the word like ["对@@", "不起"]
         lang_id: id of the language 
     Returns:
         Context representation of the given word, a torch tensor[len(word) + 2, dim]
         eos representation are in the left most and right most place
     """
 
-    batch, lengths, langs = prepare_batch_input([' '.join(word)], lang_id)
+    batch, lengths, langs = prepare_batch_input([' '.join(tokens)], lang_id, dico, params)
 
     with torch.no_grad():
         encoded = encoder.fwd(batch, lengths=lengths, langs=langs)

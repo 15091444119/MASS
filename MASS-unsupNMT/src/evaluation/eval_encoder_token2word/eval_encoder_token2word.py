@@ -9,7 +9,7 @@ import argparse
 import torch
 import numpy as np
 from src.utils import bool_flag, initialize_exp
-from src.evaluation.utils import load_mass_model, get_token_embedding
+from src.evaluation.utils import load_mass_model, get_token_embedding, encode_word 
 
 
 def parse_params():
@@ -25,16 +25,44 @@ def parse_params():
 def get_embedding_similarity_online(encoder, dico):
     while(True):
         print("Input two words")
-        word1, word2 = input().rstrip().split()
-        if word1 not in dico.id2word:
+        try:
+            word1, word2 = input().rstrip().split()
+        except:
+            continue
+        if word1 not in dico.word2id:
             print("{} not in dictionary".format(word1))
             continue
-        if word2 not in dico.id2word:
+        if word2 not in dico.word2id:
             print("{} not in dictionary".format(word2))
             continue
         emb1 = get_token_embedding(encoder, dico, word1)
         emb2 = get_token_embedding(encoder, dico, word2)
         print(torch.nn.functional.cosine_similarity(emb1, emb2, dim=-1))
+
+def context_representation_similarity_online(encoder, dico, mass_params):
+    while(True):
+
+        print("Input tokens")
+        tokens = input().rstrip().split()
+        for token in tokens:
+            assert token in dico.word2id, token
+        print("Input a word")
+        word = input().rstrip()
+        assert word in dico.word2id, word
+
+        encoded_tokens = encode_word(encoder, dico, mass_params, tokens, mass_params.lang2id["zh"])
+        encoded_word = encode_word(encoder, dico, mass_params, [word], mass_params.lang2id["zh"])
+        word_representation = encoded_word[1] # index 0 is the eos        
+        average_smiliarity = 0
+
+        for token, token_representation in zip(tokens, encoded_tokens[1:-1]):  # index 0 and -1 are eos 
+            similarity = torch.nn.functional.cosine_similarity(token_representation, word_representation, dim=-1)
+            average_smiliarity += similarity
+            print("{} {} -> {}".format(token, word, similarity))
+
+        average_smiliarity = average_smiliarity / len(tokens)
+        print("Average similarity: {}".format(average_smiliarity))
+        
 
 def main(params):
 
