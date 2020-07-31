@@ -4,6 +4,7 @@ from src.data.dictionary import Dictionary
 from src.model.transformer import TransformerModel
 from src.utils import AttrDict
 from collections import OrderedDict
+from src.utils import to_cuda
 
 logger = logging.getLogger()
 
@@ -89,9 +90,11 @@ def encode_tokens(encoder, dico, params, tokens, lang_id):
     """
 
     batch, lengths, langs = prepare_batch_input([' '.join(tokens)], lang_id, dico, params)
+    if torch.cuda.is_available():
+        batch, lengths, langs = to_cuda(batch, lengths, langs)
 
     with torch.no_grad():
-        encoded = encoder.fwd(batch, lengths=lengths, langs=langs)
+        encoded = encoder.fwd(x=batch, lengths=lengths, langs=langs, causal=False)
         encoded = encoded.transpose(0, 1).squeeze() # [sequence_length, dim]
         
     return encoded

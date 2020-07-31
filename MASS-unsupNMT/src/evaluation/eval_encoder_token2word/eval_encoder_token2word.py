@@ -9,7 +9,7 @@ import argparse
 import torch
 import numpy as np
 from src.utils import bool_flag, initialize_exp
-from src.evaluation.utils import load_mass_model, get_token_embedding, encode_word 
+from src.evaluation.utils import load_mass_model, get_token_embedding, encode_tokens
 
 
 def parse_params():
@@ -44,14 +44,22 @@ def context_representation_similarity_online(encoder, dico, mass_params):
 
         print("Input tokens")
         tokens = input().rstrip().split()
+        token_in_dict = True
         for token in tokens:
-            assert token in dico.word2id, token
+            if token not in dico.word2id:
+                print("{} not in dict".format(token))
+                token_in_dict = False
+        if not token_in_dict:
+            continue
+
         print("Input a word")
         word = input().rstrip()
-        assert word in dico.word2id, word
+        if word not in dico.word2id:
+            print("{} not in dict".format(word))
+            continue
 
-        encoded_tokens = encode_word(encoder, dico, mass_params, tokens, mass_params.lang2id["zh"])
-        encoded_word = encode_word(encoder, dico, mass_params, [word], mass_params.lang2id["zh"])
+        encoded_tokens = encode_tokens(encoder, dico, mass_params, tokens, mass_params.lang2id["zh"])
+        encoded_word = encode_tokens(encoder, dico, mass_params, [word], mass_params.lang2id["en"])
         word_representation = encoded_word[1] # index 0 is the eos        
         average_smiliarity = 0
 
@@ -70,8 +78,7 @@ def main(params):
 
     dico, model_params, encoder, _ = load_mass_model(params.reloaded)
 
-    get_embedding_similarity_online(encoder, dico)
-
+    context_representation_similarity_online(encoder, dico, model_params)
 
 if __name__ == "__main__":
     params = parse_params()
