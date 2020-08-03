@@ -231,11 +231,34 @@ class AttentionWeights():
         
         return self.attentions[key]
 
+    def single_head_attention(self, sentence_id, head_id):
+        """ return attention of one head, different layers are averaged """
+        weights = torch.zeros(self.get_attention(sentence_id, 0, 0).size())
+        for layer_id in range(self.n_layers):
+            weights += self.get_attention(sentence_id, layer_id, head_id)
+        return weights / self.n_layers
+
+    def averaged_attention(self, sentence_id):
+        """ return attention attention averaged by heads and layers """
+
+        weights = torch.zeros(self.get_attention(sentence_id, 0, 0).size())
+        for layer_id in range(self.n_layers):
+            for head_id in range(self.n_heads):
+                weights += self.get_attention(sentence_id, layer_id, head_id)
+        return weights / (self.n_layers * self.n_heads)
+
+    def single_layer_attention(self, sentence_id, layer_id):
+        """ return attention weight of one layer, different heads are averaged """
+        weights = torch.zeros(self.get_attention(sentence_id, 0, 0).size())
+        for head_id in range(self.n_heads):
+            weights += self.get_attention(sentence_id, layer_id, head_id)
+        return weights / self.n_heads
+
     def add_layer_weights(self, layer_id, weights, src_lens, tgt_lens):
         """ Add attention weights of one layer of all the sentences
         Params:
             layer_id:
-            weights: (bs, n_heads, q_len, v_len) q is tgt, v is src
+            weights: (bs, n_heads, q_len, v_len) q is tgt, v is src, torch tensor
             src_lens: lengths of each source sentence
             tgt_lens: lengths of each target sentence
         """

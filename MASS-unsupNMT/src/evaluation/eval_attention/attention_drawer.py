@@ -3,6 +3,9 @@ import seaborn
 import pandas
 import matplotlib.pyplot as plt
 import matplotlib as mpl
+import os
+import sys
+
 #from matplotlib.font_manager import _rebuild
 #_rebuild()
 
@@ -16,26 +19,46 @@ methods:
     all_average: all layer, averaged by heads
 """
 
-def draw_multi_layer_multi_head_attention(src_tokens, tgt_tokens, attention_weights, method, output_prefix):
-    if method == "all":
-        _draw_all_attention(src_tokens, tgt_tokens, attention_weights, output_prefix)
-    elif method == "all_average":
-        _draw_all_average_attention(src_tokens, tgt_tokens, attention_weights, output_prefix)
+def draw_multi_layer_multi_head_attention(src_tokens, tgt_tokens, attention_weights, method, output_dir):
 
-def _draw_all_average_attention(src_tokens, tgt_tokens, attention_weights, output_prefix):
-    output_path = output_prefix + "_all-average.jpg"
-    weights_sum = np.zeros((len(tgt_tokens), len(src_tokens)))
+    all_dir=os.path.join(output_dir, "all")
+    layer_dir=os.path.join(output_dir, "layer")
+    head_dir=os.path.join(output_dir, "head")
+    averaged_dir=os.path.join(output_dir, "averaged")
+
+    os.mkdir(all_dir)
+    os.mkdir(layer_dir)
+    os.mkdir(head_dir)
+    os.mkdir(averaged_dir)
+
+    _draw_all_attention(src_tokens, tgt_tokens, attention_weights, all_dir)
+    _draw_layer_attention(src_tokens, tgt_tokens, attention_weights, layer_dir)
+    _draw_head_attention(src_tokens, tgt_tokens, attention_weights, head_dir)
+    _draw_averaged_attention(src_tokens, tgt_tokens, attention_weights, averaged_dir)
+
+def _draw_layer_attention(src_tokens, tgt_tokens, attention_weights, output_dir):
+    """ draw attention in each layer, heads are averaged """
+    for layer_id in range(attention_weights.n_layers):
+        layer_attention = attention_weights.single_layer_attention(0, layer_id).cpu().numpy()
+        output_path = os.path.join(output_dir, "layer{}.jpg".format(layer_id))
+        draw_attention(layer_attention, src_tokens, tgt_tokens, output_path)
+
+def _draw_averaged_attention(src_tokens, tgt_tokens, attention_weights, output_dir):
+    output_path = os.path.join(output_dir, "all_average.jpg")
+    averaged_attention = attention_weights.averaged_attention(0).cpu().numpy()
+    draw_attention(averaged_attention, src_tokens, tgt_tokens, output_path)
+
+def _draw_head_attention(src_tokens, tgt_tokens, attention_weights, output_dir):
+    """ draw attention of each head, layers are averaged """
+    for head_id in range(attention_weights.n_heads):
+        head_attention = attention_weights.single_layer_attention(0, head_id).cpu().numpy()
+        output_path = os.path.join(output_dir, "head{}.jpg".format(head_id))
+        draw_attention(head_attention, src_tokens, tgt_tokens, output_path)
+
+def _draw_all_attention(src_tokens, tgt_tokens, attention_weights, output_dir):
     for layer_id in range(attention_weights.n_layers):
         for head_id in range(attention_weights.n_heads):
-            weights_sum += attention_weights.get_attention(sentence_id=0, layer_id=layer_id, head_id=head_id).cpu().numpy()
-    weights_average = weights_sum / (attention_weights.n_layers * attention_weights.n_heads)
-    draw_attention(weights_average, src_tokens, tgt_tokens, output_path)
-
-def _draw_all_attention(src_tokens, tgt_tokens, attention_weights, output_prefix):
-    # cross attention
-    for layer_id in range(attention_weights.n_layers):
-        for head_id in range(attention_weights.n_heads):
-            output_path = output_prefix + "_layer-{}_head-{}.jpg".format(layer_id, head_id)
+            output_path = os.path.join(output_dir, "layer-{}_head-{}.jpg".format(layer_id, head_id))
             draw_attention(attention_weights.get_attention(sentence_id=0, layer_id=layer_id, head_id=head_id).cpu().numpy(), src_tokens, tgt_tokens, output_path)
 
 def draw_attention(attention_matrix, source_tokens, target_tokens, output_path):
