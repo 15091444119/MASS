@@ -19,7 +19,7 @@ import logging
 logger = logging.getLogger()
 
 
-def get_parser():
+def parse_params():
     """
     Generate a parameters parser.
     """
@@ -39,13 +39,16 @@ def get_parser():
     parser.add_argument("--src_lang", type=str, default="", help="Source language")
     parser.add_argument("--tgt_lang", type=str, default="", help="Target language")
     
-    # source text and target text
-    parser.add_argument("--src_text", type=str, default="", help="Source language")
-
+    # decoding
     parser.add_argument("--beam", type=int, default=5)
     parser.add_argument("--length_penalty", type=float, default=1)
+
+    # draw attention
+    parser.add_argument("--method", choices=["all", "all_average"])
+
+    params = parser.parse_args()
     
-    return parser
+    return params
 
 def translate_get_attention(
     encoder,
@@ -72,7 +75,7 @@ def translate_get_attention(
     encoded = encoded.transpose(0, 1)
 
     # generate
-    if mass_params.beam == 1:
+    if beam == 1:
         decoded, dec_lengths = decoder.generate(encoded, x1_lens.cuda(), mass_params.lang2id[tgt_lang], max_len=int(1.5 * x1_lens.max().item() + 10))
     else:
         decoded, dec_lengths = decoder.generate_beam(
@@ -143,8 +146,8 @@ def main(params):
     # generate parser / parse parameters
     dico, model_params, encoder, decoder = load_mass_model(params.model_path) 
     
-    with open(params.src_text, 'r') as f:
-        src_sent = f.readline().rstrip()
+    print("Input sentence to translate")
+    src_sent = input() 
 
     eval_attention(
         encoder=encoder,
@@ -163,8 +166,7 @@ def main(params):
 if __name__ == '__main__':
 
     # generate parser / parse parameters
-    parser = get_parser()
-    params = parser.parse_args()
+    params = parse_params()
 
     # check parameters
     assert os.path.isfile(params.model_path)

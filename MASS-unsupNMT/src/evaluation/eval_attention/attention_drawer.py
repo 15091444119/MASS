@@ -3,6 +3,11 @@ import seaborn
 import pandas
 import matplotlib.pyplot as plt
 import matplotlib as mpl
+#from matplotlib.font_manager import _rebuild
+#_rebuild()
+
+plt.rcParams['font.sans-serif']=['simhei'] #用来正常显示中文标签
+plt.rcParams['axes.unicode_minus']=False #用来正常显示负号
 mpl.use('Agg') # plot on server
 
 """
