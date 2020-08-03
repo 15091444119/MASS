@@ -58,8 +58,8 @@ def context_representation_similarity_online(encoder, dico, mass_params):
             print("{} not in dict".format(word))
             continue
 
-        encoded_tokens = encode_tokens(encoder, dico, mass_params, tokens, mass_params.lang2id["zh"])
-        encoded_word = encode_tokens(encoder, dico, mass_params, [word], mass_params.lang2id["en"])
+        encoded_tokens = encode_tokens(encoder, dico, mass_params, tokens, "zh")
+        encoded_word = encode_tokens(encoder, dico, mass_params, [word], "en")
         word_representation = encoded_word[1] # index 0 is the eos        
         average_smiliarity = 0
 

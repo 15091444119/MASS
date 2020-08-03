@@ -5,6 +5,12 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 mpl.use('Agg') # plot on server
 
+"""
+methods:
+    all: all layer and all heads
+    all_average: all layer, averaged by heads
+"""
+
 def draw_multi_layer_multi_head_attention(src_tokens, tgt_tokens, attention_weights, method, output_prefix):
     if method == "all":
         _draw_all_attention(src_tokens, tgt_tokens, attention_weights, output_prefix)
@@ -19,7 +25,6 @@ def _draw_all_average_attention(src_tokens, tgt_tokens, attention_weights, outpu
             weights_sum += attention_weights.get_attention(sentence_id=0, layer_id=layer_id, head_id=head_id).cpu().numpy()
     weights_average = weights_sum / (attention_weights.n_layers * attention_weights.n_heads)
     draw_attention(weights_average, src_tokens, tgt_tokens, output_path)
-
 
 def _draw_all_attention(src_tokens, tgt_tokens, attention_weights, output_prefix):
     # cross attention

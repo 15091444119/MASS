@@ -38,6 +38,27 @@ def load_mass_model(model_path):
 
     return dico, model_params, encoder, decoder
 
+def prepare_batch_input(sents, lang, dico, mass_params):
+    word_ids = [torch.LongTensor([dico.index(w) for w in s.strip().split()])
+                        for s in sents]
+    return word_ids2batch(word_ids, lang, mass_params)
+
+def word_ids2batch(word_ids, lang, mass_params):
+    """
+    Params:
+        word_ids: list of tensor containing word ids(no special tokens)
+        lang: input langauge
+        mass_params: params of mass model
+    """
+    lengths = torch.LongTensor([len(s) + 2 for s in word_ids])
+    batch = torch.LongTensor(lengths.max().item(), lengths.size(0)).fill_(mass_params.pad_index)
+    batch[0] = mass_params.eos_index
+    for j, s in enumerate(word_ids):
+        if lengths[j] > 2:  # if sentence not empty
+            batch[1:lengths[j] - 1, j].copy_(s)
+        batch[lengths[j] - 1, j] = mass_params.eos_index
+    langs = batch.clone().fill_(mass_params.lang2id[lang])
+    return batch, lengths, langs
 
 def get_token_embedding(model, dico, token):
     """ Get embedding of the given toke 
@@ -54,29 +75,8 @@ def get_token_embedding(model, dico, token):
 
     return model.embeddings.weight.data[idx]
 
-def prepare_batch_input(sents, lang_id, dico, mass_params):
-    """ prepare input for mass 
-    params:
-        sents: list of strings, each string is a sentence
-        lang_id: language id of the input sentences
-        dico: dictionary object
-        mass_params: params reloaded from mass model
-    returns:
-        batch, lengths, langs
-    """
-    token_ids = [torch.LongTensor([dico.index(w) for w in s.strip().split()])
-                        for s in sents]
-    lengths = torch.LongTensor([len(s) + 2 for s in token_ids])
-    batch = torch.LongTensor(lengths.max().item(), lengths.size(0)).fill_(mass_params.pad_index)
-    batch[0] = mass_params.eos_index
-    for j, s in enumerate(token_ids):
-        if lengths[j] > 2:  # if sentence not empty
-            batch[1:lengths[j] - 1, j].copy_(s)
-        batch[lengths[j] - 1, j] = mass_params.eos_index
-    langs = batch.clone().fill_(lang_id)
-    return batch, lengths, langs
 
-def encode_tokens(encoder, dico, params, tokens, lang_id):
+def encode_tokens(encoder, dico, params, tokens, lang):
     """ get encoder output of the word
     Params:
         encoder: transformer encoder
@@ -89,7 +89,7 @@ def encode_tokens(encoder, dico, params, tokens, lang_id):
         eos representation are in the left most and right most place
     """
 
-    batch, lengths, langs = prepare_batch_input([' '.join(tokens)], lang_id, dico, params)
+    batch, lengths, langs = prepare_batch_input([' '.join(tokens)], lang, dico, params)
     if torch.cuda.is_available():
         batch, lengths, langs = to_cuda(batch, lengths, langs)
 

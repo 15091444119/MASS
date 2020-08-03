@@ -13,6 +13,7 @@ from src.model.transformer import TransformerModel, get_masks
 from src.fp16 import network_to_half
 from collections import OrderedDict
 from .attention_drawer import draw_multi_layer_multi_head_attention
+from src.evaluation.utils import load_mass_model, prepare_batch_input, word_ids2batch
 import logging
 
 logger = logging.getLogger()
@@ -46,133 +47,118 @@ def get_parser():
     
     return parser
 
-class MassAttentionEvaluator():
-    def __init__(self, encoder, decoder, params, dico):
-        self.encoder = encoder
-        self.decoder = decoder
-        self.params = params
-        self.dico = dico
+def translate_get_attention(
+    encoder,
+    decoder,
+    dico,
+    mass_params,
+    src_sent,
+    src_lang,
+    tgt_lang,
+    beam,
+    length_penalty):
+    """ translate source sentence and get attention matrix
+    Returns:
+        target tokens
+    """
+    eos_token = dico.id2word[mass_params.eos_index]
+    x1, x1_lens, x1_langs = prepare_batch_input([src_sent], src_lang, dico, mass_params)
 
-    def get_batch(self, sent, lang):
-        """
-        Params:
-            sent: list of strings
-            lang: input language
-        """
-        word_ids = [torch.LongTensor([self.dico.index(w) for w in s.strip().split()])
-                        for s in sent]
-        return self.word_ids2batch(word_ids, lang)
+    # src tokens
+    src_tokens = [eos_token] + [dico.id2word[dico.index(w)] for w in src_sent.strip().split()] + [eos_token]
 
-    def word_ids2batch(self, word_ids, lang):
-        """
-        Params:
-            word_ids: list of tensor containing word ids(no special tokens), refer to self.get_batch() for more things
-            lang: input langauge
-        """
-        lengths = torch.LongTensor([len(s) + 2 for s in word_ids])
-        batch = torch.LongTensor(lengths.max().item(), lengths.size(0)).fill_(self.params.pad_index)
-        batch[0] = self.params.eos_index
-        for j, s in enumerate(word_ids):
-            if lengths[j] > 2:  # if sentence not empty
-                batch[1:lengths[j] - 1, j].copy_(s)
-            batch[lengths[j] - 1, j] = self.params.eos_index
-        langs = batch.clone().fill_(self.params.lang2id[lang])
-        return batch, lengths, langs
+    # encode
+    encoded = encoder('fwd', x=x1.cuda(), lengths=x1_lens.cuda(), langs=x1_langs.cuda(), causal=False)
+    encoded = encoded.transpose(0, 1)
 
-    def translate_get_attention(self, src_sent, src_lang, tgt_lang):
-        """ translate source sentence
-        Returns:
-            target tokens
-        """
-        eos_token = self.dico.id2word[self.params.eos_index]
-        params = self.params
-        x1, x1_lens, x1_langs = self.get_batch([src_sent], src_lang)
+    # generate
+    if mass_params.beam == 1:
+        decoded, dec_lengths = decoder.generate(encoded, x1_lens.cuda(), mass_params.lang2id[tgt_lang], max_len=int(1.5 * x1_lens.max().item() + 10))
+    else:
+        decoded, dec_lengths = decoder.generate_beam(
+            encoded, x1_lens.cuda(), mass_params.lang2id[tgt_lang], beam_size=beam,
+            length_penalty=length_penalty,
+            early_stopping=False,
+            max_len=int(1.5 * x1_lens.max().item() + 10))
 
-        # src tokens
-        src_tokens = [eos_token] + [self.dico.id2word[self.dico.index(w)] for w in src_sent.strip().split()] + [eos_token]
+    # remove delimiters
+    sent = decoded[:, 0] # batch size is exactly one
+    delimiters = (sent == mass_params.eos_index).nonzero().view(-1)
+    assert len(delimiters) >= 1 and delimiters[0].item() == 0
+    sent = sent[1:] if len(delimiters) == 1 else sent[1:delimiters[1]]
 
-        # encode
-        encoded = self.encoder('fwd', x=x1.cuda(), lengths=x1_lens.cuda(), langs=x1_langs.cuda(), causal=False)
-        encoded = encoded.transpose(0, 1)
+    # target tokens
+    tgt_tokens = [eos_token] + [dico.id2word[idx.item()] for idx in sent] + [eos_token]
+    print(src_tokens, tgt_tokens)
+    # decoding and get attention
+    word_ids = [sent]
+    x2, x2_lens, x2_langs =word_ids2batch(word_ids, tgt_lang, mass_params)
+    attention, cross_attention = decoder.get_attention(x=x2.cuda(), lengths=x2_lens.cuda(), langs=x2_langs.cuda(), causal=True, src_enc=encoded, src_len=x1_lens.cuda())
+    
+    return src_tokens, tgt_tokens, attention, cross_attention
 
-        # generate
-        if params.beam == 1:
-            decoded, dec_lengths = self.decoder.generate(encoded, x1_lens.cuda(), params.lang2id[tgt_lang], max_len=int(1.5 * x1_lens.max().item() + 10))
-        else:
-            decoded, dec_lengths = self.decoder.generate_beam(
-                encoded, x1_lens.cuda(), params.lang2id[tgt_lang], beam_size=params.beam,
-                length_penalty=params.length_penalty,
-                early_stopping=False,
-                max_len=int(1.5 * x1_lens.max().item() + 10))
 
-        # remove delimiters
-        sent = decoded[:, 0] # batch size is exactly one
-        delimiters = (sent == params.eos_index).nonzero().view(-1)
-        assert len(delimiters) >= 1 and delimiters[0].item() == 0
-        sent = sent[1:] if len(delimiters) == 1 else sent[1:delimiters[1]]
+def eval_attention(
+    encoder,
+    decoder,
+    dico,
+    mass_params,
+    method,
+    src_sent,
+    src_lang,
+    tgt_lang,
+    output_dir,
+    beam,
+    length_penalty):
+    """ evaluate all attentions
+    Params:
+        encoder, decoder, dico, mass_params: model elements loaded from load_mass_model
+        method: method to draw attention
+        src_sent: a string of source sentence, will be tokenized using .split()
+        src_lang: source language
+        tgt_sent:
+        tgt_lang:
+        output_dir:
+        beam:
+        length_penalty
+    """
+    assert method in ["all", "heads_average", "layer_average", "all_average"]
+    
+    encoder.eval()
+    decoder.eval()
 
-        # target tokens
-        tgt_tokens = [eos_token] + [self.dico.id2word[idx.item()] for idx in sent] + [eos_token]
-        print(src_tokens, tgt_tokens)
-        # decoding and get attention
-        word_ids = [sent]
-        x2, x2_lens, x2_langs =self.word_ids2batch(word_ids, tgt_lang)
-        self_attention, cross_attention = self.decoder.get_attention(x=x2.cuda(), lengths=x2_lens.cuda(), langs=x2_langs.cuda(), causal=True, src_enc=encoded, src_len=x1_lens.cuda())
+    src_tokens, tgt_tokens, self_attention, cross_attention = translate_get_attention(encoder, decoder, dico, mass_params, src_sent, src_lang, tgt_lang, beam, length_penalty)
+
+    self_attention_output_prefix = os.path.join(output_dir, "self-attention")
+    draw_multi_layer_multi_head_attention(tgt_tokens, tgt_tokens, self_attention, method, self_attention_output_prefix)
+
+    cross_attention_output_prefix = os.path.join(output_dir, "cross-attention")
+    draw_multi_layer_multi_head_attention(src_tokens, tgt_tokens, cross_attention, method, cross_attention_output_prefix)
         
-        return src_tokens, tgt_tokens, self_attention, cross_attention
-
-    def eval_attention(self, src_sent, src_lang, tgt_lang, output_dir, method):
-        """ evaluate all attentions
-        Params:
-            method: "all": all layer and all heads "heads_average": one figure for each layer "layer_average": one figure for each head "all_average": one figure for all weights
-        """
-        assert method in ["all", "heads_average", "layer_average", "all_average"]
-        
-        src_tokens, tgt_tokens, self_attention, cross_attention = self.translate_get_attention(src_sent, src_lang, tgt_lang)
-
-        self_attention_output_prefix = os.path.join(output_dir, "self-attention")
-        draw_multi_layer_multi_head_attention(tgt_tokens, tgt_tokens, self_attention, method, self_attention_output_prefix)
-
-        cross_attention_output_prefix = os.path.join(output_dir, "cross-attention")
-        draw_multi_layer_multi_head_attention(src_tokens, tgt_tokens, cross_attention, method, cross_attention_output_prefix)
-        
-
 def main(params):
 
     # initialize the experiment
     initialize_exp(params)
 
     # generate parser / parse parameters
-    reloaded = torch.load(params.model_path)
-    model_params = AttrDict(reloaded['params'])
-    logger.info("Supported languages: %s" % ", ".join(model_params.lang2id.keys()))
-
-    # update dictionary parameters
-    for name in ['n_words', 'bos_index', 'eos_index', 'pad_index', 'unk_index', 'mask_index', 'lang2id']:
-        setattr(params, name, getattr(model_params, name))
-
-    # build dictionary / build encoder / build decoder / reload weights
-    dico = Dictionary(reloaded['dico_id2word'], reloaded['dico_word2id'], reloaded['dico_counts'])
-    encoder = TransformerModel(model_params, dico, is_encoder=True, with_output=True).cuda().eval()
-    decoder = TransformerModel(model_params, dico, is_encoder=False, with_output=True).cuda().eval()
-    def package_module(modules):
-        state_dict = OrderedDict()
-        for k, v in modules.items():
-            if k.startswith('module.'):
-                state_dict[k[7:]] = v
-            else:
-                state_dict[k] = v
-        return state_dict
-    encoder.load_state_dict(package_module(reloaded['encoder']))
-    decoder.load_state_dict(package_module(reloaded['decoder']))
-    encoder.eval()
-    decoder.eval()
+    dico, model_params, encoder, decoder = load_mass_model(params.model_path) 
     
-    evaluator = MassAttentionEvaluator(encoder, decoder, params, dico)
     with open(params.src_text, 'r') as f:
         src_sent = f.readline().rstrip()
 
-    evaluator.eval_attention(src_sent, params.src_lang, params.tgt_lang, params.dump_path, "all_average")
+    eval_attention(
+        encoder=encoder,
+        decoder=decoder,
+        dico=dico,
+        mass_params=model_params,
+        method=params.method,
+        src_sent=src_sent,
+        src_lang=params.src_lang,
+        tgt_lang=params.tgt_lang,
+        output_dir=params.dump_path,
+        beam=params.beam,
+        length_penalty=params.length_penalty
+    )
 
 if __name__ == '__main__':
 
