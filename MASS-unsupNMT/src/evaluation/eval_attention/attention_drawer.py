@@ -19,7 +19,7 @@ methods:
     all_average: all layer, averaged by heads
 """
 
-def draw_multi_layer_multi_head_attention(src_tokens, tgt_tokens, attention_weights, method, output_dir):
+def draw_multi_layer_multi_head_attention(src_tokens, tgt_tokens, attention_weights, output_dir):
 
     all_dir=os.path.join(output_dir, "all")
     layer_dir=os.path.join(output_dir, "layer")
@@ -51,7 +51,7 @@ def _draw_averaged_attention(src_tokens, tgt_tokens, attention_weights, output_d
 def _draw_head_attention(src_tokens, tgt_tokens, attention_weights, output_dir):
     """ draw attention of each head, layers are averaged """
     for head_id in range(attention_weights.n_heads):
-        head_attention = attention_weights.single_layer_attention(0, head_id).cpu().numpy()
+        head_attention = attention_weights.single_head_attention(0, head_id).cpu().numpy()
         output_path = os.path.join(output_dir, "head{}.jpg".format(head_id))
         draw_attention(head_attention, src_tokens, tgt_tokens, output_path)
 

@@ -233,7 +233,7 @@ class AttentionWeights():
 
     def single_head_attention(self, sentence_id, head_id):
         """ return attention of one head, different layers are averaged """
-        weights = torch.zeros(self.get_attention(sentence_id, 0, 0).size())
+        weights = torch.zeros_like(self.get_attention(sentence_id, 0, 0))
         for layer_id in range(self.n_layers):
             weights += self.get_attention(sentence_id, layer_id, head_id)
         return weights / self.n_layers
@@ -241,7 +241,7 @@ class AttentionWeights():
     def averaged_attention(self, sentence_id):
         """ return attention attention averaged by heads and layers """
 
-        weights = torch.zeros(self.get_attention(sentence_id, 0, 0).size())
+        weights = torch.zeros_like(self.get_attention(sentence_id, 0, 0))
         for layer_id in range(self.n_layers):
             for head_id in range(self.n_heads):
                 weights += self.get_attention(sentence_id, layer_id, head_id)
@@ -249,7 +249,7 @@ class AttentionWeights():
 
     def single_layer_attention(self, sentence_id, layer_id):
         """ return attention weight of one layer, different heads are averaged """
-        weights = torch.zeros(self.get_attention(sentence_id, 0, 0).size())
+        weights = torch.zeros_like(self.get_attention(sentence_id, 0, 0))
         for head_id in range(self.n_heads):
             weights += self.get_attention(sentence_id, layer_id, head_id)
         return weights / self.n_heads

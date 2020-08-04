@@ -44,7 +44,6 @@ def parse_params():
     parser.add_argument("--length_penalty", type=float, default=1)
 
     # draw attention
-    parser.add_argument("--method", choices=["all", "all_average"])
 
     params = parser.parse_args()
     
@@ -106,7 +105,6 @@ def eval_attention(
     decoder,
     dico,
     mass_params,
-    method,
     src_sent,
     src_lang,
     tgt_lang,
@@ -116,7 +114,6 @@ def eval_attention(
     """ evaluate all attentions
     Params:
         encoder, decoder, dico, mass_params: model elements loaded from load_mass_model
-        method: method to draw attention
         src_sent: a string of source sentence, will be tokenized using .split()
         src_lang: source language
         tgt_sent:
@@ -125,18 +122,19 @@ def eval_attention(
         beam:
         length_penalty
     """
-    assert method in ["all", "heads_average", "layer_average", "all_average"]
     
     encoder.eval()
     decoder.eval()
 
     src_tokens, tgt_tokens, self_attention, cross_attention = translate_get_attention(encoder, decoder, dico, mass_params, src_sent, src_lang, tgt_lang, beam, length_penalty)
 
-    self_attention_output_prefix = os.path.join(output_dir, "self-attention")
-    draw_multi_layer_multi_head_attention(tgt_tokens, tgt_tokens, self_attention, method, self_attention_output_prefix)
+    self_attention_output_dir = os.path.join(output_dir, "self-attention")
+    os.mkdir(self_attention_output_dir) 
+    draw_multi_layer_multi_head_attention(tgt_tokens, tgt_tokens, self_attention, self_attention_output_dir)
 
-    cross_attention_output_prefix = os.path.join(output_dir, "cross-attention")
-    draw_multi_layer_multi_head_attention(src_tokens, tgt_tokens, cross_attention, method, cross_attention_output_prefix)
+    cross_attention_output_dir = os.path.join(output_dir, "cross-attention")
+    os.mkdir(cross_attention_output_dir) 
+    draw_multi_layer_multi_head_attention(src_tokens, tgt_tokens, cross_attention, cross_attention_output_dir)
         
 def main(params):
 
@@ -154,7 +152,6 @@ def main(params):
         decoder=decoder,
         dico=dico,
         mass_params=model_params,
-        method=params.method,
         src_sent=src_sent,
         src_lang=params.src_lang,
         tgt_lang=params.tgt_lang,
