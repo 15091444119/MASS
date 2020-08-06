@@ -81,7 +81,7 @@ def calculate_whole_word_seperated_word_translation_acc(alignments, srcs, bped_s
         tgt = tgt.rstrip().split(' ')
         hyp = hyp.rstrip().split(' ')
         assert len(src) == len(bped_src)
-        assert len(hyp) == len(bped_hyp)
+        assert len(hyp) == len(bped_hyp), "{} {}\n{} {}".format(len(hyp), hyp, len(bped_hyp), bped_hyp)
         print("\nbped Src {}\n Tgt {}\n bped Hyp{}".format(bped_src, tgt, bped_hyp))
         for word_align in one_one_alignment.rstrip().split(' '):
             src_id, tgt_id = word_align.split('-')
@@ -178,6 +178,8 @@ def group_tokens(bped_sentences):
             if not token.endswith("@@"):
                 cur_sentence.append(cur_word)
                 cur_word = []
+        if len(cur_word) != 0: # the end of sentence is a bpe token, like "你@@ 好@@"
+            cur_sentence.append(cur_word)
         sentences.append(cur_sentence)
     return sentences
 
