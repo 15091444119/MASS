@@ -764,6 +764,7 @@ class EncDecTrainer(Trainer):
 
     def shuffle_segments(self, segs, unmasked_tokens):
         """
+        choose which spans to mask
         We control 20% mask segment is at the start of sentences
                    20% mask segment is at the end   of sentences
                    60% mask segment is at random positions,
@@ -805,18 +806,18 @@ class EncDecTrainer(Trainer):
             span_len = 1
         max_len = 0
         positions, inputs, targets, outputs, = [], [], [], []
-        mask_len = round(len(x[:, 0]) * self.params.word_mass)
+        mask_len = round(len(x[:, 0]) * self.params.word_mass) #  this length is the max length in one batch
         len2 = [mask_len for i in range(l.size(0))]
         
         unmasked_tokens = [0 for i in range(l[0] - mask_len - 1)]
-        segs = self.get_segments(mask_len, span_len)
+        segs = self.get_segments(mask_len, span_len) # split mask len into multiple spans (the last one mayer smaller)
         
         for i in range(l.size(0)):
             words = np.array(x[:l[i], i].tolist())
-            shuf_segs = self.shuffle_segments(segs, unmasked_tokens)
-            pos_i = self.unfold_segments(shuf_segs)
+            shuf_segs = self.shuffle_segments(segs, unmasked_tokens) # get masked segments, like[2, 0, 0, 2] means the first two positions will be masked
+            pos_i = self.unfold_segments(shuf_segs) # get the positions to mask
             output_i = words[pos_i].copy()
-            target_i = words[pos_i - 1].copy()
+            target_i = words[pos_i - 1].copy()  # if we mask 3, 4, 2 will be the first input for decoder so we can't mask multiple spans??
             words[pos_i] = self.mask_word(words[pos_i])
 
             inputs.append(words)
