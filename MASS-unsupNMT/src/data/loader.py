@@ -216,6 +216,9 @@ def load_para_data(params, data):
                 b = n_sent * params.local_rank + n_sent
                 dataset.select_data(a, b)
 
+            if splt == 'train' and params.n_para_train != -1:
+                dataset.select_data(0, params.n_para_train)
+
             data['para'][(src, tgt)][splt] = dataset
             logger.info("")
 

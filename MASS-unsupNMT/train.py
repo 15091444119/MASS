@@ -116,6 +116,7 @@ def get_parser():
                         help="Minimum vocabulary count")
     parser.add_argument("--lg_sampling_factor", type=float, default=-1,
                         help="Language sampling factor")
+    parser.add_argument("--n_para_train", type=int, default=-1, help="Number of data used for parallel training")
 
     # batch parameters
     parser.add_argument("--bptt", type=int, default=256,
@@ -216,6 +217,7 @@ def get_parser():
                         help="Multi-GPU - Local rank")
     parser.add_argument("--master_port", type=int, default=-1,
                         help="Master port (for multi-node SLURM jobs)")
+
 
     return parser
 
