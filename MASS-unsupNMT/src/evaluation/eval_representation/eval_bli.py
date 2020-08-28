@@ -27,7 +27,7 @@ def is_alphabet(uchar):
     else:
         return False
 
-def eval_xlm_bli(path, model_name, dict_path, preprocess, metric, source_vocab, target_vocab):
+def eval_xlm_bli(path, model_name, dict_path, preprocess, metric, source_vocab=None, target_vocab=None):
     """
     Params:
         path: reload path
@@ -39,7 +39,10 @@ def eval_xlm_bli(path, model_name, dict_path, preprocess, metric, source_vocab, 
         target_voacb: set of target words
     """
     embeddings, dico = load_xlm_embedding(path, model_name)
-    src_embeddings, tgt_embeddings, src_id2word, src_word2id, tgt_id2word, tgt_word2id = split_language(embeddings, dico, source_vocab, target_vocab)
+    if source_vocab is None:
+        src_embeddings, tgt_embeddings, src_id2word, src_word2id, tgt_id2word, tgt_word2id = unicode_split_chinese_english(embeddings, dico, True) 
+    else:
+        src_embeddings, tgt_embeddings, src_id2word, src_word2id, tgt_id2word, tgt_word2id  = split_language(embeddings, dico, source_vocab, target_vocab)
     scores = eval_bli(
         src_embeddings=src_embeddings,
         tgt_embeddings=tgt_embeddings,
@@ -54,7 +57,7 @@ def eval_xlm_bli(path, model_name, dict_path, preprocess, metric, source_vocab, 
     return scores
 
 def translate_xlm_chinese(path, model_name, words, preprocess, metric):
-    """ use unicode split and translate chinese words , src are chinese ,tgt are english"""
+    """ use unicode split and translate chinese words , src are chinese ,tgt are english, bpe tokens are also translated"""
     embeddings, dico = load_xlm_embedding(path, model_name)
     src_embeddings, tgt_embeddings, src_id2word, src_word2id, tgt_id2word, tgt_word2id = unicode_split_chinese_english(embeddings, dico, drop_bpe=False)
     translate_words(
@@ -218,12 +221,23 @@ if __name__ == "__main__":
         parser.add_argument("--src_embs")
         parser.add_argument("--tgt_embs")
         parser.add_argument("--emb_size", type=int, default=-1)
+    parser.add_argument("--using_vocab", type=bool_flag, default=False)
+    if parser.parse_known_args()[0].using_vocab is True:
+        parser.add_argument("--src_vocab")
+        parser.add_argument("--tgt_vocab")
 
     args = parser.parse_args()
 
-    if args.method == "xlm":
-        translate_xlm_chinese(args.reload, args.model_name, ["你"], args.preprocess, args.metric)
+    # maybe load vocab
+    if args.using_vocab:
+        src_vocab = read_vocab(args.src_vocab)
+        tgt_vocab = read_vocab(args.tgt_vocab)
+    else:
+        src_vocab, tgt_vocab = None, None
 
+    if args.method == "xlm":
+        scores = eval_xlm_bli(args.reload, args.model_name, args.dict, args.preporcess, args.metric, src_vocab, tgt_vocab)
+        print("Scores: {}".format(scores))
     elif args.method == "map":
         src_embs, src_id2word, src_word2id = load_word2vec_embeddings(args.src_embs, emb_size=args.emb_size, vocab=src_vocab)
         tgt_embs, tgt_id2word, tgt_word2id = load_word2vec_embeddings(args.tgt_embs, emb_size=args.emb_size, vocab=tgt_vocab)
