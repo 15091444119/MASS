@@ -42,7 +42,7 @@ def eval_xlm_bli(path, model_name, dict_path, preprocess, metric, source_vocab=N
     if source_vocab is None:
         src_embeddings, tgt_embeddings, src_id2word, src_word2id, tgt_id2word, tgt_word2id = unicode_split_chinese_english(embeddings, dico, True) 
     else:
-        src_embeddings, tgt_embeddings, src_id2word, src_word2id, tgt_id2word, tgt_word2id  = split_language(embeddings, dico, source_vocab, target_vocab)
+        src_embeddings, tgt_embeddings, src_id2word, src_word2id, tgt_id2word, tgt_word2id  = split_language_using_vocab(embeddings, dico, source_vocab, target_vocab)
     scores = eval_bli(
         src_embeddings=src_embeddings,
         tgt_embeddings=tgt_embeddings,
