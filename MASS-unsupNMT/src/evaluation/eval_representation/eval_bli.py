@@ -236,7 +236,7 @@ if __name__ == "__main__":
         src_vocab, tgt_vocab = None, None
 
     if args.method == "xlm":
-        scores = eval_xlm_bli(args.reload, args.model_name, args.dict, args.preporcess, args.metric, src_vocab, tgt_vocab)
+        scores = eval_xlm_bli(args.reload, args.model_name, args.dict, args.preprocess, args.metric, src_vocab, tgt_vocab)
         print("Scores: {}".format(scores))
     elif args.method == "map":
         src_embs, src_id2word, src_word2id = load_word2vec_embeddings(args.src_embs, emb_size=args.emb_size, vocab=src_vocab)
