@@ -98,3 +98,25 @@ def encode_tokens(encoder, dico, params, tokens, lang):
         encoded = encoded.transpose(0, 1).squeeze() # [sequence_length, dim]
         
     return encoded
+
+
+def encode_sentences(encoder, dico, mass_params, sentences, lang):
+    """
+    Encoder a batch of sentences
+    Params:
+        encoder:
+        dico:
+        params:
+        sentences(list): list of strings, each string is a sentence(will be tokenized into tokens by .strip().split(), see prepare_batch_input()
+        lang(string): language of the sentences
+    Returns:
+        encoded(batch_size, max_length, dim):
+    """
+    batch, lengths, langs = prepare_batch_input(sentences, lang, dico, mass_params)
+    if torch.cuda.is_available():
+        batch, lengths, langs = to_cuda(batch, lengths, langs)
+
+    encoded = encoder.fwd(x=batch, lengths=lengths, langs=langs, causal=False)
+    encoded = encoded.transpose(0, 1)  # [batch_size, sequence_length, dim]
+
+    return encoded

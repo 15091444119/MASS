@@ -20,6 +20,7 @@ def topk_mean(src_embs, tgt_embs, batch_size, csls_topk):
         knn_cos_mean[i:j] = simi.mean(dim=-1)
     return knn_cos_mean
 
+
 def calculate_word_translation_accuracy(translation, truth_dict, topk):
     """ get topk accuarcy
     params:
@@ -80,6 +81,7 @@ def retrieval(src_mapped, tgt_mapped, src_ids, csls_topk, batch_size, metric, nu
                 translation[src_ids[i + k]] = [indice.item() for indice in indices[k]]
     return translation
 
+
 def preprocess_embedding(emb, preprocess_method):
     for char in preprocess_method:
         if char == "u":  # length normalize
@@ -89,6 +91,7 @@ def preprocess_embedding(emb, preprocess_method):
         else:
             raise ValueError
     return emb
+
 
 def read_dict(dict_path, src_word2id, tgt_word2id):
     dic = {}
@@ -110,86 +113,80 @@ def read_dict(dict_path, src_word2id, tgt_word2id):
     print("Dropped {} pairs, resulting in dictionary of {} source words".format(dropped_pair_count, len(dic)), file=sys.stderr)
     return dic
 
-def eval_bli(
-    src_embeddings,
-    tgt_embeddings,
-    src_id2word,
-    src_word2id,
-    tgt_id2word,
-    tgt_word2id,
-    dict_path,
-    preprocess_method="",
-    batch_size=500,
-    metric="nn",
-    csls_topk=10):
-    """ evaluate bilingual lexicion induction """
 
-    if torch.cuda.is_available():
-        src_embeddings = src_embeddings.cuda()
-        tgt_embeddings = tgt_embeddings.cuda()
+class BLI(object):
+    """ object for bilingual dictionary induction """
+    def __init__(self, dict_path, preprocess_method, batch_size=500, metric="nn", csls_topk=10):
+        self._preprocess_method = preprocess_method
+        self._batch_size = batch_size
+        self._metric = metric
+        self._csls_tok = csls_topk
+        self._dict_path = dict_path
 
-    if preprocess_method != "":
-        src_embeddings = preprocess_embedding(src_embeddings, preprocess_method)
-        tgt_embeddings = preprocess_embedding(tgt_embeddings, preprocess_method)
-    
-    dic = read_dict(dict_path, src_word2id, tgt_word2id)
-    
-    print(
-        "Src embedding size:{} Tgt embedding size:{} Src words in dictionary:{} Tgt words in dictionary:{}".format(
-            src_embeddings.size(0),
-            tgt_embeddings.size(0),
-            len(list(dic.keys())),
-            sum([len(value) for key, value in dic.items()])
-        ),
-        file=sys.stderr
-    )
+    def eval(self, src_embeddings, tgt_embeddings, src_id2word, src_word2id, tgt_id2word, tgt_word2id):
+        if torch.cuda.is_available():
+            src_embeddings = src_embeddings.cuda()
+            tgt_embeddings = tgt_embeddings.cuda()
 
-    translation = retrieval(src_embeddings, tgt_embeddings, list(dic.keys()), csls_topk=csls_topk, batch_size=batch_size, metric=metric)
+        if self._preprocess_method != "":
+            src_embeddings = preprocess_embedding(src_embeddings, preprocess_method)
+            tgt_embeddings = preprocess_embedding(tgt_embeddings, preprocess_method)
 
+        dic = read_dict(self._dict_path, src_word2id, tgt_word2id)
 
-    top1_acc = calculate_word_translation_accuracy(translation, dic, topk=1)
-    top5_acc = calculate_word_translation_accuracy(translation, dic, topk=5) 
-    top10_acc = calculate_word_translation_accuracy(translation, dic, topk=10) 
-    
-    scores = {"top1_acc":top1_acc, "top5_acc":top5_acc, "top10_acc":top10_acc}
+        print(
+            "Src embedding size:{} Tgt embedding size:{} Src words in dictionary:{} Tgt words in dictionary:{}".format(
+                src_embeddings.size(0),
+                tgt_embeddings.size(0),
+                len(list(dic.keys())),
+                sum([len(value) for key, value in dic.items()])
+            ),
+            file=sys.stderr
+        )
 
-    return scores
+        translation = retrieval(src_embeddings, tgt_embeddings, list(dic.keys()), csls_topk=self._csls_topk,
+                                batch_size=self._batch_size, metric=self._metric)
 
-def translate_words(
-    src_embeddings,
-    tgt_embeddings,
-    src_id2word,
-    src_word2id,
-    tgt_id2word,
-    tgt_word2id,
-    src_words_to_translate,
-    preprocess_method="",
-    batch_size=500,
-    metric="nn",
-    csls_topk=10,
-    print_translation=True):
-    """ translate words in src_words to translate, words not in src_word2id won't be translated"""
+        top1_acc = calculate_word_translation_accuracy(translation, dic, topk=1)
+        top5_acc = calculate_word_translation_accuracy(translation, dic, topk=5)
+        top10_acc = calculate_word_translation_accuracy(translation, dic, topk=10)
 
-    if torch.cuda.is_available():
-        src_embeddings = src_embeddings.cuda()
-        tgt_embeddings = tgt_embeddings.cuda()
+        scores = {"top1_acc": top1_acc, "top5_acc": top5_acc, "top10_acc": top10_acc}
 
-    if preprocess_method != "":
-        src_embeddings = preprocess_embedding(src_embeddings, preprocess_method)
-        tgt_embeddings = preprocess_embedding(tgt_embeddings, preprocess_method)
-    
-    src_ids_to_translate = []
-    for src_word in src_words_to_translate:
-        if src_word in src_word2id:
-            src_ids_to_translate.append(src_word2id[src_word])
-        else:
-            print("Unseen source word: {}".format(src_word), file=sys.stderr)
+        return scores
 
-    translation = retrieval(src_embeddings, tgt_embeddings, src_ids_to_translate, csls_topk=csls_topk, batch_size=batch_size, metric=metric)
+    def translate_words(
+        self,
+        src_embeddings,
+        tgt_embeddings,
+        src_id2word,
+        src_word2id,
+        tgt_id2word,
+        tgt_word2id,
+        src_words_to_translate,
+        print_translation=True):
+        """ translate words in src_words to translate, words not in src_word2id won't be translated"""
 
-    if print_translation:
-        for src_id, tgt_list in translation.items():
-            for idx, tgt_id in enumerate(tgt_list):
-                print("{}-> {} {}".format(src_id2word[src_id], idx + 1, tgt_id2word[tgt_id]))
-    
-    return translation
+        if torch.cuda.is_available():
+            src_embeddings = src_embeddings.cuda()
+            tgt_embeddings = tgt_embeddings.cuda()
+
+        if self._preprocess_method != "":
+            src_embeddings = preprocess_embedding(src_embeddings, self._preprocess_method)
+            tgt_embeddings = preprocess_embedding(tgt_embeddings, self._preprocess_method)
+
+        src_ids_to_translate = []
+        for src_word in src_words_to_translate:
+            if src_word in src_word2id:
+                src_ids_to_translate.append(src_word2id[src_word])
+            else:
+                print("Unseen source word: {}".format(src_word), file=sys.stderr)
+
+        translation = retrieval(src_embeddings, tgt_embeddings, src_ids_to_translate, csls_topk=self._csls_topk, batch_size=self._batch_size, metric=self._metric)
+
+        if print_translation:
+            for src_id, tgt_list in translation.items():
+                for idx, tgt_id in enumerate(tgt_list):
+                    print("{}-> {} {}".format(src_id2word[src_id], idx + 1, tgt_id2word[tgt_id]))
+
+        return translation

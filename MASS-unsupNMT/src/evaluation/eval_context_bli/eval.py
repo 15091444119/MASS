@@ -1,0 +1,91 @@
+""" evaluate context bli of a give mass model """
+import argparse
+import torch
+from ..bli import BLI
+from ..utils import  load_mass_model, encode_sentences
+
+def generate_context_word_representation(words, lang, encoder, dico, mass_params, batch_size=128):
+    """
+    Generate context word representations
+    Params:
+        words(list): list of strings, bped word, like ["你@@ 好", "我@@ 好"]
+        lang: language
+        encoder:
+        dico:
+        mass_params:
+        batch_size:
+
+    """
+    word2id = {}
+    id2word = {}
+    representations = []
+    for start_idx in range(0, len(words), batch_size):
+        end_idx = min(len(words), start_idx + batch_size)
+
+        # add to word2id
+        for idx in range(start_idx, end_idx):
+            word = "".join(words[idx]).replace("@@", "")
+            assert word not in word2id
+            word2id[word] = len(word2id)
+
+        # calculate representation
+        batch_representations = encode_sentences(encoder, dico, mass_params, words[start_idx:end_idx], lang)
+        representations.append(batch_representations)
+
+    representations = torch.cat(representations, dim=0)
+    id2word = {id:word for word, id in word2id.items()}
+
+    return representations, id2word, word2id
+
+def eval_mass_encoder_context_bli(src_bped_words, src_lang, tgt_bped_words, tgt_lang, encoder, dico, mass_params, bli:BLI):
+    """
+        1. Generate context representation for each source word and each target word
+        2. evaluate bli on it
+    Params
+        src_bped_words: words to be evaluated (bped using the same code as the mass model)
+        tgt_bped_words:
+        src_lang: language of source word
+        tgt_lang: language of target word
+        encoder: mass encoder
+        dico: mass dico
+        params: mass params
+    Returns:
+        scores(dict): top1, top5, top10 bli accuracy
+    """
+    src_embeddings, src_id2word, src_word2id = generate_context_word_representation(src_bped_words, src_lang, encoder, dico, mass_params)
+    tgt_embeddings, tgt_id2word, tgt_word2id = generate_context_word_representation(tgt_bped_words, tgt_lang, encoder, dico, mass_params)
+    scores = bli.eval(src_embeddings, tgt_embeddings, src_id2word, src_word2id, tgt_id2word, tgt_word2id)
+    return scores
+
+def read_bped_words(path):
+    words = []
+    with open(path, 'r') as f:
+        for line in f:
+            words.append(line.rstrip())
+    return words
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model_path", type=str)
+    parser.add_argument("--src_bped_words_path", help="path to load source words (bped)")
+    parser.add_argument("--tgt_bped_words_path", help="path to load target words (bped)")
+    parser.add_argument("--src_lang", type=str)
+    parser.add_argument("--tgt_lang", type=str)
+
+    # bli params
+    parser.add_argument("--preprocess_method", type=str, default="ucu")
+    parser.add_argument("--batch_size", type=int, default=100)
+    parser.add_argument("--csls_topk", type=int, default=100)
+    parser.add_argument("--metric", type=str, default="nn")
+    parser.add_argument("--dict_path", type=str)
+
+    args = parser.parse_args()
+
+    bli = BLI(args.dict_path, args.preprocess_method, args.batch_size, args.metric, args.csls_topk)
+
+    dico, mass_params, encoder, _ = load_mass_model(args.model_path)
+
+    src_bped_words = read_bped_words(args.src_bped_words)
+    tgt_bped_words = read_bped_words(args.tgt_bped_words)
+
+    print(eval_mass_encoder_context_bli(src_bped_words, tgt_bped_words, encoder, dico, mass_params, bli))
