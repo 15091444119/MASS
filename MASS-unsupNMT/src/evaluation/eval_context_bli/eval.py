@@ -17,7 +17,6 @@ def generate_context_word_representation(words, lang, encoder, dico, mass_params
 
     """
     word2id = {}
-    id2word = {}
     representations = []
     for start_idx in range(0, len(words), batch_size):
         end_idx = min(len(words), start_idx + batch_size)
@@ -33,9 +32,10 @@ def generate_context_word_representation(words, lang, encoder, dico, mass_params
         representations.append(batch_representations)
 
     representations = torch.cat(representations, dim=0)
-    id2word = {id:word for word, id in word2id.items()}
+    id2word = {idx: word for word, idx in word2id.items()}
 
     return representations, id2word, word2id
+
 
 def eval_mass_encoder_context_bli(src_bped_words, src_lang, tgt_bped_words, tgt_lang, encoder, dico, mass_params, bli:BLI):
     """
@@ -57,12 +57,14 @@ def eval_mass_encoder_context_bli(src_bped_words, src_lang, tgt_bped_words, tgt_
     scores = bli.eval(src_embeddings, tgt_embeddings, src_id2word, src_word2id, tgt_id2word, tgt_word2id)
     return scores
 
+
 def read_bped_words(path):
     words = []
     with open(path, 'r') as f:
         for line in f:
             words.append(line.rstrip())
     return words
+
 
 def main():
     parser = argparse.ArgumentParser()
