@@ -1,5 +1,6 @@
 import torch
 import logging
+import torch.nn as nn
 from src.data.dictionary import Dictionary
 from src.model.transformer import TransformerModel
 from src.utils import AttrDict
@@ -119,4 +120,50 @@ def encode_sentences(encoder, dico, mass_params, sentences, lang):
     encoded = encoder.fwd(x=batch, lengths=lengths, langs=langs, causal=False)
     encoded = encoded.transpose(0, 1)  # [batch_size, sequence_length, dim]
 
-    return encoded
+    return encoded, lengths
+
+
+def get_mask(lengths, all_words, expand=None, ignore_first=False, batch_first=False, cuda=True):
+    """
+    Create a mask of shape (slen, bs) or (bs, slen).
+    """
+    bs, slen = lengths.size(0), lengths.max()
+    mask = torch.BoolTensor(slen, bs).zero_()
+    for i in range(bs):
+        if all_words:
+            mask[:lengths[i], i] = 1
+        else:
+            mask[lengths[i] - 1, i] = 1
+    if expand is not None:
+        assert type(expand) is int
+        mask = mask.unsqueeze(2).expand(slen, bs, expand)
+    if ignore_first:
+        mask[0].fill_(0)
+    if batch_first:
+        mask = mask.transpose(0, 1)
+    if cuda:
+        mask = mask.cuda()
+    return mask
+
+
+class Context2Sentence(nn.Module):
+    def __init__(self, context_extractor):
+        super().__init__()
+        self._method = context_extractor
+
+    def forward(self, context, lengths):
+        batch_size, seq_len, hidden_dim = context.size()
+        if self._method == "last_time":
+            mask = get_mask(lengths, False, expand=hidden_dim, batch_first=True, cuda=context.is_cuda)
+            h_t = context.masked_select(mask).view(batch_size, hidden_dim)
+            return h_t
+        elif self._method == "average":
+            mask = get_mask(lengths, True, expand=hidden_dim, batch_first=True, cuda=context.is_cuda)
+            context.masked_fill(~mask, 0)
+            context_sum = context.sum(dim=1)
+            context_average = context_sum / lengths.unsqueeze(-1)
+            return context_average
+        elif self._method == "max_pool":
+            mask = get_mask(lengths, True, expand=hidden_dim, batch_first=True, cuda=context.is_cuda)
+            context_max_poll, _ = torch.max(context.masked_fill(~mask, -1e9), dim=1)
+            return context_max_poll

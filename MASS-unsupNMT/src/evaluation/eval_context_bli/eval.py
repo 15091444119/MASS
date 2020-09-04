@@ -3,9 +3,10 @@ import argparse
 import torch
 import pdb
 from ..bli import BLI
-from ..utils import  load_mass_model, encode_sentences
+from ..utils import  load_mass_model, encode_sentences, Context2Sentence
 
-def generate_context_word_representation(words, lang, encoder, dico, mass_params, batch_size=128):
+
+def generate_context_word_representation(words, lang, encoder, dico, mass_params, context2sentence, batch_size=128):
     """
     Generate context word representations
     Params:
@@ -29,8 +30,9 @@ def generate_context_word_representation(words, lang, encoder, dico, mass_params
             word2id[word] = len(word2id)
 
         # calculate representation
-        batch_representations = encode_sentences(encoder, dico, mass_params, words[start_idx:end_idx], lang)
-        representations.append(batch_representations)
+        batch_context_word_representations, lengths = encode_sentences(encoder, dico, mass_params, words[start_idx:end_idx], lang)
+        batch_sentence_representation = context2sentence(batch_context_word_representations)
+        representations.append(batch_sentence_representation)
 
     representations = torch.cat(representations, dim=0)
     id2word = {idx: word for word, idx in word2id.items()}
@@ -81,11 +83,13 @@ def main():
     parser.add_argument("--csls_topk", type=int, default=100)
     parser.add_argument("--metric", type=str, default="nn")
     parser.add_argument("--dict_path", type=str)
+    parser.add_argument("--context_extractor", type=str, default="average", choices=["last_time", "average", "max_pool"])
 
     args = parser.parse_args()
     
 
     bli = BLI(args.dict_path, args.preprocess_method, args.batch_size, args.metric, args.csls_topk)
+    context2sentence = Context2Sentence(args.context_extractor)
 
     src_bped_words = read_bped_words(args.src_bped_words_path)
     tgt_bped_words = read_bped_words(args.tgt_bped_words_path)
