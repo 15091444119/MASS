@@ -1,6 +1,7 @@
 """ evaluate context bli of a give mass model """
 import argparse
 import torch
+import pdb
 from ..bli import BLI
 from ..utils import  load_mass_model, encode_sentences
 
@@ -82,12 +83,17 @@ def main():
     parser.add_argument("--dict_path", type=str)
 
     args = parser.parse_args()
+    
 
     bli = BLI(args.dict_path, args.preprocess_method, args.batch_size, args.metric, args.csls_topk)
 
+    src_bped_words = read_bped_words(args.src_bped_words_path)
+    tgt_bped_words = read_bped_words(args.tgt_bped_words_path)
+
     dico, mass_params, encoder, _ = load_mass_model(args.model_path)
 
-    src_bped_words = read_bped_words(args.src_bped_words)
-    tgt_bped_words = read_bped_words(args.tgt_bped_words)
 
-    print(eval_mass_encoder_context_bli(src_bped_words, tgt_bped_words, encoder, dico, mass_params, bli))
+    print(eval_mass_encoder_context_bli(src_bped_words, args.src_lang, tgt_bped_words, args.tgt_lang, encoder, dico, mass_params, bli))
+
+if __name__ == "__main__":
+    main()

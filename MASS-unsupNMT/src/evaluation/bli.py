@@ -75,6 +75,7 @@ def retrieval(src_mapped, tgt_mapped, src_ids, csls_topk, batch_size, metric, nu
         translation = {}
         for i in range(0, len(src_ids), batch_size):
             j = min(len(src_ids), i + batch_size)
+            pdb.set_trace()
             simi = torch.matmul(src_mapped[src_ids[i:j]], tgt_mapped.transpose(0, 1))
             _, indices = simi.topk(k=num_neighbor, dim=-1)
             for k in range(j - i):
@@ -120,7 +121,7 @@ class BLI(object):
         self._preprocess_method = preprocess_method
         self._batch_size = batch_size
         self._metric = metric
-        self._csls_tok = csls_topk
+        self._csls_topk = csls_topk
         self._dict_path = dict_path
 
     def eval(self, src_embeddings, tgt_embeddings, src_id2word, src_word2id, tgt_id2word, tgt_word2id):
@@ -129,8 +130,8 @@ class BLI(object):
             tgt_embeddings = tgt_embeddings.cuda()
 
         if self._preprocess_method != "":
-            src_embeddings = preprocess_embedding(src_embeddings, preprocess_method)
-            tgt_embeddings = preprocess_embedding(tgt_embeddings, preprocess_method)
+            src_embeddings = preprocess_embedding(src_embeddings, self._preprocess_method)
+            tgt_embeddings = preprocess_embedding(tgt_embeddings, self._preprocess_method)
 
         dic = read_dict(self._dict_path, src_word2id, tgt_word2id)
 
