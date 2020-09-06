@@ -11,7 +11,7 @@ def generate_context_word_representation(words, lang, sentence_embedder:SenteceE
     """
     Generate context word representations
     Params:
-        words(list): list of strings, bped word, like ["你@@ 好", "我@@ 好"]
+        words(list): list of string, bped word, like ["你@@ 好", "我@@ 好"]
         lang: language
         sentence_embedder: a SentenceEmbedder object to generate single representation for each word
         batch_size:
@@ -25,7 +25,7 @@ def generate_context_word_representation(words, lang, sentence_embedder:SenteceE
 
         # add to word2id
         for idx in range(start_idx, end_idx):
-            word = "".join(words[idx]).replace("@@", "")
+            word = words[idx].replace("@@", "").replace(" ", "")
             assert word not in word2id
             word2id[word] = len(word2id)
 
@@ -58,8 +58,8 @@ def eval_mass_encoder_context_bli(src_bped_words, src_lang, tgt_bped_words, tgt_
     Returns:
         scores(dict): top1, top5, top10 bli accuracy
     """
-    src_word2length = {"".join(tokens).replace("@@", ""): len(tokens) for tokens in src_bped_words}
-    tgt_word2length = {"".join(tokens).replace("@@", ""): len(tokens) for tokens in tgt_bped_words}
+    src_word2length = {tokens.replace("@@", "").replace(" ", ""): len(tokens.split()) for tokens in src_bped_words}
+    tgt_word2length = {tokens.replace("@@", "").replace(" ", ""): len(tokens.split()) for tokens in tgt_bped_words}
     src_embeddings, src_id2word, src_word2id = generate_context_word_representation(src_bped_words, src_lang, sentence_embedder)
     tgt_embeddings, tgt_id2word, tgt_word2id = generate_context_word_representation(tgt_bped_words, tgt_lang, sentence_embedder)
     dic = read_dict(dict_path=dic_path, src_word2id=src_word2id, tgt_word2id=tgt_word2id)
@@ -84,7 +84,7 @@ def read_bped_words(path):
     words = []
     with open(path, 'r') as f:
         for line in f:
-            words.append(line.rstrip().split())
+            words.append(line.rstrip())
     return words
 
 
