@@ -174,13 +174,14 @@ class SenteceEmbedder(nn.Module):
     encode sentences into a single representation
     """
     def __init__(self, encoder, mass_params, dico, context_extractor):
+        super().__init__()
         self._encoder = encoder
         self._mass_params = mass_params
         self._dico = dico
         self._context2sentence = Context2Sentence(context_extractor)
 
-    def run(self, sentences, lang):
+    def forward(self, sentences, lang):
         batch_context_word_representations, lengths = encode_sentences(self._encoder, self._dico, self._mass_params,
                                                                        sentences, lang)
-        batch_sentence_representation = self._context2sentence(batch_context_word_representations)
+        batch_sentence_representation = self._context2sentence(batch_context_word_representations, lengths)
         return batch_sentence_representation
