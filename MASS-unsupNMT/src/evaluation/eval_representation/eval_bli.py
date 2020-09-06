@@ -13,7 +13,7 @@ from src.utils import AttrDict, to_cuda
 from tqdm import tqdm
 from src.utils import bool_flag
 from src.evaluation.get_language_vocab import get_language_vocab
-from src.evaluation.bli import eval_bli, translate_words, BLI, read_dict
+from src.evaluation.bli import BLI, read_dict
 
 def is_chinese(uchar):
     if uchar >= u'\u4e00' and uchar<=u'\u9fa5':
@@ -242,7 +242,7 @@ if __name__ == "__main__":
         src_embs, src_id2word, src_word2id = load_word2vec_embeddings(args.src_embs, emb_size=args.emb_size, vocab=src_vocab)
         tgt_embs, tgt_id2word, tgt_word2id = load_word2vec_embeddings(args.tgt_embs, emb_size=args.emb_size, vocab=tgt_vocab)
         bli = BLI(preprocess_method=args.preprocess, metric=args.metric)
-        dic =  read_dict(args.dict_path, src_word2id, tgt_word2id)
+        dic =  read_dict(args.dict, src_word2id, tgt_word2id)
         scores = bli.eval(
             src_embeddings=src_embs,
             tgt_embeddings=tgt_embs,
@@ -251,5 +251,5 @@ if __name__ == "__main__":
             tgt_id2word=tgt_id2word,
             tgt_word2id=tgt_word2id,
             dic=dic
-        }
+        )
         print("Scores: {}".format(scores))
