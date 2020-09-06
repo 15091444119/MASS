@@ -3,7 +3,7 @@ import argparse
 import torch
 import sys
 import pdb
-from ..bli import BLI
+from ..bli import BLI, read_dict
 from ..utils import  load_mass_model, SenteceEmbedder
 
 
@@ -44,7 +44,7 @@ def generate_context_word_representation(words, lang, sentence_embedder:SenteceE
     return representations, id2word, word2id
 
 
-def eval_mass_encoder_context_bli(src_bped_words, src_lang, tgt_bped_words, tgt_lang, sentence_embedder:SenteceEmbedder, bli:BLI):
+def eval_mass_encoder_context_bli(src_bped_words, src_lang, tgt_bped_words, tgt_lang, dic_path, sentence_embedder:SenteceEmbedder, bli:BLI):
     """
         1. Generate context representation for each source word and each target word
         2. evaluate bli on it
@@ -58,10 +58,26 @@ def eval_mass_encoder_context_bli(src_bped_words, src_lang, tgt_bped_words, tgt_
     Returns:
         scores(dict): top1, top5, top10 bli accuracy
     """
+    src_word2length = {"".join(tokens).replace("@@", ""): len(tokens) for tokens in src_bped_words}
+    tgt_word2length = {"".join(tokens).replace("@@", ""): len(tokens) for tokens in tgt_bped_words}
     src_embeddings, src_id2word, src_word2id = generate_context_word_representation(src_bped_words, src_lang, sentence_embedder)
     tgt_embeddings, tgt_id2word, tgt_word2id = generate_context_word_representation(tgt_bped_words, tgt_lang, sentence_embedder)
-    scores = bli.eval(src_embeddings, tgt_embeddings, src_id2word, src_word2id, tgt_id2word, tgt_word2id)
-    return scores
+    dic = read_dict(dict_path=dic_path, src_word2id=src_word2id, tgt_word2id=tgt_word2id)
+
+    scores = bli.eval(src_embeddings, tgt_embeddings, src_id2word, src_word2id, tgt_id2word, tgt_word2id, dic)
+
+    whole_word_dic = {}
+    seperated_word_dic = {}
+    for src_id in dic:
+        if src_word2length[src_id2word[src_id]] == 1:
+            whole_word_dic[src_id] = dic[src_id]
+        else:
+            seperated_word_dic[src_id] = dic[src_id]
+
+    whole_word_scores = bli.eval(src_embeddings, tgt_embeddings, src_id2word, src_word2id, tgt_id2word, tgt_word2id, whole_word_dic)
+    seperated_word_scores = bli.eval(src_embeddings, tgt_embeddings, src_id2word, src_word2id, tgt_id2word, tgt_word2id, seperated_word_dic)
+
+    return scores, whole_word_scores, seperated_word_scores
 
 
 def read_bped_words(path):
@@ -90,7 +106,7 @@ def main():
 
     args = parser.parse_args()
 
-    bli = BLI(args.dict_path, args.preprocess_method, args.batch_size, args.metric, args.csls_topk)
+    bli = BLI(args.preprocess_method, args.batch_size, args.metric, args.csls_topk)
 
     src_bped_words = read_bped_words(args.src_bped_words_path)
     tgt_bped_words = read_bped_words(args.tgt_bped_words_path)
@@ -98,7 +114,8 @@ def main():
     dico, mass_params, encoder, _ = load_mass_model(args.model_path)
     sentence_embedder = SenteceEmbedder(encoder, mass_params, dico, args.context_extractor)
 
-    print(eval_mass_encoder_context_bli(src_bped_words, args.src_lang, tgt_bped_words, args.tgt_lang, sentence_embedder, bli))
+    scores, whole_word_scores, seperated_word_scores = eval_mass_encoder_context_bli(src_bped_words, args.src_lang, tgt_bped_words, args.tgt_lang, args.dict_path, sentence_embedder, bli))
+    print("scores: {}\nwhole word scores{}\nseperated word scores{}\n".format(scores, whole_word_scores, seperated_word_scores))
 
 if __name__ == "__main__":
     main()

@@ -116,14 +116,17 @@ def read_dict(dict_path, src_word2id, tgt_word2id):
 
 class BLI(object):
     """ object for bilingual dictionary induction """
-    def __init__(self, dict_path, preprocess_method, batch_size=500, metric="nn", csls_topk=10):
+    def __init__(self, preprocess_method, batch_size=500, metric="nn", csls_topk=10):
         self._preprocess_method = preprocess_method
         self._batch_size = batch_size
         self._metric = metric
         self._csls_topk = csls_topk
-        self._dict_path = dict_path
 
-    def eval(self, src_embeddings, tgt_embeddings, src_id2word, src_word2id, tgt_id2word, tgt_word2id):
+    def eval(self, src_embeddings, tgt_embeddings, src_id2word, src_word2id, tgt_id2word, tgt_word2id, dic):
+        """Evaluate bilingual dictionary induction
+        Params:
+            dic(dict): dict from src id to tgt id list
+        """
         if torch.cuda.is_available():
             src_embeddings = src_embeddings.cuda()
             tgt_embeddings = tgt_embeddings.cuda()
@@ -131,8 +134,6 @@ class BLI(object):
         if self._preprocess_method != "":
             src_embeddings = preprocess_embedding(src_embeddings, self._preprocess_method)
             tgt_embeddings = preprocess_embedding(tgt_embeddings, self._preprocess_method)
-
-        dic = read_dict(self._dict_path, src_word2id, tgt_word2id)
 
         print(
             "Src embedding size:{} Tgt embedding size:{} Src words in dictionary:{} Tgt words in dictionary:{}".format(
