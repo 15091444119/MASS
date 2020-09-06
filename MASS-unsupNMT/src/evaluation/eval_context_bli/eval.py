@@ -1,6 +1,7 @@
 """ evaluate context bli of a give mass model """
 import argparse
 import torch
+import sys
 import pdb
 from ..bli import BLI
 from ..utils import  load_mass_model, SenteceEmbedder
@@ -18,6 +19,7 @@ def generate_context_word_representation(words, lang, sentence_embedder:SenteceE
     """
     word2id = {}
     representations = []
+    last_print = 0
     for start_idx in range(0, len(words), batch_size):
         end_idx = min(len(words), start_idx + batch_size)
 
@@ -32,6 +34,9 @@ def generate_context_word_representation(words, lang, sentence_embedder:SenteceE
             batch_sentence_representation = sentence_embedder(words[start_idx:end_idx], lang)
 
         representations.append(batch_sentence_representation)
+        if (start_idx - last_print >= 10000):
+            print(start_idx, file=sys.stderr)
+            last_print = start_idx
 
     representations = torch.cat(representations, dim=0)
     id2word = {idx: word for word, idx in word2id.items()}

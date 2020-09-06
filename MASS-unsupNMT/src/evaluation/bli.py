@@ -75,7 +75,6 @@ def retrieval(src_mapped, tgt_mapped, src_ids, csls_topk, batch_size, metric, nu
         translation = {}
         for i in range(0, len(src_ids), batch_size):
             j = min(len(src_ids), i + batch_size)
-            pdb.set_trace()
             simi = torch.matmul(src_mapped[src_ids[i:j]], tgt_mapped.transpose(0, 1))
             _, indices = simi.topk(k=num_neighbor, dim=-1)
             for k in range(j - i):
