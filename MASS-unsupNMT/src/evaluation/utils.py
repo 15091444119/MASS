@@ -167,3 +167,20 @@ class Context2Sentence(nn.Module):
             mask = get_mask(lengths, True, expand=hidden_dim, batch_first=True, cuda=context.is_cuda)
             context_max_poll, _ = torch.max(context.masked_fill(~mask, -1e9), dim=1)
             return context_max_poll
+
+
+class SenteceEmbedder(nn.Module):
+    """
+    encode sentences into a single representation
+    """
+    def __init__(self, encoder, mass_params, dico, context_extractor):
+        self._encoder = encoder
+        self._mass_params = mass_params
+        self._dico = dico
+        self._context2sentence = Context2Sentence(context_extractor)
+
+    def run(self, sentences, lang):
+        batch_context_word_representations, lengths = encode_sentences(self._encoder, self._dico, self._mass_params,
+                                                                       sentences, lang)
+        batch_sentence_representation = self._context2sentence(batch_context_word_representations)
+        return batch_sentence_representation
