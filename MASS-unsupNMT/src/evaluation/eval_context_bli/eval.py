@@ -84,7 +84,7 @@ def read_bped_words(path):
     words = []
     with open(path, 'r') as f:
         for line in f:
-            words.append(line.rstrip())
+            words.append(line.rstrip().split())
     return words
 
 
@@ -114,7 +114,7 @@ def main():
     dico, mass_params, encoder, _ = load_mass_model(args.model_path)
     sentence_embedder = SenteceEmbedder(encoder, mass_params, dico, args.context_extractor)
 
-    scores, whole_word_scores, seperated_word_scores = eval_mass_encoder_context_bli(src_bped_words, args.src_lang, tgt_bped_words, args.tgt_lang, args.dict_path, sentence_embedder, bli))
+    scores, whole_word_scores, seperated_word_scores = eval_mass_encoder_context_bli(src_bped_words, args.src_lang, tgt_bped_words, args.tgt_lang, args.dict_path, sentence_embedder, bli)
     print("scores: {}\nwhole word scores{}\nseperated word scores{}\n".format(scores, whole_word_scores, seperated_word_scores))
 
 if __name__ == "__main__":
