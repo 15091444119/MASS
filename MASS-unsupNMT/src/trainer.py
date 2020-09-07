@@ -97,7 +97,8 @@ class Trainer(object):
         self.last_time = time.time()
 
         # reload potential checkpoints
-        self.reload_checkpoint()
+        if params.checkpoint != "":
+            self.reload_checkpoint()
 
         # initialize lambda coefficients and their configurations
         parse_lambda_config(params)
@@ -455,9 +456,8 @@ class Trainer(object):
         """
         Reload a checkpoint if we find one.
         """
-        checkpoint_path = os.path.join(self.params.dump_path, 'checkpoint.pth')
-        if not os.path.isfile(checkpoint_path):
-            return
+        checkpoint_path = self.params.checkpoint_path
+        assert os.path.isfile(checkpoint_path)
         logger.warning('Reloading checkpoint from %s ...' % checkpoint_path)
         data = torch.load(checkpoint_path, map_location=lambda storage, loc: storage.cuda(self.params.local_rank))
 

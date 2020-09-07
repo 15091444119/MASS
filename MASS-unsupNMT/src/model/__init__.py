@@ -55,7 +55,8 @@ def check_model_params(params):
         params.asm_cutoffs = [int(x) for x in s]
         assert params.max_vocab == -1 or params.asm_cutoffs[-1] < params.max_vocab
 
-    # reload a pretrained model
+    # reload a pretrained model or reload from checkpoint
+    assert not (params.reload_model != '' and params.checkpoint != '')  # checkpoint and reload model can't be used at the same time
     if params.reload_model != '':
         if params.encoder_only:
             assert os.path.isfile(params.reload_model)

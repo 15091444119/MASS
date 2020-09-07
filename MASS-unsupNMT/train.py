@@ -192,6 +192,10 @@ def get_parser():
     parser.add_argument("--reload_model", type=str, default="",
                         help="Reload a pretrained model")
 
+    # reload a checkpoint
+    parser.add_argument("--checkpoint", type=str, default="",
+                        help="Reload a checkpoint")
+
     # beam search (for MT only)
     parser.add_argument("--beam_size", type=int, default=1,
                         help="Beam size, default = 1 (greedy decoding)")
@@ -235,6 +239,7 @@ def main(params):
 
     # load data
     data = load_data(params)
+
 
     # build model
     if params.encoder_only:
