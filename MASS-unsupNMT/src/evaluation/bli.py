@@ -114,6 +114,24 @@ def read_dict(dict_path, src_word2id, tgt_word2id):
     return dic
 
 
+def save_translation(translation, src_id2word, tgt_id2word, save_path, topk):
+    """
+    save translations to a given file
+    params:
+        translation(dict): srcid to tgtid list
+        src_id2word:
+        tgt_id2word:
+        save_path:
+        topk: save topk id in tgt list
+    """
+    with open(save_path, 'w') as f:
+        for  src_id in translation:
+            for idx, tgt_id in enumerate(translation[src_id]):
+                if idx >= topk:
+                    break
+                f.write("{} {}\n".format(src_id2word[src_id], tgt_id2word[tgt_id]))
+
+
 class BLI(object):
     """ object for bilingual dictionary induction """
     def __init__(self, preprocess_method, batch_size=500, metric="nn", csls_topk=10):
@@ -122,11 +140,12 @@ class BLI(object):
         self._metric = metric
         self._csls_topk = csls_topk
 
-    def eval(self, src_embeddings, tgt_embeddings, src_id2word, src_word2id, tgt_id2word, tgt_word2id, dic):
+    def eval(self, src_embeddings, tgt_embeddings, src_id2word, src_word2id, tgt_id2word, tgt_word2id, dic, save_path=None):
         """Evaluate bilingual dictionary induction
         Params:
             dic(dict): dict from src id to tgt id list
         """
+
         if torch.cuda.is_available():
             src_embeddings = src_embeddings.cuda()
             tgt_embeddings = tgt_embeddings.cuda()
@@ -147,6 +166,9 @@ class BLI(object):
 
         translation = retrieval(src_embeddings, tgt_embeddings, list(dic.keys()), csls_topk=self._csls_topk,
                                 batch_size=self._batch_size, metric=self._metric)
+
+        if save_path is not None:
+            save_translation(translation, src_id2word, tgt_id2word, save_path, topk=5)
 
         top1_acc = calculate_word_translation_accuracy(translation, dic, topk=1)
         top5_acc = calculate_word_translation_accuracy(translation, dic, topk=5)

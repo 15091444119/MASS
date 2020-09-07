@@ -44,7 +44,7 @@ def generate_context_word_representation(words, lang, sentence_embedder:SenteceE
     return representations, id2word, word2id
 
 
-def eval_mass_encoder_context_bli(src_bped_words, src_lang, tgt_bped_words, tgt_lang, dic_path, sentence_embedder:SenteceEmbedder, bli:BLI):
+def eval_mass_encoder_context_bli(src_bped_words, src_lang, tgt_bped_words, tgt_lang, dic_path, sentence_embedder:SenteceEmbedder, bli:BLI, save_path=None):
     """
         1. Generate context representation for each source word and each target word
         2. evaluate bli on it
@@ -64,7 +64,7 @@ def eval_mass_encoder_context_bli(src_bped_words, src_lang, tgt_bped_words, tgt_
     tgt_embeddings, tgt_id2word, tgt_word2id = generate_context_word_representation(tgt_bped_words, tgt_lang, sentence_embedder)
     dic = read_dict(dict_path=dic_path, src_word2id=src_word2id, tgt_word2id=tgt_word2id)
 
-    scores = bli.eval(src_embeddings, tgt_embeddings, src_id2word, src_word2id, tgt_id2word, tgt_word2id, dic)
+    scores = bli.eval(src_embeddings, tgt_embeddings, src_id2word, src_word2id, tgt_id2word, tgt_word2id, dic, save_path=save_path)
 
     whole_word_dic = {}
     seperated_word_dic = {}
@@ -103,6 +103,7 @@ def main():
     parser.add_argument("--metric", type=str, default="nn")
     parser.add_argument("--dict_path", type=str)
     parser.add_argument("--context_extractor", type=str, default="average", choices=["last_time", "average", "max_pool"])
+    parser.add_argument("--save_path", type=str, default=None, help="path to save bli result")
 
     args = parser.parse_args()
 
