@@ -106,7 +106,6 @@ def main():
     parser.add_argument("--metric", type=str, default="nn")
     parser.add_argument("--dict_path", type=str)
     parser.add_argument("--context_extractor", type=str, default="average", choices=["last_time", "average", "max_pool", "before_eos"])
-    parser.add_argument("--context_extractor", type=str, default="average", choices=["last_time", "average", "max_pool"])
     parser.add_argument("--save_path", type=str, default=None, help="path to save bli result")
 
     args = parser.parse_args()
