@@ -118,7 +118,7 @@ def main():
     dico, mass_params, encoder, _ = load_mass_model(args.model_path)
     sentence_embedder = SenteceEmbedder(encoder, mass_params, dico, args.context_extractor)
 
-    scores, whole_word_scores, seperated_word_scores = eval_mass_encoder_context_bli(src_bped_words, args.src_lang, tgt_bped_words, args.tgt_lang, args.dict_path, sentence_embedder, bli)
+    scores, whole_word_scores, seperated_word_scores = eval_mass_encoder_context_bli(src_bped_words, args.src_lang, tgt_bped_words, args.tgt_lang, args.dict_path, sentence_embedder, bli, save_path=args.save_path)
     print("scores: {}\nwhole word scores{}\nseperated word scores{}\n".format(scores, whole_word_scores, seperated_word_scores))
 
 if __name__ == "__main__":
