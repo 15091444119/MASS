@@ -122,6 +122,19 @@ def encode_sentences(encoder, dico, mass_params, sentences, lang):
 
     return encoded, lengths
 
+def before_eos_mask(lengths, hidden_dim, cuda):
+    """ mask the position before eos ( for whole word """
+
+    bs, slen = lengths.size(0), lengths.max()
+    mask = torch.BoolTensor(slen, bs).zero_()
+    for i in range(bs):
+        mask[lengths[i] - 2, i] = 1
+    mask = mask.unsqueeze(2).expand(slen, bs, hidden_dim)
+    mask = mask.transpose(0, 1)
+    if cuda:
+        mask = mask.cuda()
+    return mask
+
 
 def get_mask(lengths, all_words, expand=None, ignore_first=False, batch_first=False, cuda=True):
     """
@@ -167,6 +180,11 @@ class Context2Sentence(nn.Module):
             mask = get_mask(lengths, True, expand=hidden_dim, batch_first=True, cuda=context.is_cuda)
             context_max_poll, _ = torch.max(context.masked_fill(~mask, -1e9), dim=1)
             return context_max_poll
+        elif self._method == "before_eos":
+            mask = before_eos_mask(lengths, hidden_dim=hidden_dim, cuda=context.is_cuda)
+            h_t = context.masked_select(mask).view(batch_size, hidden_dim)
+            return h_t
+
 
 
 class SenteceEmbedder(nn.Module):

@@ -105,7 +105,7 @@ def main():
     parser.add_argument("--csls_topk", type=int, default=100)
     parser.add_argument("--metric", type=str, default="nn")
     parser.add_argument("--dict_path", type=str)
-    parser.add_argument("--context_extractor", type=str, default="average", choices=["last_time", "average", "max_pool"])
+    parser.add_argument("--context_extractor", type=str, default="average", choices=["last_time", "average", "max_pool", "before_eos"])
 
     args = parser.parse_args()
 
