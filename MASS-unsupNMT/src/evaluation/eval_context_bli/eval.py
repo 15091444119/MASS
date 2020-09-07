@@ -24,14 +24,17 @@ def generate_context_word_representation(words, lang, sentence_embedder:SenteceE
         end_idx = min(len(words), start_idx + batch_size)
 
         # add to word2id
+        batch = []
         for idx in range(start_idx, end_idx):
             word = words[idx].replace("@@", "").replace(" ", "")
-            assert word not in word2id
+            if word in word2id:
+                continue
             word2id[word] = len(word2id)
+            batch.append(words[idx])
 
         # calculate representation
         with torch.no_grad():
-            batch_sentence_representation = sentence_embedder(words[start_idx:end_idx], lang)
+            batch_sentence_representation = sentence_embedder(batch, lang)
 
         representations.append(batch_sentence_representation)
         if (start_idx - last_print >= 10000):
