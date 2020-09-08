@@ -20,6 +20,7 @@ def generate_context_word_representation(words, lang, sentence_embedder:SenteceE
     word2id = {}
     representations = []
     last_print = 0
+    sentence_embedder.eval()
     for start_idx in range(0, len(words), batch_size):
         end_idx = min(len(words), start_idx + batch_size)
 
