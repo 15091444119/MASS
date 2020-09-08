@@ -214,6 +214,7 @@ if __name__ == "__main__":
     parser.add_argument("--preprocess", default="ucu")
     parser.add_argument("--metric", default="nn")
     parser.add_argument("--dict", help="bilingual dictionary")
+    parser.add_argument("--save_path", type=str, default=None, help="path to save bli result")
     if parser.parse_known_args()[0].method == "xlm":
         parser.add_argument("--reload", help="xlm model path")
         parser.add_argument("--model_name", type=str, choices=["model", "encoder", "decoder"], help='reload a xlm encoder or a xlm translation model')
@@ -250,6 +251,7 @@ if __name__ == "__main__":
             src_word2id=src_word2id,
             tgt_id2word=tgt_id2word,
             tgt_word2id=tgt_word2id,
-            dic=dic
+            dic=dic,
+            save_path=args.save_path
         )
         print("Scores: {}".format(scores))
