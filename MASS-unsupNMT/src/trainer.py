@@ -456,7 +456,7 @@ class Trainer(object):
         """
         Reload a checkpoint if we find one.
         """
-        checkpoint_path = self.params.checkpoint_path
+        checkpoint_path = self.params.checkpoint
         assert os.path.isfile(checkpoint_path)
         logger.warning('Reloading checkpoint from %s ...' % checkpoint_path)
         data = torch.load(checkpoint_path, map_location=lambda storage, loc: storage.cuda(self.params.local_rank))
