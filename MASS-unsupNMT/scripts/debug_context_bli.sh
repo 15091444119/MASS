@@ -1,4 +1,4 @@
-export CUDA_VISIBLE_DEVICES="1"
+export CUDA_VISIBLE_DEVICES="3"
 a(){
 python3 -m src.evaluation.eval_context_bli.eval \
     --model_path /home/data_ti5_d/zhouzh/low-resource-mt/MASS/MASS-unsupNMT/dumped/cn-en-zh-500w-wwm-reload/j03q6ubj61/periodic-50.pth \
@@ -7,10 +7,9 @@ python3 -m src.evaluation.eval_context_bli.eval \
     --src_lang zh \
     --tgt_lang en \
     --dict_path /home/data_ti5_d/zhouzh/low-resource-mt/XLM_MASS_preprocessed_data/BLI/zh-en/zh-en.txt.sim \
-    --context_extractor average \
-    --save_path ./pretrain.output.txt
+    --context_extractor average
 }
-a
+
 c(){
 python3 -m src.evaluation.eval_context_bli.eval \
     --model_path /home/data_ti5_d/zhouzh/low-resource-mt/MASS/MASS-unsupNMT/dumped/cn-en-zh-500w-wwm-reload/o82ssovc0h/periodic-50.pth \
@@ -19,7 +18,7 @@ python3 -m src.evaluation.eval_context_bli.eval \
     --src_lang zh \
     --tgt_lang en \
     --dict_path /home/data_ti5_d/zhouzh/low-resource-mt/XLM_MASS_preprocessed_data/BLI/zh-en/zh-en.txt.sim \
-    --context_extractor before_eos
+    --context_extractor average
 }
 b(){
 python3 -m src.evaluation.eval_context_bli.eval \
@@ -32,3 +31,6 @@ python3 -m src.evaluation.eval_context_bli.eval \
     --context_extractor average
 }
 
+a
+b
+c

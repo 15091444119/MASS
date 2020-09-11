@@ -35,12 +35,22 @@ def calculate_word_translation_accuracy(translation, truth_dict, topk):
     """
 
     # assert all words are translated
+    src_notin_translation = 0
     for src in truth_dict:
-        assert src in translation
-    assert len(translation) == len(truth_dict)
+        if src not in translation:
+            src_notin_translation += 1
+    print("Source words in truth dict but not in translation: {}".format(src_notin_translation), file=sys.stderr)
+
+    src_notin_truth = 0
+    for src in translation:
+        if src not in truth_dict:
+            src_notin_truth += 1
+    print("Source words in translation but not in truth: {}".format(src_notin_truth), file=sys.stderr)
 
     result = []  
     for src, tgt_list in translation.items():
+        if src not in truth_dict:
+            continue
         have_translation = False
         for idx, tgt in enumerate(tgt_list):
             if idx == topk:
@@ -50,6 +60,7 @@ def calculate_word_translation_accuracy(translation, truth_dict, topk):
                 break
         result.append(have_translation)
     
+    print("Counted source  words:{}".format(len(result)))
     acc = result.count(True) / len(result)
 
     return acc
