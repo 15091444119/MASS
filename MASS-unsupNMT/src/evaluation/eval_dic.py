@@ -10,6 +10,7 @@ from .bli import calculate_word_translation_accuracy
 
 def post_process(text):
     text = text.strip()
+    text = text.replace("@@", "").replace(" ", "")
     text = re.sub(r'[{}]+'.format(string.punctuation + ' '),'',text)
     return text
 
@@ -43,6 +44,9 @@ def eval():
             whole_word_dic[src] = dic[src]
         else:
             seperated_word_dic[src] = dic[src]
+    for src in seperated_word_dic:
+        if src in ref_dict:
+            print("{} {} {}".format(src, seperated_word_dic[src], ref_dict[src]))
     all_acc = calculate_word_translation_accuracy(truth_dict=ref_dict, translation=dic, topk=1)
     whole_acc = calculate_word_translation_accuracy(truth_dict=ref_dict, translation=whole_word_dic, topk=1)
     seperated_acc = calculate_word_translation_accuracy(truth_dict=ref_dict, translation=seperated_word_dic, topk=1)
