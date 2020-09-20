@@ -1,4 +1,7 @@
 import random
+import numpy as np
+import torch
+
 SEPARATOR="@@"
 WORD_END="</w>"
 

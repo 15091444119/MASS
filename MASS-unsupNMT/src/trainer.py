@@ -22,8 +22,7 @@ from apex.fp16_utils import FP16_Optimizer
 
 from .utils import get_optimizer, to_cuda, concat_batches
 from .utils import parse_lambda_config, update_lambdas
-
-
+from src.combiner.bpe_helper import  RandomBpeApplier
 logger = getLogger()
 
 
@@ -107,7 +106,7 @@ class Trainer(object):
         """
         Build optimizer.
         """
-        assert module in ['model', 'encoder', 'decoder']
+        assert module in ['model', 'encoder', 'decoder', 'combiner']
         optimizer = get_optimizer(getattr(self, module).parameters(), self.params.optimizer)
         if self.params.fp16:
             optimizer = FP16_Optimizer(optimizer, dynamic_loss_scale=True)
@@ -712,6 +711,63 @@ class SingleTrainer(Trainer):
         super().__init__(data, params)
 
 
+class CombinerTrainer(Trainer):
+    """
+    only update parameters of a combiner
+    """
+
+    def __init__(self, model, combiner, data, params):
+
+        self.MODEL_NAMES = ["model", "combiner"]
+
+        # model / data / params
+        self.model = model
+        self.combiner = combiner
+        self.data = data
+        self.params = params
+
+        # optimizers
+        self.optimizers = {'combiner': self.get_optimizer_fp('combiner'),
+                           'model': self.get_optimizer_fp('model')}
+
+        super().__init__(data, params)
+
+
+    def combiner_step(self, lang, re_bpe_helper:RandomBpeApplier):
+        params = self.params
+        lang_id = params.lang2id[lang]
+        batch, lengths = self.get_batch("combine", lang)
+        new_batch, new_lengths, origin_mask, new_mask = re_bpe_helper.re_encode_batch(batch, lengths, params.dico, params)
+
+        batch, lengths, new_batch, new_lengths, origin_mask, new_mask = to_cuda(batch, lengths, new_batch, new_lengths, origin_mask, new_mask)
+
+        # original encode
+        lang = batch.clone().fill_(lang_id)
+        self.encoder.eval()
+        with torch.no_grad():
+            origin_encoded = self.encoder('fwd', x=batch, lengths=lengths, langs=lang, causal=False)
+
+        # new encode
+        self.encoder.train()
+        lang = new_batch.clone().fill_(lang_id)
+        new_encoded = self.encoder('fwd', x=new_batch, lengths=new_lengths, langs=lang, causal=False)
+        new_encoded = self.combiner(new_encoded, new_lengths)
+
+        origin_word_rep = torch.masked_select(origin_encoded, origin_mask)
+        new_word_rep = torch.masked_select(new_encoded, new_mask)
+
+        # mse loss
+        loss = torch.nn.MSELoss(origin_word_rep, new_word_rep)
+
+        self.stats[("combiner-{}".format(lang))].append(loss.item())
+
+        self.optimize(loss, ["combiner"])
+
+        self.n_sentences += params.batch_size
+        self.stats['processed_s'] += lengths.size(0)
+        self.stats['processed_w'] += (lengths - 1).sum().item()
+
+
 class EncDecTrainer(Trainer):
 
     def __init__(self, encoder, decoder, data, params):
@@ -1048,8 +1104,10 @@ class EncDecTrainer(Trainer):
         self.stats['processed_s'] += len2.size(0)
         self.stats['processed_w'] += (len2 - 1).sum().item()
 
-    def combiner_step(self, lang, re_bpe_helper):
-        params = self.params
-        lang_id = params.lang2id[lang]
-        batch, length = self.get_batch("combine", lang)
+
+
+
+
+
+
 
