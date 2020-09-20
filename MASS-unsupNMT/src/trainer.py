@@ -1047,3 +1047,9 @@ class EncDecTrainer(Trainer):
         self.n_sentences += params.batch_size
         self.stats['processed_s'] += len2.size(0)
         self.stats['processed_w'] += (len2 - 1).sum().item()
+
+    def combiner_step(self, lang, re_bpe_helper):
+        params = self.params
+        lang_id = params.lang2id[lang]
+        batch, length = self.get_batch("combine", lang)
+
