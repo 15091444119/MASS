@@ -7,6 +7,39 @@ from src.utils import AttrDict
 from collections import OrderedDict
 from src.utils import to_cuda
 
+logger = logging.getLogger()
+
+
+def load_mass_model(model_path):
+    """ reload a mass model
+    Params:
+        model_path: path of mass model
+    Returns:
+        dico, model_params, encoder, decoder
+    """
+    reloaded = torch.load(model_path)
+    model_params = AttrDict(reloaded['params'])
+    logger.info("Supported languages: %s" % ", ".join(model_params.lang2id.keys()))
+
+    # build dictionary / build encoder / build decoder / reload weights
+    dico = Dictionary(reloaded['dico_id2word'], reloaded['dico_word2id'], reloaded['dico_counts'])
+    encoder = TransformerModel(model_params, dico, is_encoder=True, with_output=True).cuda().eval()
+    decoder = TransformerModel(model_params, dico, is_encoder=False, with_output=True).cuda().eval()
+
+    def package_module(modules):
+        state_dict = OrderedDict()
+        for k, v in modules.items():
+            if k.startswith('module.'):
+                state_dict[k[7:]] = v
+            else:
+                state_dict[k] = v
+        return state_dict
+
+    encoder.load_state_dict(package_module(reloaded['encoder']))
+    decoder.load_state_dict(package_module(reloaded['decoder']))
+
+    return dico, model_params, encoder, decoder
+
 def prepare_batch_input(sents, lang, dico, mass_params):
     word_ids = [torch.LongTensor([dico.index(w) for w in s.strip().split()])
                 for s in sents]

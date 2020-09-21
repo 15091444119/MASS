@@ -4,11 +4,10 @@ import torch
 import sys
 import pdb
 from .bli import BLI, read_dict
-from .utils import SenteceEmbedder, WordEmbedderWithCombiner
-
-from sklearn.cluster
+from .utils import SenteceEmbedder, WordEmbedderWithCombiner, load_mass_model
 
 
+from sklearn import cluster
 def generate_context_word_representation(words, lang, embedder, batch_size=128):
     """
     Generate context word representations
@@ -50,6 +49,7 @@ def split_whole_separate(bped_words):
     returns:
         single_words: set
             set of single_words
+
         separated_words2bpe: dict
             key: separated word, value: it's bpe format
             example: {"你好": "你@@ 好"}
@@ -79,19 +79,26 @@ def encode_whole_word_separated_word(bped_words, lang, whole_word_embedder, sepa
     Params:
         bped_words: list of string
             Words to encode
+
         lang: string
             Language
+
         whole_word_embedder:
             Embedder to encode whole words
+
         separated_word_embedder:
             Embedder to encode separated words
 
     Returns:
         whole_words: set
+
         separated_word2bpe: dict
             like: {"你好": "你@@ 好"}
+
         word2id: dict
+
         id2word: dict
+
         embeddings: torch.FloatTensor, shape(number of words, hidden_dim)
             the encoded embeddings for each word, in the order of id
     """
@@ -118,16 +125,27 @@ def eval_combiner_bli(src_bped_words, src_lang, tgt_bped_words, tgt_lang, dic_pa
         1. Generate context representation for each source word and each target word
         2. evaluate bli on it
     Params
-        src_bped_words: words to be evaluated (bped using the same code as the mass model)
+        src_bped_words: list of strings
+            source words to be evaluated (bped using the same code as the mass model)
+
         tgt_bped_words:
-        src_lang: language of source word
-        tgt_lang: language of target word
+            words to be evaluated (bped using the same code as the mass model)
+
+        src_lang: str
+            language of source word
+
+        tgt_lang: str
+            language of target word
+
         whole_word_embedder: SentenceEmbedder
             Embedder used to get the embedding of whole words
+
         separated_word_embedder: WordEmbedderWithCombiner
             Embedder used to get the embedding of separated words
+
         bli: BLI
             A bli method
+
         save_path: str, default: None
             Path to save bli result
     Returns:
@@ -141,39 +159,18 @@ def eval_combiner_bli(src_bped_words, src_lang, tgt_bped_words, tgt_lang, dic_pa
     tgt_whole_words, tgt_separated_word2bpe, tgt_word2id, tgt_id2word, tgt_embeddings = \
         encode_whole_word_separated_word(bped_words=tgt_bped_words, lang=tgt_lang, whole_word_embedder=whole_word_embedder, separated_word_embedder=separated_word_embedder)
 
-
-
-
-
-
-def eval_mass_encoder_context_bli(src_bped_words, src_lang, tgt_bped_words, tgt_lang, dic_path, sentence_embedder:SenteceEmbedder, bli:BLI, save_path=None):
-    """
-        1. Generate context representation for each source word and each target word
-        2. evaluate bli on it
-    Params
-        src_bped_words: words to be evaluated (bped using the same code as the mass model)
-        tgt_bped_words:
-        src_lang: language of source word
-        tgt_lang: language of target word
-        sentence_embedder:
-        bli:
-    Returns:
-        scores(dict): top1, top5, top10 bli accuracy
-    """
-    src_word2length = {tokens.replace("@@", "").replace(" ", ""): len(tokens.split()) for tokens in src_bped_words}
-    tgt_word2length = {tokens.replace("@@", "").replace(" ", ""): len(tokens.split()) for tokens in tgt_bped_words}
-    src_embeddings, src_id2word, src_word2id = generate_context_word_representation(src_bped_words, src_lang, sentence_embedder)
-    tgt_embeddings, tgt_id2word, tgt_word2id = generate_context_word_representation(tgt_bped_words, tgt_lang, sentence_embedder)
     dic = read_dict(dict_path=dic_path, src_word2id=src_word2id, tgt_word2id=tgt_word2id)
 
     scores = bli.eval(src_embeddings, tgt_embeddings, src_id2word, src_word2id, tgt_id2word, tgt_word2id, dic, save_path=save_path)
 
+    # get whole source word dictionary and separated word dictionary
     whole_word_dic = {}
     seperated_word_dic = {}
     for src_id in dic:
-        if src_word2length[src_id2word[src_id]] == 1:
+        if src_id2word[src_id] in src_whole_words:
             whole_word_dic[src_id] = dic[src_id]
         else:
+            assert src_id2word[src_id] in tgt_whole_words
             seperated_word_dic[src_id] = dic[src_id]
 
     whole_word_scores = bli.eval(src_embeddings, tgt_embeddings, src_id2word, src_word2id, tgt_id2word, tgt_word2id, whole_word_dic)
@@ -217,7 +214,16 @@ def main():
     dico, mass_params, encoder, _ = load_mass_model(args.model_path)
     sentence_embedder = SenteceEmbedder(encoder, mass_params, dico, args.context_extractor)
 
-    scores, whole_word_scores, seperated_word_scores = eval_mass_encoder_context_bli(src_bped_words, args.src_lang, tgt_bped_words, args.tgt_lang, args.dict_path, sentence_embedder, bli, save_path=args.save_path)
+    scores, whole_word_scores, seperated_word_scores = eval_combiner_bli(
+        src_bped_words=src_bped_words,
+        src_lang=args.src_lang,
+        tgt_bped_words=tgt_bped_words,
+        tgt_lang=args.tgt_lang,
+        dic_path=args.dict_path,
+        whole_word_embedder=sentence_embedder,
+        separated_word_embedder=sentence_embedder,
+        bli=bli,
+        save_path=args.save_path)
     print("scores: {}\nwhole word scores{}\nseperated word scores{}\n".format(scores, whole_word_scores, seperated_word_scores))
 
 if __name__ == "__main__":
