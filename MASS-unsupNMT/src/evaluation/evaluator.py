@@ -333,7 +333,9 @@ class CombinerEvaluator(Evaluator):
         self.bpe_helper = trainer.bpe_helper
 
     def evaluate_bli(self):
-
+        """
+        evaluate whole word and separated word bli accuracy
+        """
 
 
 
