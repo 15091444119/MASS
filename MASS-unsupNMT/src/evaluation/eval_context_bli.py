@@ -1,6 +1,7 @@
 """ evaluate context bli of a give mass model """
 import argparse
 import torch
+import pdb
 import sys
 import pdb
 from .bli import BLI, read_dict
@@ -115,7 +116,7 @@ def encode_whole_word_separated_word(bped_words, lang, whole_word_embedder, sepa
 
     id2word = {idx:word for word, idx in word2id.items()}
 
-    embeddings = torch.cat(whole_word_embeddings, separated_word_embeddings, dim=0)
+    embeddings = torch.cat([whole_word_embeddings, separated_word_embeddings], dim=0)
 
     return whole_words, separated_word2bpe, word2id, id2word, embeddings
 
@@ -170,7 +171,7 @@ def eval_combiner_bli(src_bped_words, src_lang, tgt_bped_words, tgt_lang, dic_pa
         if src_id2word[src_id] in src_whole_words:
             whole_word_dic[src_id] = dic[src_id]
         else:
-            assert src_id2word[src_id] in tgt_whole_words
+            assert src_id2word[src_id] in src_separated_word2bpe
             seperated_word_dic[src_id] = dic[src_id]
 
     whole_word_scores = bli.eval(src_embeddings, tgt_embeddings, src_id2word, src_word2id, tgt_id2word, tgt_word2id, whole_word_dic)

@@ -213,7 +213,7 @@ class WordEmbedderWithCombiner(nn.Module):
     """
     encode word with mass encoder and a combiner
     """
-     def __init__(self, encoder, combiner, mass_params, dico, context_extractor):
+    def __init__(self, encoder, combiner, mass_params, dico, context_extractor):
         super().__init__()
         self._encoder = encoder
         self._combiner = combiner
