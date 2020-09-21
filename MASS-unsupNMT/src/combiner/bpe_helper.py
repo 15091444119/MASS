@@ -2,8 +2,8 @@ import random
 import numpy as np
 import torch
 
-SEPARATOR="@@"
-WORD_END="</w>"
+SEPARATOR = "@@"
+WORD_END = "</w>"
 
 
 def encode_word(orig, bpe_codes, max_merge_num=None, return_merge_count=False):
@@ -89,8 +89,8 @@ def read_codes(codes):
 
 def get_mask(mappers, origin_lengths, new_lengths):
     """
-    return whole word mask of the origin tokenize and end of whole word after re tokenize
-    if a token in seperated after re tokenize, we use it as the supervision, so it will be masked
+    we use the representation at the end of the word as the representation of the word
+    the new splited word will be masked for further mse loss computation
     params:
         mappers: list
             list of mappers, each mapper maps original index to a span after re tokenize

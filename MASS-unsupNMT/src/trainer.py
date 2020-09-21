@@ -91,7 +91,8 @@ class Trainer(object):
             [('MT-%s-%s' % (l1, l2), []) for l1, l2 in params.mt_steps] +
             [('BMT-%s-%s' % (l1, l2), []) for l1, l2 in params.bmt_steps] +
             [('MA-%s' % lang, []) for lang in params.mass_steps] +
-            [('BT-%s-%s-%s' % (l1, l2, l3), []) for l1, l2, l3 in params.bt_steps]
+            [('BT-%s-%s-%s' % (l1, l2, l3), []) for l1, l2, l3 in params.bt_steps] +
+            [("combiner-{}".format(l), []) for l in params.langs]
         )
         self.last_time = time.time()
 
@@ -743,18 +744,18 @@ class CombinerTrainer(Trainer):
 
         # original encode
         lang = batch.clone().fill_(lang_id)
-        self.encoder.eval()
+        self.model.eval()
         with torch.no_grad():
             origin_encoded = self.encoder('fwd', x=batch, lengths=lengths, langs=lang, causal=False)
 
         # new encode
-        self.encoder.train()
+        self.model.train()
         lang = new_batch.clone().fill_(lang_id)
         new_encoded = self.encoder('fwd', x=new_batch, lengths=new_lengths, langs=lang, causal=False)
         new_encoded = self.combiner(new_encoded, new_lengths)
 
-        origin_word_rep = torch.masked_select(origin_encoded, origin_mask)
-        new_word_rep = torch.masked_select(new_encoded, new_mask)
+        origin_word_rep = torch.masked_select(origin_encoded.transpose(0, 1), origin_mask)
+        new_word_rep = torch.masked_select(new_encoded.transpose(0, 1), new_mask)
 
         # mse loss
         loss = torch.nn.MSELoss(origin_word_rep, new_word_rep)

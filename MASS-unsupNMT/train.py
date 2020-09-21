@@ -20,6 +20,7 @@ from src.utils import bool_flag, initialize_exp, set_sampling_probs, shuf_order
 from src.model import check_model_params, build_model
 from src.trainer import SingleTrainer, EncDecTrainer
 from src.evaluation.evaluator import SingleEvaluator, EncDecEvaluator
+from src.combiner.combiner import Transformer
 
 import apex
 from src.fp16 import network_to_half
@@ -73,6 +74,8 @@ def get_parser():
                         help="Use sinusoidal embeddings")
     parser.add_argument("--attention_setting", type=str, default="v1", choices=["v1", "v2"],
                         help="Setting for attention module, benefits for distinguish language")
+    parser.add_argument("--n_combiner_layers", type=int, default=4,
+                        help="Number of combiner layers")
 
     # adaptive softmax
     parser.add_argument("--asm", type=bool_flag, default=False,
@@ -244,8 +247,11 @@ def main(params):
     # build model
     if params.encoder_only:
         model = build_model(params, data['dico'])
+        if params.use_combiner:
+            combiner = Transformer(params)
     else:
         encoder, decoder = build_model(params, data['dico'])
+
 
     # float16
     if params.fp16:
@@ -259,9 +265,11 @@ def main(params):
     # distributed
     if params.multi_gpu:
         logger.info("Using nn.parallel.DistributedDataParallel ...")
-        if params.encoder_only:
+        if params.model_mode == "encoder":
             model = apex.parallel.DistributedDataParallel(model, delay_allreduce=True)
-        else:
+            if params.use_combiner:
+                combiner = apex.parallel.DistributedDataParallel(combiner, delay_allreduce=True)
+        elif params.model_mode == "encoder_decoder":
             encoder = apex.parallel.DistributedDataParallel(encoder, delay_allreduce=True)
             decoder = apex.parallel.DistributedDataParallel(decoder, delay_allreduce=True)
 

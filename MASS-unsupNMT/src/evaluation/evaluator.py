@@ -322,6 +322,22 @@ class SingleEvaluator(Evaluator):
         super().__init__(trainer, data, params)
         self.model = trainer.model
 
+class CombinerEvaluator(Evaluator):
+    """ This is a combiner for word level combiner (not sentence) """
+
+    def __init__(self, trainer, data, params):
+
+        super().__init__(trainer, data, params)
+        self.model = trainer.model
+        self.combiner = trainer.combiner
+        self.bpe_helper = trainer.bpe_helper
+
+    def evaluate_bli(self):
+
+
+
+
+
 
 class EncDecEvaluator(Evaluator):
 
