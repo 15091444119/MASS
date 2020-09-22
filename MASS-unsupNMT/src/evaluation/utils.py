@@ -223,8 +223,11 @@ class WordEmbedderWithCombiner(nn.Module):
 
     def forward(self, sentences, lang):
         """
-        params:
+        Params:
             sentences: each sentence is just a word, tokenized by bpe
+
+        Returns:
+            batch_sentence_representation: torch.FloatTensor size:(batch_size, max_length)
         """
         batch_context_word_representations, lengths = encode_sentences(self._encoder, self._dico, self._mass_params,
                                                                        sentences, lang)

@@ -1,6 +1,7 @@
 import random
 import numpy as np
 import torch
+import pdb
 
 SEPARATOR = "@@"
 WORD_END = "</w>"
@@ -87,7 +88,7 @@ def read_codes(codes):
     return bpe_codes
 
 
-def get_mask(mappers, origin_lengths, new_lengths):
+def get_sentence_combiner_mask(mappers, origin_lengths, new_lengths):
     """
     we use the representation at the end of the word as the representation of the word
     the new splited word will be masked for further mse loss computation
@@ -131,9 +132,52 @@ class RandomBpeApplier(object):
         assert merge_num != 0
 
         random_num = random.randint(0, merge_num - 1)
-        print(random_num)
         encoded_word = encode_word(word, self.bpe_codes, max_merge_num=random_num)
         return encoded_word
+
+    def re_encode_batch_words(self, batch, lengths, dico, params):
+        """
+        This function is used to train a combiner, we split whole word, then use the last eos to represent the word
+
+        Params:
+            batch: torch.LongTensor, size:(3, batch_size)
+                A batch of whole word
+
+            lengths: torch.LongTensor, size(batch_size)
+                All length must be 3
+
+            dico: dictionary
+
+            params: from argprase
+
+        Returns:
+            new_batch: torch.LongTensor, size:(max_length, batch_size)
+
+            new_lengths: torch.LongTensor, size:(batch_size)
+
+            origin_mask: torch.boolean, size:(batch_size, 3)
+                Mask to select representation of the original word
+
+            new_mask: torch.boolean, size:(batch_size, max_length)
+                Mask of eos
+
+        Example:
+            "eos, 你好, eos" will be split into eos, 你@@ 好, eos, and the representation of the last eos is used as the
+            word representation
+        """
+        assert (lengths == 3).all()
+        batch_size = len(lengths)
+        new_batch, new_lengths, _, _ = self.re_encode_batch_sentences(batch, lengths, dico, params)
+
+        origin_mask = torch.BoolTensor(batch_size, 3).fill_(False)
+        origin_mask[:, 1] = True
+
+        new_mask = torch.BoolTensor(batch_size, torch.max(new_lengths).item()).fill_(False)
+        for i in range(batch_size):
+            new_mask[i, new_lengths[i].item() - 1] = True
+
+        return new_batch, new_lengths, origin_mask, new_mask
+
 
     def re_encode_sentence(self, sentence, kept_words=None):
         """
@@ -171,7 +215,8 @@ class RandomBpeApplier(object):
 
         return new_sentence, mapper
 
-    def re_encode_batch(self, batch, lengths, dico, params):
+
+    def re_encode_batch_sentences(self, batch, lengths, dico, params):
         """
         for batch and length generated from src.data.dataset,
         we re encode it to another batch which don't fully merge bpe tokens
@@ -191,16 +236,17 @@ class RandomBpeApplier(object):
         new_sentences = []
         mappers = []
         batch_size = len(lengths)
-        kept_words = set([dico.index(x) for x in
+        kept_words = set([dico.id2word[x] for x in
                           [params.eos_index, params.bos_index, params.unk_index, params.pad_index]])
 
+        pdb.set_trace()
         for i in range(batch_size):
-            raw_sentence = [dico.word2id[idx.item()] for idx in batch[:lengths[i], i]]
+            raw_sentence = [dico.id2word[idx.item()] for idx in batch[:lengths[i], i]]
             new_sentence, mapper = self.re_encode_sentence(raw_sentence, kept_words)
             new_sentences.append(new_sentences)
             mappers.append(mapper)
 
-        new_lengths = [len(x) for x in new_batch]
+        new_lengths = [len(x) for x in new_sentences]
         new_max_length = max(new_lengths)
         new_idxs = []
         for i in range(batch_size):
@@ -214,7 +260,7 @@ class RandomBpeApplier(object):
 
         new_lengths = torch.tensor(new_lengths)
 
-        origin_mask, new_mask = get_mask(mappers)
+        origin_mask, new_mask = get_sentence_combiner_mask(mappers)
 
         return new_batch, new_lengths, origin_mask, new_mask
 

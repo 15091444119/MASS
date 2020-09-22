@@ -13,6 +13,9 @@ import numpy as np
 import torch
 
 from ..utils import to_cuda, restore_segmentation, concat_batches
+from .utils import SenteceEmbedder, WordEmbedderWithCombiner
+from .bli import BLI
+from .eval_context_bli import eval_context_bli, read_bped_words
 
 
 BLEU_SCRIPT_PATH = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'multi-bleu.perl')
@@ -322,23 +325,51 @@ class SingleEvaluator(Evaluator):
         super().__init__(trainer, data, params)
         self.model = trainer.model
 
+
 class CombinerEvaluator(Evaluator):
     """ This is a combiner for word level combiner (not sentence) """
 
     def __init__(self, trainer, data, params):
 
         super().__init__(trainer, data, params)
-        self.model = trainer.model
-        self.combiner = trainer.combiner
-        self.bpe_helper = trainer.bpe_helper
+        self._params = params
+        self._whole_word_embedder = SenteceEmbedder(trainer.model, params, data["dico"], context_extractor="before_eos")
+        self._separated_word_embedder = WordEmbedderWithCombiner(trainer.model, trainer.combiner, params, data["dico"], context_extractor="last_time")
+        self._src_bped_words = read_bped_words(params.src_bped_words_path)
+        self._tgt_bped_words = read_bped_words(params.tgt_bped_words_path)
+        self._src_lang = params.dict_src_lang
+        self._tgt_lang = params.dict_tgt_lang
+        self._bli = BLI(params.bli_preprocess_method, params.bli_batch_size, params.bli_metric, params.bli_csls_topk)
 
-    def evaluate_bli(self):
+    def run_all_evals(self, trainer):
         """
-        evaluate whole word and separated word bli accuracy
+        Rewrite parent method
+
+        Evaluate whole word and separated word bli accuracy
         """
+        scores = OrderedDict({'epoch': trainer.epoch})
 
+        all_scores, whole_word_scores, separated_word_scores = eval_context_bli(
+            src_bped_words=self.src_bped_words,
+            src_lang=self._src_lang,
+            tgt_bped_words=self._tgt_bped_words,
+            tgt_lang=self._tgt_lang,
+            dic_path=self._params.dict_path,
+            whole_word_embedder=self._whole_word_embedder,
+            separated_word_embedder=self._separated_word_embedder,
+            bli=self._bli,
+            save_path=None)
 
+        for key, value in all_scores.items():
+            scores["BLI_all " + key] = value
 
+        for key, value in whole_word_scores.items():
+            scores["BLI_whole_word " + key] = value
+
+        for key, value in separated_word_scores.items():
+            scores["BLI_separated_word " + key] = value
+
+        return scores
 
 
 class EncDecEvaluator(Evaluator):

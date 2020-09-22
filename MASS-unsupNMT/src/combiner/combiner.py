@@ -7,9 +7,9 @@ class Transformer(nn.Module):
 
     def __init__(self, params):
         super().__init__()
-        transformer_layer = nn.TransformerEncoderLayer(d_model=params.emb_dim, nhead=params.num_head,
+        transformer_layer = nn.TransformerEncoderLayer(d_model=params.emb_dim, nhead=params.n_heads,
                                                        dim_feedforward=params.emb_dim * 4)
-        self._transformer_encoder = nn.TransformerEncoder(transformer_layer, num_layers=params.combiner_num_layers)
+        self._transformer_encoder = nn.TransformerEncoder(transformer_layer, num_layers=params.n_combiner_layers)
 
     def forward(self, embeddings, lengths):
         """

@@ -121,7 +121,7 @@ def encode_whole_word_separated_word(bped_words, lang, whole_word_embedder, sepa
     return whole_words, separated_word2bpe, word2id, id2word, embeddings
 
 
-def eval_combiner_bli(src_bped_words, src_lang, tgt_bped_words, tgt_lang, dic_path, whole_word_embedder:SenteceEmbedder, separated_word_embedder:WordEmbedderWithCombiner, bli:BLI, save_path=None):
+def eval_context_bli(src_bped_words, src_lang, tgt_bped_words, tgt_lang, dic_path, whole_word_embedder:SenteceEmbedder, separated_word_embedder:WordEmbedderWithCombiner, bli:BLI, save_path=None):
     """
         1. Generate context representation for each source word and each target word
         2. evaluate bli on it
@@ -215,7 +215,7 @@ def main():
     dico, mass_params, encoder, _ = load_mass_model(args.model_path)
     sentence_embedder = SenteceEmbedder(encoder, mass_params, dico, args.context_extractor)
 
-    scores, whole_word_scores, seperated_word_scores = eval_combiner_bli(
+    scores, whole_word_scores, separated_word_scores = eval_context_bli(
         src_bped_words=src_bped_words,
         src_lang=args.src_lang,
         tgt_bped_words=tgt_bped_words,
@@ -225,7 +225,7 @@ def main():
         separated_word_embedder=sentence_embedder,
         bli=bli,
         save_path=args.save_path)
-    print("scores: {}\nwhole word scores{}\nseperated word scores{}\n".format(scores, whole_word_scores, seperated_word_scores))
+    print("scores: {}\nwhole word scores{}\nseparated word scores{}\n".format(scores, whole_word_scores, separated_word_scores))
 
 if __name__ == "__main__":
     main()

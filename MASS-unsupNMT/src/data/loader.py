@@ -9,6 +9,7 @@ from logging import getLogger
 import os
 import numpy as np
 import torch
+import pdb
 
 from .dataset import Dataset, StreamDataset, ParallelDataset
 from .dictionary import BOS_WORD, EOS_WORD, PAD_WORD, UNK_WORD, MASK_WORD
@@ -126,6 +127,7 @@ def load_mono_data(params, data):
             mono_data = load_binarized(params.mono_dataset[lang][splt], params)
             set_dico_parameters(params, data, mono_data['dico'])
 
+
             # create stream dataset
             data['mono_stream'][lang][splt] = StreamDataset(mono_data['sentences'], mono_data['positions'], params)
 
@@ -137,7 +139,7 @@ def load_mono_data(params, data):
                 data['mono_stream'][lang][splt].select_data(a, b)
 
             # for denoising auto-encoding and online back-translation, we need a non-stream (batched) dataset
-            if lang in params.ae_steps or lang in params.bt_src_langs or lang in params.mass_steps:
+            if lang in params.ae_steps or lang in params.bt_src_langs or lang in params.mass_steps or lang in params.combiner_steps:
 
                 # create batched dataset
                 dataset = Dataset(mono_data['sentences'], mono_data['positions'], params)
@@ -325,6 +327,11 @@ def check_data_params(params):
             if src != tgt:
                 mass_steps.append(tuple([src, tgt]))
 
+    # combiner steps
+    params.combiner_steps = [s for s in params.combiner_steps.split(',') if len(s) > 0]
+    assert all([l in params.langs for l in params.combiner_steps])
+
+
     # back-translation steps
     params.bt_steps = [tuple(s.split('-')) for s in params.bt_steps.split(',') if len(s) > 0]
     assert all([len(x) == 3 for x in params.bt_steps])
@@ -335,7 +342,7 @@ def check_data_params(params):
     params.bt_src_langs = [l1 for l1, _, _ in params.bt_steps]
 
     # check monolingual datasets
-    required_mono = set([l1 for l1, l2 in (params.mlm_steps + params.clm_steps) if l2 is None] + params.ae_steps + params.bt_src_langs + params.mass_steps)
+    required_mono = set([l1 for l1, l2 in (params.mlm_steps + params.clm_steps) if l2 is None] + params.ae_steps + params.bt_src_langs + params.mass_steps + params.combiner_steps)
     params.mono_dataset = {
         lang: {
             splt: os.path.join(params.data_path, '%s.%s.pth' % (splt, lang))

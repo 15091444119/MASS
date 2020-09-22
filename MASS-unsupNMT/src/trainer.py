@@ -738,7 +738,7 @@ class CombinerTrainer(Trainer):
         params = self.params
         lang_id = params.lang2id[lang]
         batch, lengths = self.get_batch("combine", lang)
-        new_batch, new_lengths, origin_mask, new_mask = re_bpe_helper.re_encode_batch(batch, lengths, params.dico, params)
+        new_batch, new_lengths, origin_mask, new_mask = re_bpe_helper.re_encode_batch_words(batch, lengths, self.data["dico"], params)
 
         batch, lengths, new_batch, new_lengths, origin_mask, new_mask = to_cuda(batch, lengths, new_batch, new_lengths, origin_mask, new_mask)
 
