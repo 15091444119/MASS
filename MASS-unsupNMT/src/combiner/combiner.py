@@ -1,5 +1,6 @@
 import torch.nn as nn
 import torch
+import pdb
 from src.model.transformer import get_masks
 
 
@@ -22,6 +23,7 @@ class Transformer(nn.Module):
         """
         assert embeddings.size(1) == lengths.size(0)
         max_length = embeddings.size(0)
-        padding_mask = ~get_masks(slen=max_length, lengths=lengths, causal=False)  # (batch_size, max_length)
+        # src_key_padding_mask set padding with false
+        padding_mask = (~(get_masks(slen=max_length, lengths=lengths, causal=False)[0])).to(embeddings.device)  # (batch_size, max_length)
         outputs = self._transformer_encoder(src=embeddings, src_key_padding_mask=padding_mask)
         return outputs

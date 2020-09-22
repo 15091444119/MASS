@@ -260,12 +260,12 @@ def main(params):
     data = load_data(params)
 
     # bpe helper for combiner
-    bpe_helper = RandomBpeApplier(params.codes_path)
+    bpe_helper = RandomBpeApplier.from_code_path(params.codes_path)
 
     # build model
-    assert params.encoder_only
-    model = build_model(params, data['dico'])
-    combiner = Transformer(params)
+    assert not params.encoder_only
+    model, _ = build_model(params, data['dico'])
+    combiner = Transformer(params).cuda()
 
     # float16
     if params.fp16:

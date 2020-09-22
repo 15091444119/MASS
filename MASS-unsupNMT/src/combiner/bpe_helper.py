@@ -90,15 +90,19 @@ def read_codes(codes):
 
 def get_sentence_combiner_mask(mappers, origin_lengths, new_lengths):
     """
-    we use the representation at the end of the word as the representation of the word
-    the new splited word will be masked for further mse loss computation
+    Mask the word new been separated in the origin sentence
+    And the end of word in the new sentence
+    This two masks will be further used in mse training for sentence level combiner but not word level combiner
     params:
         mappers: list
-            list of mappers, each mapper maps original index to a span after re tokenize
+            List of mappers, each mapper maps original index to a span after re tokenize
+
         origin_lenghts:  torch.long
+
         new_lengths: torch.long
     returns:
         origin_mask: torch.bool, (batch_size, max_origin_length)
+
         new_mask: torch.bool, (batch_size, max_new_length)
     """
     batch_size = len(origin_lengths)
@@ -176,6 +180,20 @@ class RandomBpeApplier(object):
         for i in range(batch_size):
             new_mask[i, new_lengths[i].item() - 1] = True
 
+        """
+        for debug encoder input
+        for i in range(batch_size):
+            print("Origin:", end=" ")
+            for idx in batch[:, i]:
+                print(dico.id2word[idx.item()], end=" ")
+            print("After:", end=" ")
+            for idx in new_batch[:, i]:
+                print(dico.id2word[idx.item()], end=" ")
+            print(origin_mask[i])
+            print(new_mask[i])
+            pdb.set_trace()
+        """
+
         return new_batch, new_lengths, origin_mask, new_mask
 
 
@@ -192,6 +210,7 @@ class RandomBpeApplier(object):
             a list of new tokens
             and a dict to map the original word to the re encoded word
                 like: {1:(1, 3)} means the first token in the origin sentence[1] == newsentence[1:3]
+
         """
         if kept_words is None:
             kept_words = set()
@@ -222,15 +241,20 @@ class RandomBpeApplier(object):
         we re encode it to another batch which don't fully merge bpe tokens
         params:
             batch: torch.LongTensor, size:(max_len, batch_size)
+
             lengths: torch.LongTensor
+
             dico: src.data.dictionary object
+
             params:
                 mass params
         returns:
-            (new_batch, new_lengths, origin_whole_word_mask, new_whole_word_mask)
             new_batch: torch.LongTensor (new_max_length, batch_size)
+
             new_lengths:
+
             origin_mask: words been separated in new batch are masked
+
             new_mask: whole word end positions are masked
         """
         new_sentences = []
@@ -239,19 +263,17 @@ class RandomBpeApplier(object):
         kept_words = set([dico.id2word[x] for x in
                           [params.eos_index, params.bos_index, params.unk_index, params.pad_index]])
 
-        pdb.set_trace()
         for i in range(batch_size):
             raw_sentence = [dico.id2word[idx.item()] for idx in batch[:lengths[i], i]]
             new_sentence, mapper = self.re_encode_sentence(raw_sentence, kept_words)
-            new_sentences.append(new_sentences)
+            new_sentences.append(new_sentence)
             mappers.append(mapper)
 
         new_lengths = [len(x) for x in new_sentences]
         new_max_length = max(new_lengths)
         new_idxs = []
         for i in range(batch_size):
-            new_idxs.append([dico.index(word) for word in new_sentences[i]])
-        new_idxs = np.array(new_idxs)
+            new_idxs.append(np.array([dico.index(word) for word in new_sentences[i]]))
 
         new_batch = torch.LongTensor(new_max_length, batch_size).fill_(params.pad_index)
 
@@ -260,7 +282,7 @@ class RandomBpeApplier(object):
 
         new_lengths = torch.tensor(new_lengths)
 
-        origin_mask, new_mask = get_sentence_combiner_mask(mappers)
+        origin_mask, new_mask = get_sentence_combiner_mask(mappers, lengths, new_lengths)
 
         return new_batch, new_lengths, origin_mask, new_mask
 

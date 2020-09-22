@@ -10,6 +10,7 @@
 
 import os
 import math
+import pdb
 import time
 import random
 from logging import getLogger
@@ -743,22 +744,24 @@ class CombinerTrainer(Trainer):
         batch, lengths, new_batch, new_lengths, origin_mask, new_mask = to_cuda(batch, lengths, new_batch, new_lengths, origin_mask, new_mask)
 
         # original encode
-        lang = batch.clone().fill_(lang_id)
+        langs = batch.clone().fill_(lang_id)
         self.model.eval()
         with torch.no_grad():
-            origin_encoded = self.encoder('fwd', x=batch, lengths=lengths, langs=lang, causal=False)
-
+            origin_encoded = self.model('fwd', x=batch, lengths=lengths, langs=langs, causal=False)
         # new encode
         self.model.train()
-        lang = new_batch.clone().fill_(lang_id)
-        new_encoded = self.encoder('fwd', x=new_batch, lengths=new_lengths, langs=lang, causal=False)
+        langs = new_batch.clone().fill_(lang_id)
+        new_encoded = self.model('fwd', x=new_batch, lengths=new_lengths, langs=langs, causal=False)
         new_encoded = self.combiner(new_encoded, new_lengths)
 
-        origin_word_rep = torch.masked_select(origin_encoded.transpose(0, 1), origin_mask)
-        new_word_rep = torch.masked_select(new_encoded.transpose(0, 1), new_mask)
+        origin_mask = origin_mask.unsqueeze(-1)
+        new_mask = new_mask.unsqueeze(-1)
+        output_dim = new_encoded.size(-1)
+        origin_word_rep = torch.masked_select(origin_encoded.transpose(0, 1), origin_mask).view(-1, output_dim)
+        new_word_rep = torch.masked_select(new_encoded.transpose(0, 1), new_mask).view(-1, output_dim)
 
         # mse loss
-        loss = torch.nn.MSELoss(origin_word_rep, new_word_rep)
+        loss = torch.nn.MSELoss()(origin_word_rep, new_word_rep)
 
         self.stats[("combiner-{}".format(lang))].append(loss.item())
 

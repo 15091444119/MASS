@@ -333,8 +333,10 @@ class CombinerEvaluator(Evaluator):
 
         super().__init__(trainer, data, params)
         self._params = params
-        self._whole_word_embedder = SenteceEmbedder(trainer.model, params, data["dico"], context_extractor="before_eos")
-        self._separated_word_embedder = WordEmbedderWithCombiner(trainer.model, trainer.combiner, params, data["dico"], context_extractor="last_time")
+    #    self._whole_word_embedder = SenteceEmbedder(trainer.model, params, data["dico"], context_extractor="before_eos")
+    #    self._separated_word_embedder = WordEmbedderWithCombiner(trainer.model, trainer.combiner, params, data["dico"], context_extractor="last_time")
+        self._whole_word_embedder = SenteceEmbedder(trainer.model, params, data["dico"], context_extractor="average")
+        self._separated_word_embedder = SenteceEmbedder(trainer.model, params, data["dico"], context_extractor="average")
         self._src_bped_words = read_bped_words(params.src_bped_words_path)
         self._tgt_bped_words = read_bped_words(params.tgt_bped_words_path)
         self._src_lang = params.dict_src_lang
@@ -350,7 +352,7 @@ class CombinerEvaluator(Evaluator):
         scores = OrderedDict({'epoch': trainer.epoch})
 
         all_scores, whole_word_scores, separated_word_scores = eval_context_bli(
-            src_bped_words=self.src_bped_words,
+            src_bped_words=self._src_bped_words,
             src_lang=self._src_lang,
             tgt_bped_words=self._tgt_bped_words,
             tgt_lang=self._tgt_lang,
