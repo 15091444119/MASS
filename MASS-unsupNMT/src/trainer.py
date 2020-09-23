@@ -718,7 +718,7 @@ class CombinerTrainer(Trainer):
     only update parameters of a combiner
     """
 
-    def __init__(self, model, combiner, data, params, re_bpe):
+    def __init__(self, model, combiner, data, params, re_bpe, loss_function):
 
         self.MODEL_NAMES = ["model", "combiner"]
 
@@ -728,6 +728,7 @@ class CombinerTrainer(Trainer):
         self.data = data
         self.params = params
         self.re_bpe = re_bpe
+        self.loss_function = loss_function
 
         # optimizers
         self.optimizers = {'combiner': self.get_optimizer_fp('combiner'),
@@ -764,7 +765,7 @@ class CombinerTrainer(Trainer):
         new_word_rep = torch.masked_select(new_encoded.transpose(0, 1), new_mask).view(-1, output_dim)
 
         # mse loss
-        loss = torch.nn.MSELoss()(origin_word_rep, new_word_rep)
+        loss = self.loss_function(origin_word_rep, new_word_rep)
 
         self.stats[("combiner-{}".format(lang))].append(loss.item())
 

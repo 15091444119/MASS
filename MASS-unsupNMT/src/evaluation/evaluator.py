@@ -347,6 +347,7 @@ class CombinerEvaluator(Evaluator):
         self._tgt_lang = params.dict_tgt_lang
         self._bli = BLI(params.bli_preprocess_method, params.bli_batch_size, params.bli_metric, params.bli_csls_topk)
         self._re_bpe = trainer.re_bpe
+        self._loss_function = trainer.loss_function
 
 
     def run_all_evals(self, trainer):
@@ -357,7 +358,7 @@ class CombinerEvaluator(Evaluator):
         """
         scores = OrderedDict({'epoch': trainer.epoch})
 
-        #self.eval_bli(self, scores)
+        self.eval_bli(scores)
 
         for lang in self.params.combiner_steps:
             self.eval_loss(scores, lang)
@@ -402,7 +403,7 @@ class CombinerEvaluator(Evaluator):
             new_word_rep = torch.masked_select(new_encoded.transpose(0, 1), new_mask).view(-1, output_dim)
 
             # mse loss
-            loss = torch.nn.MSELoss()(origin_word_rep, new_word_rep)
+            loss = self._loss_function(origin_word_rep, new_word_rep)
 
             n_words += origin_word_rep.size(0)
             all_loss += loss.item() * origin_word_rep.size(0)

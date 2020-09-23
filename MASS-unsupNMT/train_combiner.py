@@ -243,7 +243,21 @@ def get_parser():
     parser.add_argument("--bli_metric", type=str, default="nn")
     parser.add_argument("--bli_csls_topk", type=int, default=10)
 
+    parser.add_argument("--combiner_loss", type=str, default="MSE", choices=["MSE", "COS"])
+    parser.add_argument("--eval_loss_sentences", type=int, default=10000)
+
     return parser
+
+
+def get_loss_function(params):
+    if params.combiner_loss == "MSE":
+        return torch.nn.MSELoss()
+    elif params.combiner_loss == "COS":
+        def cos_loss(x, y):
+            return -torch.nn.CosineSimilarity(dim=1)(x, y).mean()
+        return cos_loss
+    else:
+        return NotImplementedError
 
 
 def main(params):
@@ -278,7 +292,8 @@ def main(params):
         combiner = apex.parallel.DistributedDataParallel(combiner, delay_allreduce=True)
 
     # build trainer, reload potential checkpoints / build evaluator
-    trainer = CombinerTrainer(model, combiner, data, params, bpe_helper)
+    loss_function = get_loss_function(params)
+    trainer = CombinerTrainer(model, combiner, data, params, bpe_helper, loss_function)
     evaluator = CombinerEvaluator(trainer, data, params)
 
     # evaluation
@@ -295,6 +310,7 @@ def main(params):
         logger.info("============ Starting epoch %i ... ============" % trainer.epoch)
 
         trainer.n_sentences = 0
+        last_eval_loss_sentences = 0
 
         while trainer.n_sentences < trainer.epoch_size:
 
@@ -303,6 +319,17 @@ def main(params):
                 trainer.combiner_step(lang)
 
             trainer.iter()
+
+            # evaluate loss
+            if params.eval_loss_sentences != -1 and trainer.n_sentences - last_eval_loss_sentences >= params.eval_loss_sentences:
+                scores = {}
+                for lang in params.combiner_steps:
+                    evaluator.eval_loss(scores, lang)
+                for k, v in scores.items():
+                    logger.info("%s -> %.6f" % (k, v))
+                if params.is_master:
+                    logger.info("__log__:%s" % json.dumps(scores))
+                last_eval_loss_sentences = trainer.n_sentences
 
         logger.info("============ End of epoch %i ============" % trainer.epoch)
 
