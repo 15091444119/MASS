@@ -332,11 +332,14 @@ class CombinerEvaluator(Evaluator):
     def __init__(self, trainer, data, params):
 
         super().__init__(trainer, data, params)
+        self._data = data
         self._params = params
-    #    self._whole_word_embedder = SenteceEmbedder(trainer.model, params, data["dico"], context_extractor="before_eos")
-    #    self._separated_word_embedder = WordEmbedderWithCombiner(trainer.model, trainer.combiner, params, data["dico"], context_extractor="last_time")
-        self._whole_word_embedder = SenteceEmbedder(trainer.model, params, data["dico"], context_extractor="average")
-        self._separated_word_embedder = SenteceEmbedder(trainer.model, params, data["dico"], context_extractor="average")
+        self._model = trainer.model
+        self._combiner = trainer.combiner
+        self._whole_word_embedder = SenteceEmbedder(trainer.model, params, data["dico"], context_extractor="before_eos")
+        self._separated_word_embedder = WordEmbedderWithCombiner(trainer.model, trainer.combiner, params, data["dico"], context_extractor="last_time")
+        #self._whole_word_embedder = SenteceEmbedder(trainer.model, params, data["dico"], context_extractor="before_eos")
+        #self._separated_word_embedder = SenteceEmbedder(trainer.model, params, data["dico"], context_extractor="before_eos")
         self._src_bped_words = read_bped_words(params.src_bped_words_path)
         self._tgt_bped_words = read_bped_words(params.tgt_bped_words_path)
         self._src_lang = params.dict_src_lang
@@ -351,6 +354,14 @@ class CombinerEvaluator(Evaluator):
         """
         scores = OrderedDict({'epoch': trainer.epoch})
 
+        self.eval_bli(self, scores)
+        self.eval_loss(self, scores)
+
+    def eval_loss(self):
+
+
+
+    def eval_bli(self, scores):
         all_scores, whole_word_scores, separated_word_scores = eval_context_bli(
             src_bped_words=self._src_bped_words,
             src_lang=self._src_lang,
@@ -370,8 +381,6 @@ class CombinerEvaluator(Evaluator):
 
         for key, value in separated_word_scores.items():
             scores["BLI_separated_word " + key] = value
-
-        return scores
 
 
 class EncDecEvaluator(Evaluator):
