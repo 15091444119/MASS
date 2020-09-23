@@ -278,7 +278,7 @@ def main(params):
         combiner = apex.parallel.DistributedDataParallel(combiner, delay_allreduce=True)
 
     # build trainer, reload potential checkpoints / build evaluator
-    trainer = CombinerTrainer(model, combiner, data, params)
+    trainer = CombinerTrainer(model, combiner, data, params, bpe_helper)
     evaluator = CombinerEvaluator(trainer, data, params)
 
     # evaluation
@@ -300,7 +300,7 @@ def main(params):
 
             # combiner step
             for lang in params.combiner_steps:
-                trainer.combiner_step(lang, bpe_helper)
+                trainer.combiner_step(lang)
 
             trainer.iter()
 

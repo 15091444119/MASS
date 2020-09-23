@@ -718,7 +718,7 @@ class CombinerTrainer(Trainer):
     only update parameters of a combiner
     """
 
-    def __init__(self, model, combiner, data, params):
+    def __init__(self, model, combiner, data, params, re_bpe):
 
         self.MODEL_NAMES = ["model", "combiner"]
 
@@ -727,6 +727,7 @@ class CombinerTrainer(Trainer):
         self.combiner = combiner
         self.data = data
         self.params = params
+        self.re_bpe = re_bpe
 
         # optimizers
         self.optimizers = {'combiner': self.get_optimizer_fp('combiner'),
@@ -735,11 +736,11 @@ class CombinerTrainer(Trainer):
         super().__init__(data, params)
 
 
-    def combiner_step(self, lang, re_bpe_helper:RandomBpeApplier):
+    def combiner_step(self, lang):
         params = self.params
         lang_id = params.lang2id[lang]
         batch, lengths = self.get_batch("combine", lang)
-        new_batch, new_lengths, origin_mask, new_mask = re_bpe_helper.re_encode_batch_words(batch, lengths, self.data["dico"], params)
+        new_batch, new_lengths, origin_mask, new_mask = self.re_bpe.re_encode_batch_words(batch, lengths, self.data["dico"], params)
 
         batch, lengths, new_batch, new_lengths, origin_mask, new_mask = to_cuda(batch, lengths, new_batch, new_lengths, origin_mask, new_mask)
 
@@ -748,8 +749,10 @@ class CombinerTrainer(Trainer):
         self.model.eval()
         with torch.no_grad():
             origin_encoded = self.model('fwd', x=batch, lengths=lengths, langs=langs, causal=False)
+
         # new encode
         self.model.train()
+        self.combiner.train()
         langs = new_batch.clone().fill_(lang_id)
         new_encoded = self.model('fwd', x=new_batch, lengths=new_lengths, langs=langs, causal=False)
         new_encoded = self.combiner(new_encoded, new_lengths)

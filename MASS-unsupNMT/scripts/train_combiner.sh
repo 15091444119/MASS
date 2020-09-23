@@ -18,7 +18,7 @@ python train_combiner.py \
 	--batch_size 100 \
 	--optimizer adam_inverse_sqrt,beta1=0.9,beta2=0.98,lr=0.0001 \
 	--epoch_size 10000                                  \
-	--max_epoch 1                                      \
+	--max_epoch 20                                      \
 	--src_bped_words_path ./word_vocab/zh.vocab.bpe \
 	--tgt_bped_words_path ./word_vocab/en.vocab.bpe \
 	--dict_src_lang zh \

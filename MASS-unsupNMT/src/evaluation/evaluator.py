@@ -6,6 +6,7 @@
 #
 
 from logging import getLogger
+import pdb
 import os
 import subprocess
 from collections import OrderedDict
@@ -345,6 +346,8 @@ class CombinerEvaluator(Evaluator):
         self._src_lang = params.dict_src_lang
         self._tgt_lang = params.dict_tgt_lang
         self._bli = BLI(params.bli_preprocess_method, params.bli_batch_size, params.bli_metric, params.bli_csls_topk)
+        self._re_bpe = trainer.re_bpe
+
 
     def run_all_evals(self, trainer):
         """
@@ -354,11 +357,57 @@ class CombinerEvaluator(Evaluator):
         """
         scores = OrderedDict({'epoch': trainer.epoch})
 
-        self.eval_bli(self, scores)
-        self.eval_loss(self, scores)
+        #self.eval_bli(self, scores)
 
-    def eval_loss(self):
+        for lang in self.params.combiner_steps:
+            self.eval_loss(scores, lang)
 
+        return scores
+
+
+    def eval_loss(self, scores, lang):
+        """
+        evaluate combiner valid loss
+
+        """
+        params = self._params
+        lang_id = params.lang2id[lang]
+        data_set = "valid"
+        n_words = 0
+        all_loss = 0
+        for batch, lengths in self.get_iterator(data_set, lang):
+            new_batch, new_lengths, origin_mask, new_mask = self._re_bpe.re_encode_batch_words(batch, lengths,
+                                                                                                self._data["dico"],
+                                                                                                params)
+
+            batch, lengths, new_batch, new_lengths, origin_mask, new_mask = to_cuda(batch, lengths, new_batch,
+                                                                                    new_lengths, origin_mask, new_mask)
+
+            langs = batch.clone().fill_(lang_id)
+            self._model.eval()
+            self._combiner.eval()
+            with torch.no_grad():
+                # original encode
+                origin_encoded = self._model('fwd', x=batch, lengths=lengths, langs=langs, causal=False)
+
+                # new encode
+                langs = new_batch.clone().fill_(lang_id)
+                new_encoded = self._model('fwd', x=new_batch, lengths=new_lengths, langs=langs, causal=False)
+                new_encoded = self._combiner(new_encoded, new_lengths)
+
+            origin_mask = origin_mask.unsqueeze(-1)
+            new_mask = new_mask.unsqueeze(-1)
+            output_dim = new_encoded.size(-1)
+            origin_word_rep = torch.masked_select(origin_encoded.transpose(0, 1), origin_mask).view(-1, output_dim)
+            new_word_rep = torch.masked_select(new_encoded.transpose(0, 1), new_mask).view(-1, output_dim)
+
+            # mse loss
+            loss = torch.nn.MSELoss()(origin_word_rep, new_word_rep)
+
+            n_words += origin_word_rep.size(0)
+            all_loss += loss.item() * origin_word_rep.size(0)
+
+        scores["{}-{}-combiner".format(data_set, lang)] = all_loss / n_words
 
 
     def eval_bli(self, scores):
