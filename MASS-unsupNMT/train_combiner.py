@@ -21,7 +21,7 @@ from src.utils import bool_flag, initialize_exp, set_sampling_probs, shuf_order
 from src.model import check_model_params, build_model
 from src.trainer import SingleTrainer, EncDecTrainer, CombinerTrainer
 from src.evaluation.evaluator import SingleEvaluator, EncDecEvaluator, CombinerEvaluator
-from src.combiner.combiner import Transformer
+from src.combiner.combiner import build_combiner
 from src.combiner.bpe_helper import RandomBpeApplier
 
 import apex
@@ -226,6 +226,7 @@ def get_parser():
                         help="Master port (for multi-node SLURM jobs)")
 
     # combiner
+    parser.add_argument("--combiner", type=str)
     parser.add_argument("--combiner_steps", type=str, default="")
     parser.add_argument("--n_combiner_layers", type=int, default=4)
     parser.add_argument("--codes_path", type=str)
@@ -279,7 +280,8 @@ def main(params):
     # build model
     assert not params.encoder_only
     model, _ = build_model(params, data['dico'])
-    combiner = Transformer(params).cuda()
+    combiner = build_combiner(params).cuda()
+    logger.info("{}".format(combiner))
 
     # float16
     if params.fp16:

@@ -27,3 +27,30 @@ class Transformer(nn.Module):
         padding_mask = (~(get_masks(slen=max_length, lengths=lengths, causal=False)[0])).to(embeddings.device)  # (batch_size, max_length)
         outputs = self._transformer_encoder(src=embeddings, src_key_padding_mask=padding_mask)
         return outputs
+
+
+class GRU(nn.Module):
+    def __init__(self, params):
+        super().__init__()
+        self._gru = nn.GRU(input_size=params.emb_dim, hidden_size=params.emb_dim, num_layers=params.n_combiner_layers, batch_first=False)
+
+    def forward(self, embeddings, lengths):
+        """
+        forward function of the combiner
+        params:
+            embeddings: torch.FloatTensor, (max_length, batch_size)
+            lengths: torch.LongTensor (batch_size)
+        returns:
+            outputs: torch.FloatTensor, (max_length, batch_size)
+        """
+        output, _ = self._gru(embeddings)
+        return output
+
+
+def build_combiner(params):
+    if params.combiner == "transformer":
+        return Transformer(params)
+    elif params.combiner == "gru":
+        return GRU(params)
+    else:
+        raise NotImplementedError
