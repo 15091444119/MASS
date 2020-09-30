@@ -8,7 +8,7 @@ python train_combiner.py \
 	--data_path ./combiner_data \
 	--lgs 'zh-en'                                        \
 	--encoder_only False                                 \
-	--reload "$MODEL,$MODEL" \
+	--reload_model "$MODEL,$MODEL" \
 	--emb_dim 1024                                       \
 	--n_layers 6                                         \
 	--n_heads 8                                          \
@@ -27,5 +27,6 @@ python train_combiner.py \
 	--codes_path /home/data_ti5_d/zhouzh/low-resource-mt/XLM_MASS_preprocessed_data/pretrain/cn-split-sen-zh-en-pretrain/codes \
 	--combiner_steps "zh,en" \
 	--combiner_loss "MSE" \
-	--combiner "gru"
-#	--eval_only True
+	--combiner "transformer" \
+  --eval_only True \
+  --reload_encoder_combiner_path /home/data_ti5_d/zhouzh/low-resource-mt/subword-combiner/MASS-unsupNMT/dumped/mse/checkpoint.pth

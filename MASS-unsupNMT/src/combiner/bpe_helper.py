@@ -132,6 +132,7 @@ class RandomBpeApplier(object):
 
     def random_encode_word(self, word):
         """ don't fully merge bpe"""
+        assert len(word) != 1
         _, merge_num = encode_word(word, self.bpe_codes, return_merge_count=True)
         assert merge_num != 0
 
@@ -287,4 +288,8 @@ class RandomBpeApplier(object):
         return new_batch, new_lengths, origin_mask, new_mask
 
 
+
+if __name__ == "__main__":
+    bpe_codes = {("a", "b"): 0, ("a", "c</w>"): 1, ("ab", "ac</w>"): 2}
+    print(encode_word("aefabghabacefatc", bpe_codes))
 

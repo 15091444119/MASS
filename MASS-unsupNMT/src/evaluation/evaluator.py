@@ -16,7 +16,7 @@ import torch
 from ..utils import to_cuda, restore_segmentation, concat_batches
 from .utils import SenteceEmbedder, WordEmbedderWithCombiner
 from .bli import BLI
-from .eval_context_bli import eval_context_bli, read_bped_words
+from .eval_context_bli import eval_context_bli, read_bped_words, generate_context_word_representation
 
 
 BLEU_SCRIPT_PATH = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'multi-bleu.perl')
@@ -360,6 +360,8 @@ class CombinerEvaluator(Evaluator):
 
         self.eval_bli(scores)
 
+        self.eval_split_whole_word_bli(scores)
+
         for lang in self.params.combiner_steps:
             self.eval_loss(scores, lang)
 
@@ -411,6 +413,47 @@ class CombinerEvaluator(Evaluator):
         scores["{}-{}-combiner".format(data_set, lang)] = all_loss / n_words
 
 
+    def eval_split_whole_word_bli(self, scores):
+        """
+        Under this setting, we split whole word (with more then one character) using a random bpe helper(this this results is not stable)
+        """
+
+        def re_encode_whole_word(words):
+            new_words = []
+            for word in words:
+                if len(word) == 1:
+                    new_words.append(word)
+                elif "@@" in word:
+                    new_words.append(word)
+                else:
+                    new_words.append(' '.join(self._re_bpe.random_encode_word(word)))
+            return new_words
+
+        new_src_bped_words = re_encode_whole_word(self._src_bped_words)
+        new_tgt_bped_words = re_encode_whole_word(self._tgt_bped_words)
+
+        all_scores, whole_word_scores, separated_word_scores = eval_context_bli(
+            src_bped_words=new_src_bped_words,
+            src_lang=self._src_lang,
+            tgt_bped_words=new_tgt_bped_words,
+            tgt_lang=self._tgt_lang,
+            dic_path=self._params.dict_path,
+            whole_word_embedder=self._separated_word_embedder,
+            separated_word_embedder=self._separated_word_embedder,
+            bli=self._bli,
+            save_path=None)
+
+        for key, value in all_scores.items():
+            scores["BLI_split_all " + key] = value
+
+        for key, value in whole_word_scores.items():
+            scores["BLI_split_whole_word " + key] = value
+
+        for key, value in separated_word_scores.items():
+            scores["BLI_split_separated_word " + key] = value
+
+
+
     def eval_bli(self, scores):
         all_scores, whole_word_scores, separated_word_scores = eval_context_bli(
             src_bped_words=self._src_bped_words,
@@ -431,6 +474,64 @@ class CombinerEvaluator(Evaluator):
 
         for key, value in separated_word_scores.items():
             scores["BLI_separated_word " + key] = value
+
+    def eval_combiner_acc(self, scores, data, src_or_tgt):
+        """
+        For each word in the valid set and training set, we first split into bpe tokens, then get the combiner representation of it.
+        Then we search nearest neighbor in the original embedding space, and see if the nearest neighbor is that word.
+        This can be regarded as a BLI from combiner space to original mass output space.
+
+        Example:
+            你好 -> 你@@ 好 -> representation([你@@, 好]) -> search nearest neighbor in (你好，我好，大家好，...）
+
+        Params:
+            scores: dict
+
+            data: string, choices=["valid", "train"]
+
+            src_or_tgt: string, choices=["src", "tgt"]
+        """
+        # generate combiner space representation
+        if src_or_tgt == "src":
+            lang = self._src_lang
+            words = self._src_bped_words
+        else:
+            lang = self._tgt_lang
+            words = self._tgt_bped_words
+
+        combiner_word2id = {}
+        words = []
+        for batch, length in self.get_iterator(data, lang):
+            assert (length == 3).all() # all are words
+            for token_idxs in batch:
+                word_id = token_idxs[1].item()  # [eos, word_id, eos]
+                word = self._data["dico"].id2word[word_id]
+                combiner_word2id[word] = len(word_id)
+                words.append(word)
+
+        combiner_embeddings = generate_context_word_representation(words, lang, self._separated_word_embedder)
+
+
+
+
+
+
+        # generate original mass representation
+
+
+        # bli
+        bli_scores = self._bli.eval(combiner_embeddings, mass_embeddings, combiner_id2word, combiner_word2id, mass_id2word, mass_word2id, dic)
+
+        for key, value in bli_scores.item():
+            scores["{data}-{lang}-combiner-acc-{key}".format(data=data, lang=lang, key=key)] = value
+
+
+
+
+
+
+
+
 
 
 class EncDecEvaluator(Evaluator):

@@ -31,3 +31,4 @@ class TestBpe(unittest.TestCase):
         input_sentence = ["abac", "a@@", "c",  "abac", "abac"]
         res = bpe_applier.re_encode_sentence(input_sentence)
         print(input_sentence, res)
+
