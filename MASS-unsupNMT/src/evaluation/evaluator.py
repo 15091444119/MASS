@@ -16,7 +16,7 @@ import torch
 from ..utils import to_cuda, restore_segmentation, concat_batches
 from .utils import SenteceEmbedder, WordEmbedderWithCombiner
 from .bli import BLI
-from .eval_context_bli import eval_context_bli, read_bped_words, generate_context_word_representation
+from .eval_context_bli import eval_context_bli, read_bped_words, generate_context_word_representation, encode_whole_word_separated_word
 
 
 BLEU_SCRIPT_PATH = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'multi-bleu.perl')
@@ -357,13 +357,16 @@ class CombinerEvaluator(Evaluator):
         Evaluate whole word and separated word bli accuracy
         """
         scores = OrderedDict({'epoch': trainer.epoch})
-
+        """
         self.eval_bli(scores)
 
         self.eval_split_whole_word_bli(scores)
 
         for lang in self.params.combiner_steps:
             self.eval_loss(scores, lang)
+        """
+        self.eval_combiner_acc(scores, "valid", "src")
+        self.eval_combiner_acc(scores, "valid", "tgt")
 
         return scores
 
@@ -477,9 +480,10 @@ class CombinerEvaluator(Evaluator):
 
     def eval_combiner_acc(self, scores, data, src_or_tgt):
         """
-        For each word in the valid set and training set, we first split into bpe tokens, then get the combiner representation of it.
-        Then we search nearest neighbor in the original embedding space, and see if the nearest neighbor is that word.
-        This can be regarded as a BLI from combiner space to original mass output space.
+            For each word in the valid set and training set(this are whole word), we first split into bpe tokens,
+        then get the combiner representation of it, then we search nearest neighbor in the original embedding
+        space(given by src_bped_words or tgt_bped_words) and see if the nearest neighbor is that word.
+            This can be regarded as a BLI from combiner space to original mass output space.
 
         Example:
             你好 -> 你@@ 好 -> representation([你@@, 好]) -> search nearest neighbor in (你好，我好，大家好，...）
@@ -491,38 +495,47 @@ class CombinerEvaluator(Evaluator):
 
             src_or_tgt: string, choices=["src", "tgt"]
         """
-        # generate combiner space representation
         if src_or_tgt == "src":
             lang = self._src_lang
-            words = self._src_bped_words
+            origin_words = self._src_bped_words
         else:
             lang = self._tgt_lang
-            words = self._tgt_bped_words
+            origin_words = self._tgt_bped_words
 
+        # generate combiner space representation
         combiner_word2id = {}
-        words = []
+        combiner_words = []  # re bped combiner words for generate representation
+        pdb.set_trace()
         for batch, length in self.get_iterator(data, lang):
             assert (length == 3).all() # all are words
+            batch = batch.transpose(0, 1)
             for token_idxs in batch:
                 word_id = token_idxs[1].item()  # [eos, word_id, eos]
                 word = self._data["dico"].id2word[word_id]
-                combiner_word2id[word] = len(word_id)
-                words.append(word)
-
-        combiner_embeddings = generate_context_word_representation(words, lang, self._separated_word_embedder)
-
-
-
-
-
+                combiner_word2id[word] = len(combiner_word2id)
+                re_bped_word = ' '.join(self._re_bpe.random_encode_word(word))
+                combiner_words.append(re_bped_word)
+        assert len(combiner_word2id) == len(combiner_words)
+        combiner_embeddings = generate_context_word_representation(combiner_words, lang, self._separated_word_embedder)
+        combiner_id2word = {idx: word for word, idx in combiner_word2id.items()}
 
         # generate original mass representation
+        _, _, origin_word2id, origin_id2word, origin_embeddings = encode_whole_word_separated_word(
+            origin_words, lang, self._whole_word_embedder, self._separated_word_embedder)
 
+        # generate a dictionary
+        dic = {}
+        for word, combiner_idx in combiner_word2id.items():
+            if word in origin_word2id:
+                origin_idx = origin_word2id[word]
+                dic[combiner_idx] = [origin_idx]
+
+        logger.info("Number of combiner word: {} Number of origin word: {} Number of dic word: {}".format(len(combiner_id2word), len(origin_word2id), len(dic)))
 
         # bli
-        bli_scores = self._bli.eval(combiner_embeddings, mass_embeddings, combiner_id2word, combiner_word2id, mass_id2word, mass_word2id, dic)
+        bli_scores = self._bli.eval(combiner_embeddings, origin_embeddings, combiner_id2word, combiner_word2id, origin_id2word, origin_word2id, dic)
 
-        for key, value in bli_scores.item():
+        for key, value in bli_scores.items():
             scores["{data}-{lang}-combiner-acc-{key}".format(data=data, lang=lang, key=key)] = value
 
 

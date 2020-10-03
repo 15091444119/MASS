@@ -114,7 +114,7 @@ def encode_whole_word_separated_word(bped_words, lang, whole_word_embedder, sepa
     for word in separated_word2bpe:
         word2id[word] = len(word2id)
 
-    id2word = {idx:word for word, idx in word2id.items()}
+    id2word = {idx: word for word, idx in word2id.items()}
 
     embeddings = torch.cat([whole_word_embeddings, separated_word_embeddings], dim=0)
 
