@@ -21,7 +21,7 @@ from src.utils import bool_flag, initialize_exp, set_sampling_probs, shuf_order
 from src.model import check_model_params, build_model, reload_model_combiner
 from src.trainer import SingleTrainer, EncDecTrainer, CombinerTrainer
 from src.evaluation.evaluator import SingleEvaluator, EncDecEvaluator, CombinerEvaluator
-from src.combiner.combiner import build_combiner
+from src.combiner.combiner import MultiLingualCombiner
 from src.combiner.bpe_helper import RandomBpeApplier
 
 import apex
@@ -231,6 +231,7 @@ def get_parser():
     parser.add_argument("--n_combiner_layers", type=int, default=4)
     parser.add_argument("--codes_path", type=str)
     parser.add_argument("--reload_encoder_combiner_path", type=str, default="")
+    parser.add_argument("--share_combiner", type=bool_flag, default=False, help="share combiner in different languages")
 
     # bli data
     parser.add_argument("--src_bped_words_path", type=str)
@@ -283,7 +284,7 @@ def main(params):
     if params.reload_encoder_combiner_path == "":
         # only reload model or don't reload anything
         model, _ = build_model(params, data['dico'])
-        combiner = build_combiner(params).cuda()
+        combiner = MultiLingualCombiner(params).cuda()
         logger.info("{}".format(combiner))
     else:
         # reload model and combiner from a checkpoint

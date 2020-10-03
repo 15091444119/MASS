@@ -231,7 +231,9 @@ class WordEmbedderWithCombiner(nn.Module):
         """
         batch_context_word_representations, lengths = encode_sentences(self._encoder, self._dico, self._mass_params,
                                                                        sentences, lang)
-        batch_context_word_representations = self._combiner(batch_context_word_representations.transpose(0, 1), lengths).transpose(0, 1)
+
+
+        batch_context_word_representations = self._combiner(batch_context_word_representations.transpose(0, 1), lengths, lang).transpose(0, 1)
 
         batch_sentence_representation = self._context2sentence(batch_context_word_representations, lengths)
         return batch_sentence_representation

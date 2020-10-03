@@ -328,7 +328,7 @@ class SingleEvaluator(Evaluator):
 
 
 class CombinerEvaluator(Evaluator):
-    """ This is a combiner for word level combiner (not sentence) """
+    """ This is an evaluator for word level combiner (not sentence) """
 
     def __init__(self, trainer, data, params):
 
@@ -339,8 +339,6 @@ class CombinerEvaluator(Evaluator):
         self._combiner = trainer.combiner
         self._whole_word_embedder = SenteceEmbedder(trainer.model, params, data["dico"], context_extractor="before_eos")
         self._separated_word_embedder = WordEmbedderWithCombiner(trainer.model, trainer.combiner, params, data["dico"], context_extractor="last_time")
-        #self._whole_word_embedder = SenteceEmbedder(trainer.model, params, data["dico"], context_extractor="before_eos")
-        #self._separated_word_embedder = SenteceEmbedder(trainer.model, params, data["dico"], context_extractor="before_eos")
         self._src_bped_words = read_bped_words(params.src_bped_words_path)
         self._tgt_bped_words = read_bped_words(params.tgt_bped_words_path)
         self._src_lang = params.dict_src_lang
@@ -349,27 +347,25 @@ class CombinerEvaluator(Evaluator):
         self._re_bpe = trainer.re_bpe
         self._loss_function = trainer.loss_function
 
-
     def run_all_evals(self, trainer):
         """
         Rewrite parent method
-
-        Evaluate whole word and separated word bli accuracy
         """
         scores = OrderedDict({'epoch': trainer.epoch})
-        """
-        self.eval_bli(scores)
 
-        self.eval_split_whole_word_bli(scores)
-
+        # evaluate combiner
         for lang in self.params.combiner_steps:
             self.eval_loss(scores, lang)
-        """
-        self.eval_combiner_acc(scores, "valid", "src")
-        self.eval_combiner_acc(scores, "valid", "tgt")
+
+        for lang in ["src", "tgt"]:
+            for data in ["valid", "train"]:
+                self.eval_combiner_acc(scores, data, lang)
+
+        # evaluate bli
+        self.eval_bli(scores)
+        self.eval_split_whole_word_bli(scores)
 
         return scores
-
 
     def eval_loss(self, scores, lang):
         """
@@ -399,7 +395,7 @@ class CombinerEvaluator(Evaluator):
                 # new encode
                 langs = new_batch.clone().fill_(lang_id)
                 new_encoded = self._model('fwd', x=new_batch, lengths=new_lengths, langs=langs, causal=False)
-                new_encoded = self._combiner(new_encoded, new_lengths)
+                new_encoded = self._combiner(new_encoded, new_lengths, lang)
 
             origin_mask = origin_mask.unsqueeze(-1)
             new_mask = new_mask.unsqueeze(-1)
@@ -415,10 +411,9 @@ class CombinerEvaluator(Evaluator):
 
         scores["{}-{}-combiner".format(data_set, lang)] = all_loss / n_words
 
-
     def eval_split_whole_word_bli(self, scores):
         """
-        Under this setting, we split whole word (with more then one character) using a random bpe helper(this this results is not stable)
+        Under this setting, we split whole word (with more then one character) using a random bpe helper(so this results is not stable)
         """
 
         def re_encode_whole_word(words):

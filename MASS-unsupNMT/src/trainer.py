@@ -756,7 +756,7 @@ class CombinerTrainer(Trainer):
         self.combiner.train()
         langs = new_batch.clone().fill_(lang_id)
         new_encoded = self.model('fwd', x=new_batch, lengths=new_lengths, langs=langs, causal=False)
-        new_encoded = self.combiner(new_encoded, new_lengths)
+        new_encoded = self.combiner(new_encoded, new_lengths, lang)
 
         origin_mask = origin_mask.unsqueeze(-1)
         new_mask = new_mask.unsqueeze(-1)

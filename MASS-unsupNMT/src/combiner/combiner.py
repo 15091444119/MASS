@@ -54,3 +54,22 @@ def build_combiner(params):
         return GRU(params)
     else:
         raise NotImplementedError
+
+
+class MultiLingualCombiner(nn.Module):
+
+    def __init__(self, params):
+        if params.share_combiner:
+            combiner = build_combiner(params)
+            self._lang2combiner = nn.ModuleDict({
+                lang: combiner for lang in params.combiner_steps
+            })
+        else:
+            self._lang2combiner = nn.ModuleDict({
+                lang: build_combiner(params) for lang in params.combiner_steps
+            })
+
+    def forward(self, embeddings, lengths, lang):
+        combiner = self._lang2combiner[lang]
+        return combiner(embeddings, lengths)
+
