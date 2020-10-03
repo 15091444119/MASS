@@ -106,17 +106,24 @@ def encode_whole_word_separated_word(bped_words, lang, whole_word_embedder, sepa
     whole_words, separated_word2bpe = split_whole_separate(bped_words)
     word2id = {}
 
-    whole_word_embeddings = generate_context_word_representation(list(whole_words), lang, embedder=whole_word_embedder)
-    for word in whole_words:
-        word2id[word] = len(word2id)
+    if len(whole_words) != 0:
+        whole_word_embeddings = generate_context_word_representation(list(whole_words), lang, embedder=whole_word_embedder)
+        for word in whole_words:
+            word2id[word] = len(word2id)
 
-    separated_word_embeddings = generate_context_word_representation(list(separated_word2bpe.values()), lang, embedder=separated_word_embedder)
-    for word in separated_word2bpe:
-        word2id[word] = len(word2id)
+    if len(separated_word2bpe) != 0:
+        separated_word_embeddings = generate_context_word_representation(list(separated_word2bpe.values()), lang, embedder=separated_word_embedder)
+        for word in separated_word2bpe:
+            word2id[word] = len(word2id)
 
     id2word = {idx: word for word, idx in word2id.items()}
 
-    embeddings = torch.cat([whole_word_embeddings, separated_word_embeddings], dim=0)
+    if len(whole_words) != 0 and len(separated_word2bpe) != 0:
+        embeddings = torch.cat([whole_word_embeddings, separated_word_embeddings], dim=0)
+    elif len(whole_words) == 0:
+        embeddings = separated_word_embeddings
+    elif len(separated_word2bpe) == 0:
+        embeddings = whole_word_embeddings
 
     return whole_words, separated_word2bpe, word2id, id2word, embeddings
 

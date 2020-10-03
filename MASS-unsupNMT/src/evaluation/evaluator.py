@@ -47,7 +47,7 @@ class Evaluator(object):
         """
         Create a new iterator for a dataset.
         """
-        assert data_set in ['valid', 'test']
+        assert data_set in ['valid', 'test', 'train']
         assert lang1 in self.params.langs
         assert lang2 is None or lang2 in self.params.langs
         assert stream is False or lang2 is None
@@ -356,6 +356,8 @@ class CombinerEvaluator(Evaluator):
         # evaluate combiner
         for lang in self.params.combiner_steps:
             self.eval_loss(scores, lang)
+        scores["valid-average-loss"] = sum(
+            [scores["valid-{}-combiner".format(lang)] for lang in self.params.combiner_steps])
 
         for lang in ["src", "tgt"]:
             for data in ["valid", "train"]:
@@ -500,7 +502,6 @@ class CombinerEvaluator(Evaluator):
         # generate combiner space representation
         combiner_word2id = {}
         combiner_words = []  # re bped combiner words for generate representation
-        pdb.set_trace()
         for batch, length in self.get_iterator(data, lang):
             assert (length == 3).all() # all are words
             batch = batch.transpose(0, 1)

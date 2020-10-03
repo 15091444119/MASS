@@ -4,7 +4,7 @@ MODEL=/home/data_ti5_d/zhouzh/low-resource-mt/MASS/MASS-unsupNMT/dumped/cn-en-zh
 #/home/data_ti5_d/zhouzh/low-resource-mt/MASS/MASS-unsupNMT/dumped/cn-en-zh-500w-checkpoint-pretrain/x363q5pus9/periodic-150.pth
 
 python train_combiner.py \
-	--exp_name debug                             \
+	--exp_name separate_combiner_gru_cos_4_layer                             \
 	--data_path ./combiner_data \
 	--lgs 'zh-en'                                        \
 	--encoder_only False                                 \
@@ -26,7 +26,8 @@ python train_combiner.py \
 	--dict_path /home/data_ti5_d/zhouzh/low-resource-mt/XLM_MASS_preprocessed_data/BLI/zh-en/zh-en.txt.sim \
 	--codes_path /home/data_ti5_d/zhouzh/low-resource-mt/XLM_MASS_preprocessed_data/pretrain/cn-split-sen-zh-en-pretrain/codes \
 	--combiner_steps "zh,en" \
-	--combiner_loss "MSE" \
-	--combiner "transformer" \
-  --eval_only True \
-  --reload_encoder_combiner_path /home/data_ti5_d/zhouzh/low-resource-mt/subword-combiner/MASS-unsupNMT/dumped/mse/checkpoint.pth
+	--combiner_loss "COS" \
+	--combiner "gru" \
+  --share_combiner False \
+  --n_combiner_layers 4 \
+  --validation_metrics _valid-average-loss

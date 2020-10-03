@@ -32,7 +32,9 @@ class Transformer(nn.Module):
 class GRU(nn.Module):
     def __init__(self, params):
         super().__init__()
-        self._gru = nn.GRU(input_size=params.emb_dim, hidden_size=params.emb_dim, num_layers=params.n_combiner_layers, batch_first=False)
+        # bigru
+        assert params.emb_dim % 2 == 0
+        self._gru = nn.GRU(input_size=params.emb_dim, hidden_size=params.emb_dim // 2, num_layers=params.n_combiner_layers, bidirectional=True, batch_first=False)
 
     def forward(self, embeddings, lengths):
         """
@@ -59,6 +61,7 @@ def build_combiner(params):
 class MultiLingualCombiner(nn.Module):
 
     def __init__(self, params):
+        super().__init__()
         if params.share_combiner:
             combiner = build_combiner(params)
             self._lang2combiner = nn.ModuleDict({
