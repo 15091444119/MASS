@@ -22,7 +22,7 @@ from src.model import check_model_params, build_model, reload_model_combiner
 from src.trainer import SingleTrainer, EncDecTrainer, CombinerTrainer
 from src.evaluation.evaluator import SingleEvaluator, EncDecEvaluator, CombinerEvaluator
 from src.combiner.combiner import MultiLingualCombiner
-from src.combiner.bpe_helper import WholeWordSplitter
+from src.combiner.splitter import WholeWordSplitter
 
 import apex
 from src.fp16 import network_to_half

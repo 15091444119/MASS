@@ -328,7 +328,9 @@ class CharSplitter(WholeWordSplitter):
                 the splited word
         """
         assert len(word) != 1
-        return [char for char in word]
+
+        encoded_word = encode_word(word, {}, max_merge_num=0)
+        return encoded_word
 
 
 if __name__ == "__main__":

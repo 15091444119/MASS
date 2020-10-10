@@ -23,7 +23,6 @@ from apex.fp16_utils import FP16_Optimizer
 
 from .utils import get_optimizer, to_cuda, concat_batches
 from .utils import parse_lambda_config, update_lambdas
-from src.combiner.bpe_helper import  RandomBpeApplier
 logger = getLogger()
 
 

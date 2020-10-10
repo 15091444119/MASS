@@ -16,7 +16,7 @@ import torch
 from ..utils import to_cuda, restore_segmentation, concat_batches
 from .utils import SenteceEmbedder, WordEmbedderWithCombiner
 from .bli import BLI
-from .eval_context_bli import eval_context_bli, read_bped_words, generate_context_word_representation, encode_whole_word_separated_word
+from .eval_context_bli import eval_whole_separated_bli, read_bped_words, generate_context_word_representation, encode_whole_word_separated_word, generate_and_eval
 
 
 BLEU_SCRIPT_PATH = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'multi-bleu.perl')
@@ -359,15 +359,17 @@ class CombinerEvaluator(Evaluator):
         scores["valid-average-loss"] = sum(
             [scores["valid-{}-combiner".format(lang)] for lang in self.params.combiner_steps]) / 2.0
 
+        all_embs = {}
+        # this is calculated only once to save time
+        all_embs["src"] = encode_whole_word_separated_word(self._src_bped_words, self._src_lang, self._whole_word_embedder, self._separated_word_embedder)
+        all_embs["tgt"] = encode_whole_word_separated_word(self._tgt_bped_words, self._tgt_lang, self._whole_word_embedder, self._separated_word_embedder)
         for lang in ["src", "tgt"]:
             for data in ["valid", "train"]:
-                self.eval_combiner_acc(scores, data, lang)
+                self.eval_combiner_acc(scores, data, lang, all_embs[lang])
 
         # evaluate bli
-        """
-            self.eval_bli(scores)
-            self.eval_split_whole_word_bli(scores)
-        """
+        self.eval_bli(scores, all_embs["src"], all_embs["tgt"])
+            #self.eval_split_whole_word_bli(scores)
 
         return scores
 
@@ -434,7 +436,7 @@ class CombinerEvaluator(Evaluator):
         new_src_bped_words = re_encode_whole_word(self._src_bped_words)
         new_tgt_bped_words = re_encode_whole_word(self._tgt_bped_words)
 
-        all_scores, whole_word_scores, separated_word_scores = eval_context_bli(
+        all_scores, whole_word_scores, separated_word_scores = generate_and_eval(
             src_bped_words=new_src_bped_words,
             src_lang=self._src_lang,
             tgt_bped_words=new_tgt_bped_words,
@@ -454,17 +456,11 @@ class CombinerEvaluator(Evaluator):
         for key, value in separated_word_scores.items():
             scores["BLI_split_separated_word " + key] = value
 
-
-
-    def eval_bli(self, scores):
-        all_scores, whole_word_scores, separated_word_scores = eval_context_bli(
-            src_bped_words=self._src_bped_words,
-            src_lang=self._src_lang,
-            tgt_bped_words=self._tgt_bped_words,
-            tgt_lang=self._tgt_lang,
+    def eval_bli(self, scores, src_whole_separated_embeddings, tgt_whole_separated_embeddings):
+        all_scores, whole_word_scores, separated_word_scores = eval_whole_separated_bli(
+            src_whole_separated_embeddings=src_whole_separated_embeddings,
+            tgt_whole_separated_embeddings=tgt_whole_separated_embeddings,
             dic_path=self._params.dict_path,
-            whole_word_embedder=self._whole_word_embedder,
-            separated_word_embedder=self._separated_word_embedder,
             bli=self._bli,
             save_path=None)
 
@@ -477,7 +473,7 @@ class CombinerEvaluator(Evaluator):
         for key, value in separated_word_scores.items():
             scores["BLI_separated_word " + key] = value
 
-    def eval_combiner_acc(self, scores, data, src_or_tgt):
+    def eval_combiner_acc(self, scores, data, src_or_tgt, whole_separated_embeddings):
         """
             For each word in the valid set and training set(this are whole word), we first split into bpe tokens,
         then get the combiner representation of it, then we search nearest neighbor in the original embedding
@@ -493,13 +489,14 @@ class CombinerEvaluator(Evaluator):
             data: string, choices=["valid", "train"]
 
             src_or_tgt: string, choices=["src", "tgt"]
+
+            whole_separated_embeddings: WholeSeparatedEmbs
+                The original embedding space
         """
         if src_or_tgt == "src":
             lang = self._src_lang
-            origin_words = self._src_bped_words
         else:
             lang = self._tgt_lang
-            origin_words = self._tgt_bped_words
 
         # generate combiner space representation
         combiner_word2id = {}
@@ -518,8 +515,7 @@ class CombinerEvaluator(Evaluator):
         combiner_id2word = {idx: word for word, idx in combiner_word2id.items()}
 
         # generate original mass representation
-        _, _, origin_word2id, origin_id2word, origin_embeddings = encode_whole_word_separated_word(
-            origin_words, lang, self._whole_word_embedder, self._separated_word_embedder)
+        _, _, origin_word2id, origin_id2word, origin_embeddings = whole_separated_embeddings.properties()
 
         # generate a dictionary
         dic = {}

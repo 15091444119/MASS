@@ -8,6 +8,19 @@ from .bli import BLI, read_dict
 from .utils import SenteceEmbedder, WordEmbedderWithCombiner, load_mass_model
 
 
+class WholeSeparatedEmbs(object):
+
+    def __init__(self, whole_words, separated_word2bpe, word2id, id2word, embeddings):
+        self.whole_words = whole_words
+        self.separated_word2bpe = separated_word2bpe
+        self.word2id = word2id
+        self.id2word = id2word
+        self.embeddings = embeddings
+
+    def properties(self):
+        return self.whole_words, self.separated_word2bpe, self.word2id, self.id2word, self.embeddings
+
+
 from sklearn import cluster
 def generate_context_word_representation(words, lang, embedder, batch_size=128):
     """
@@ -125,10 +138,10 @@ def encode_whole_word_separated_word(bped_words, lang, whole_word_embedder, sepa
     elif len(separated_word2bpe) == 0:
         embeddings = whole_word_embeddings
 
-    return whole_words, separated_word2bpe, word2id, id2word, embeddings
+    return WholeSeparatedEmbs(whole_words, separated_word2bpe, word2id, id2word, embeddings)
 
 
-def eval_context_bli(src_bped_words, src_lang, tgt_bped_words, tgt_lang, dic_path, whole_word_embedder, separated_word_embedder:WordEmbedderWithCombiner, bli:BLI, save_path=None):
+def generate_and_eval(src_bped_words, src_lang, tgt_bped_words, tgt_lang, dic_path, whole_word_embedder, separated_word_embedder, bli:BLI, save_path=None):
     """
         1. Generate context representation for each source word and each target word
         2. evaluate bli on it
@@ -162,10 +175,46 @@ def eval_context_bli(src_bped_words, src_lang, tgt_bped_words, tgt_lang, dic_pat
         whole_word_score: dict
         separated_word_score: dict
     """
-    src_whole_words, src_separated_word2bpe, src_word2id, src_id2word, src_embeddings = \
-        encode_whole_word_separated_word(bped_words=src_bped_words, lang=src_lang, whole_word_embedder=whole_word_embedder, separated_word_embedder=separated_word_embedder)
-    tgt_whole_words, tgt_separated_word2bpe, tgt_word2id, tgt_id2word, tgt_embeddings = \
-        encode_whole_word_separated_word(bped_words=tgt_bped_words, lang=tgt_lang, whole_word_embedder=whole_word_embedder, separated_word_embedder=separated_word_embedder)
+    src_whole_separated_embeddings= \
+        encode_whole_word_separated_word(bped_words=src_bped_words, lang=src_lang,
+                                         whole_word_embedder=whole_word_embedder,
+                                         separated_word_embedder=separated_word_embedder)
+
+
+    tgt_whole_separated_embeddings = \
+        encode_whole_word_separated_word(bped_words=tgt_bped_words, lang=tgt_lang,
+                                         whole_word_embedder=whole_word_embedder,
+                                         separated_word_embedder=separated_word_embedder)
+
+    return eval_whole_separated_bli(src_whole_separated_embeddings, tgt_whole_separated_embeddings, dic_path, bli, save_path)
+
+
+def eval_whole_separated_bli(src_whole_separated_embeddings, tgt_whole_separated_embeddings, dic_path, bli:BLI, save_path=None):
+    """
+        Evaluate bli on separated whole embeddings
+    Params
+        src_whole_separated_embeddings: WholeSeparatedEmb
+            source embeddings to be evaluated
+
+        tgt_whole_separated_emebddings: WholeSeparatedEmb
+            target words to be evaluated
+
+        dic_path: string
+            path to load dictionary
+
+        bli: BLI
+            A bli method
+
+        save_path: str, default: None
+            Path to save bli result
+    Returns:
+        scores: dict
+            top1, top5, top10 bli accuracy
+        whole_word_score: dict
+        separated_word_score: dict
+    """
+    src_whole_words, src_separated_word2bpe, src_word2id, src_id2word, src_embeddings = src_whole_separated_embeddings.properties()
+    tgt_whole_words, tgt_separated_word2bpe, tgt_word2id, tgt_id2word, tgt_embeddings = tgt_whole_separated_embeddings.properties()
 
     dic = read_dict(dict_path=dic_path, src_word2id=src_word2id, tgt_word2id=tgt_word2id)
 
@@ -222,7 +271,7 @@ def main():
     dico, mass_params, encoder, _ = load_mass_model(args.model_path)
     sentence_embedder = SenteceEmbedder(encoder, mass_params, dico, args.context_extractor)
 
-    scores, whole_word_scores, separated_word_scores = eval_context_bli(
+    scores, whole_word_scores, separated_word_scores = generate_and_eval(
         src_bped_words=src_bped_words,
         src_lang=args.src_lang,
         tgt_bped_words=tgt_bped_words,

@@ -1,5 +1,5 @@
 import unittest
-from src.combiner.bpe_helper import encode_word, RandomBpeSplitter,  CharSplitter
+from src.combiner.splitter import encode_word, RandomBpeSplitter,  CharSplitter
 
 
 class TestBpe(unittest.TestCase):
@@ -34,4 +34,4 @@ class TestBpe(unittest.TestCase):
 
     def test_char_splitter(self):
         word_splitter = CharSplitter()
-        self.assertEqual(['a', 'b', 'a', 'c'], word_splitter.split_word("abac"))
+        self.assertEqual(['a@@', 'b@@', 'a@@', 'c'], word_splitter.split_word("abac"))
