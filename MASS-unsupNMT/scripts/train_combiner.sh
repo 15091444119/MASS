@@ -4,7 +4,7 @@ MODEL=/home/data_ti5_d/zhouzh/low-resource-mt/MASS/MASS-unsupNMT/dumped/cn-en-zh
 #/home/data_ti5_d/zhouzh/low-resource-mt/MASS/MASS-unsupNMT/dumped/cn-en-zh-500w-checkpoint-pretrain/x363q5pus9/periodic-150.pth
 
 python train_combiner.py \
-	--exp_name separate_combiner_gru_cos_4_layer                             \
+	--exp_name uni-gru                             \
 	--data_path ./combiner_data \
 	--lgs 'zh-en'                                        \
 	--encoder_only False                                 \
@@ -18,7 +18,7 @@ python train_combiner.py \
 	--batch_size 100 \
 	--optimizer adam_inverse_sqrt,beta1=0.9,beta2=0.98,lr=0.0001 \
 	--epoch_size 100000                                  \
-	--max_epoch 50                                      \
+	--max_epoch 200                                      \
 	--src_bped_words_path ./word_vocab/zh.vocab.bpe \
 	--tgt_bped_words_path ./word_vocab/en.vocab.bpe \
 	--dict_src_lang zh \
@@ -30,4 +30,8 @@ python train_combiner.py \
 	--combiner "gru" \
   --share_combiner False \
   --n_combiner_layers 4 \
-  --validation_metrics _valid-average-loss
+  --validation_metrics _valid-average-loss \
+  --bli_preprocess_method 'u' \
+  --splitter "BPE"
+#  --reload_encoder_combiner_path /home/data_ti5_d/zhouzh/low-resource-mt/subword-combiner/MASS-unsupNMT/dumped/separate_combiner_gru_cos_4_layer/xt9davossf/best-valid-average-loss.pth \
+#  --eval_only True

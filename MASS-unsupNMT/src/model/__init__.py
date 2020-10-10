@@ -11,7 +11,7 @@ import torch
 
 from .transformer import TransformerModel
 
-from src.combiner.combiner import build_combiner
+from src.combiner.combiner import MultiLingualCombiner
 
 logger = getLogger()
 
@@ -163,7 +163,7 @@ def reload_model_combiner(params, dico):
     logger.info("Reload encoder from {}".format(params.reload_encoder_combiner_path))
 
     # reload combiner
-    combiner = build_combiner(params)
+    combiner = MultiLingualCombiner(params)
     combiner_reload = reloaded['combiner']
     if all([k.startswith('module.') for k in combiner_reload.keys()]):
         combiner_reload = {k[len('module.'):]: v for k, v in combiner_reload.items()}

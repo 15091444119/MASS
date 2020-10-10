@@ -32,9 +32,7 @@ class Transformer(nn.Module):
 class GRU(nn.Module):
     def __init__(self, params):
         super().__init__()
-        # bigru
-        assert params.emb_dim % 2 == 0
-        self._gru = nn.GRU(input_size=params.emb_dim, hidden_size=params.emb_dim // 2, num_layers=params.n_combiner_layers, bidirectional=True, batch_first=False)
+        self._gru = nn.GRU(input_size=params.emb_dim, hidden_size=params.emb_dim, num_layers=params.n_combiner_layers, bidirectional=False, batch_first=False)
 
     def forward(self, embeddings, lengths):
         """

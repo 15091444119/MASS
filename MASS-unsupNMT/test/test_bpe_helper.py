@@ -1,5 +1,5 @@
 import unittest
-from src.combiner.bpe_helper import encode_word, RandomBpeApplier
+from src.combiner.bpe_helper import encode_word, RandomBpeSplitter,  CharSplitter
 
 
 class TestBpe(unittest.TestCase):
@@ -21,14 +21,17 @@ class TestBpe(unittest.TestCase):
         self.assertEqual(encode_word(self.word, self.bpe_codes, 2, True), ref)
 
     def test_random_bpe_word(self):
-        bpe_applier = RandomBpeApplier(self.bpe_codes)
-        res = bpe_applier.random_encode_word("abac")
+        bpe_applier = RandomBpeSplitter(self.bpe_codes)
+        res = bpe_applier.split_word("abac")
         self.assertTrue(res in [["a@@", "b@@", "a@@", "c"], ["ab@@", "a@@", "c"], ["ab@@", "ac"]])
 
     def test_re_encode_sentence(self):
         """ this need human check """
-        bpe_applier = RandomBpeApplier(self.bpe_codes)
+        bpe_applier = RandomBpeSplitter(self.bpe_codes)
         input_sentence = ["abac", "a@@", "c",  "abac", "abac"]
         res = bpe_applier.re_encode_sentence(input_sentence)
         print(input_sentence, res)
 
+    def test_char_splitter(self):
+        word_splitter = CharSplitter()
+        self.assertEqual(['a', 'b', 'a', 'c'], word_splitter.split_word("abac"))

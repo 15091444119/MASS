@@ -120,25 +120,22 @@ def get_sentence_combiner_mask(mappers, origin_lengths, new_lengths):
     return origin_mask, new_mask
 
 
-class RandomBpeApplier(object):
+class WholeWordSplitter(object):
 
-    def __init__(self, bpe_codes):
-        self.bpe_codes = bpe_codes
+    def __init__(self):
+        pass
 
     @classmethod
-    def from_code_path(cls, codes_path):
-        bpe_codes = read_codes(codes_path)
-        return RandomBpeApplier(bpe_codes)
+    def build_splitter(cls, params):
+        if params.splitter == "BPE":
+            return RandomBpeSplitter.from_code_path(params.codes_path)
+        elif params.splitter == "CHAR":
+            return CharSplitter()
+        else:
+            return NotImplementedError
 
-    def random_encode_word(self, word):
-        """ don't fully merge bpe"""
-        assert len(word) != 1
-        _, merge_num = encode_word(word, self.bpe_codes, return_merge_count=True)
-        assert merge_num != 0
-
-        random_num = random.randint(0, merge_num - 1)
-        encoded_word = encode_word(word, self.bpe_codes, max_merge_num=random_num)
-        return encoded_word
+    def split_word(self, word):
+        raise NotImplementedError
 
     def re_encode_batch_words(self, batch, lengths, dico, params):
         """
@@ -197,7 +194,6 @@ class RandomBpeApplier(object):
 
         return new_batch, new_lengths, origin_mask, new_mask
 
-
     def re_encode_sentence(self, sentence, kept_words=None):
         """
         for each word in the sentence, if it is a whole word, we randomly encode it
@@ -225,7 +221,7 @@ class RandomBpeApplier(object):
                 new_sentence.append(word)
             elif not word.endswith(SEPARATOR) and (idx == 0 or not sentence[idx - 1].endswith(SEPARATOR)):
                 # is a whole word
-                re_encoded_word = self.random_encode_word(word)
+                re_encoded_word = self.split_word(word)
                 new_sentence.extend(re_encoded_word)
             else:
                 new_sentence.append(word)
@@ -235,11 +231,10 @@ class RandomBpeApplier(object):
 
         return new_sentence, mapper
 
-
     def re_encode_batch_sentences(self, batch, lengths, dico, params):
         """
         for batch and length generated from src.data.dataset,
-        we re encode it to another batch which don't fully merge bpe tokens
+        we re encode it to another batch which split the word
         params:
             batch: torch.LongTensor, size:(max_len, batch_size)
 
@@ -287,6 +282,53 @@ class RandomBpeApplier(object):
 
         return new_batch, new_lengths, origin_mask, new_mask
 
+
+class RandomBpeSplitter(WholeWordSplitter):
+
+    def __init__(self, bpe_codes):
+        super().__init__()
+        self.bpe_codes = bpe_codes
+
+    @classmethod
+    def from_code_path(cls, codes_path):
+        bpe_codes = read_codes(codes_path)
+        return RandomBpeSplitter(bpe_codes)
+
+    def split_word(self, word):
+        """ don't fully merge bpe
+        Params:
+            word: string
+                the word to be splitted
+        Returns:
+            encoded_word: list of strings
+                the splited word
+        """
+        assert len(word) != 1
+        _, merge_num = encode_word(word, self.bpe_codes, return_merge_count=True)
+        assert merge_num != 0
+
+        random_num = random.randint(0, merge_num - 1)
+        encoded_word = encode_word(word, self.bpe_codes, max_merge_num=random_num)
+        return encoded_word
+
+
+class CharSplitter(WholeWordSplitter):
+    """ split the word into characters """
+
+    def __init__(self):
+        super().__init__()
+
+    def split_word(self, word):
+        """ split the word into characters
+        Params:
+            word: string
+                the word to be splitted
+        Returns:
+            encoded_word: list of strings
+                the splited word
+        """
+        assert len(word) != 1
+        return [char for char in word]
 
 
 if __name__ == "__main__":

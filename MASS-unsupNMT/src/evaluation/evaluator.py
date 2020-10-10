@@ -344,7 +344,7 @@ class CombinerEvaluator(Evaluator):
         self._src_lang = params.dict_src_lang
         self._tgt_lang = params.dict_tgt_lang
         self._bli = BLI(params.bli_preprocess_method, params.bli_batch_size, params.bli_metric, params.bli_csls_topk)
-        self._re_bpe = trainer.re_bpe
+        self._whole_word_splitter = trainer.whole_word_splitter
         self._loss_function = trainer.loss_function
 
     def run_all_evals(self, trainer):
@@ -357,15 +357,17 @@ class CombinerEvaluator(Evaluator):
         for lang in self.params.combiner_steps:
             self.eval_loss(scores, lang)
         scores["valid-average-loss"] = sum(
-            [scores["valid-{}-combiner".format(lang)] for lang in self.params.combiner_steps])
+            [scores["valid-{}-combiner".format(lang)] for lang in self.params.combiner_steps]) / 2.0
 
         for lang in ["src", "tgt"]:
             for data in ["valid", "train"]:
                 self.eval_combiner_acc(scores, data, lang)
 
         # evaluate bli
-        self.eval_bli(scores)
-        self.eval_split_whole_word_bli(scores)
+        """
+            self.eval_bli(scores)
+            self.eval_split_whole_word_bli(scores)
+        """
 
         return scores
 
@@ -380,7 +382,7 @@ class CombinerEvaluator(Evaluator):
         n_words = 0
         all_loss = 0
         for batch, lengths in self.get_iterator(data_set, lang):
-            new_batch, new_lengths, origin_mask, new_mask = self._re_bpe.re_encode_batch_words(batch, lengths,
+            new_batch, new_lengths, origin_mask, new_mask = self._whole_word_splitter.re_encode_batch_words(batch, lengths,
                                                                                                 self._data["dico"],
                                                                                                 params)
 
@@ -426,7 +428,7 @@ class CombinerEvaluator(Evaluator):
                 elif "@@" in word:
                     new_words.append(word)
                 else:
-                    new_words.append(' '.join(self._re_bpe.random_encode_word(word)))
+                    new_words.append(' '.join(self._whole_word_splitter.split_word(word)))
             return new_words
 
         new_src_bped_words = re_encode_whole_word(self._src_bped_words)
@@ -509,7 +511,7 @@ class CombinerEvaluator(Evaluator):
                 word_id = token_idxs[1].item()  # [eos, word_id, eos]
                 word = self._data["dico"].id2word[word_id]
                 combiner_word2id[word] = len(combiner_word2id)
-                re_bped_word = ' '.join(self._re_bpe.random_encode_word(word))
+                re_bped_word = ' '.join(self._whole_word_splitter.split_word(word))
                 combiner_words.append(re_bped_word)
         assert len(combiner_word2id) == len(combiner_words)
         combiner_embeddings = generate_context_word_representation(combiner_words, lang, self._separated_word_embedder)
@@ -533,14 +535,6 @@ class CombinerEvaluator(Evaluator):
 
         for key, value in bli_scores.items():
             scores["{data}-{lang}-combiner-acc-{key}".format(data=data, lang=lang, key=key)] = value
-
-
-
-
-
-
-
-
 
 
 class EncDecEvaluator(Evaluator):

@@ -22,10 +22,11 @@ from src.model import check_model_params, build_model, reload_model_combiner
 from src.trainer import SingleTrainer, EncDecTrainer, CombinerTrainer
 from src.evaluation.evaluator import SingleEvaluator, EncDecEvaluator, CombinerEvaluator
 from src.combiner.combiner import MultiLingualCombiner
-from src.combiner.bpe_helper import RandomBpeApplier
+from src.combiner.bpe_helper import WholeWordSplitter
 
 import apex
 from src.fp16 import network_to_half
+
 
 
 def get_parser():
@@ -226,6 +227,7 @@ def get_parser():
                         help="Master port (for multi-node SLURM jobs)")
 
     # combiner
+    parser.add_argument("--splitter", type=str, choices=["BPE", "CHAR"], help="use random bpe or character to split word")
     parser.add_argument("--combiner", type=str)
     parser.add_argument("--combiner_steps", type=str, default="")
     parser.add_argument("--n_combiner_layers", type=int, default=4)
@@ -277,7 +279,7 @@ def main(params):
     data = load_data(params)
 
     # bpe helper for combiner
-    bpe_helper = RandomBpeApplier.from_code_path(params.codes_path)
+    whole_word_splitter = WholeWordSplitter.build_splitter(params)
 
     # build model
     assert not params.encoder_only
@@ -303,7 +305,7 @@ def main(params):
 
     # build trainer, reload potential checkpoints / build evaluator
     loss_function = get_loss_function(params)
-    trainer = CombinerTrainer(model, combiner, data, params, bpe_helper, loss_function)
+    trainer = CombinerTrainer(model, combiner, data, params, whole_word_splitter, loss_function)
     evaluator = CombinerEvaluator(trainer, data, params)
 
     # evaluation

@@ -718,7 +718,7 @@ class CombinerTrainer(Trainer):
     only update parameters of a combiner
     """
 
-    def __init__(self, model, combiner, data, params, re_bpe, loss_function):
+    def __init__(self, model, combiner, data, params, whole_word_splitter, loss_function):
 
         self.MODEL_NAMES = ["model", "combiner"]
 
@@ -727,7 +727,7 @@ class CombinerTrainer(Trainer):
         self.combiner = combiner
         self.data = data
         self.params = params
-        self.re_bpe = re_bpe
+        self.whole_word_splitter = whole_word_splitter
         self.loss_function = loss_function
 
         # optimizers
@@ -741,7 +741,7 @@ class CombinerTrainer(Trainer):
         params = self.params
         lang_id = params.lang2id[lang]
         batch, lengths = self.get_batch("combine", lang)
-        new_batch, new_lengths, origin_mask, new_mask = self.re_bpe.re_encode_batch_words(batch, lengths, self.data["dico"], params)
+        new_batch, new_lengths, origin_mask, new_mask = self.whole_word_splitter.re_encode_batch_words(batch, lengths, self.data["dico"], params)
 
         batch, lengths, new_batch, new_lengths, origin_mask, new_mask = to_cuda(batch, lengths, new_batch, new_lengths, origin_mask, new_mask)
 
