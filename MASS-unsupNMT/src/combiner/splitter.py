@@ -171,6 +171,7 @@ class WholeWordSplitter(object):
         batch_size = len(lengths)
         new_batch, new_lengths, _, _ = self.re_encode_batch_sentences(batch, lengths, dico, params)
 
+        """
         origin_mask = torch.BoolTensor(batch_size, 3).fill_(False)
         origin_mask[:, 1] = True
 
@@ -178,7 +179,6 @@ class WholeWordSplitter(object):
         for i in range(batch_size):
             new_mask[i, new_lengths[i].item() - 1] = True
 
-        """
         for debug encoder input
         for i in range(batch_size):
             print("Origin:", end=" ")
@@ -192,7 +192,7 @@ class WholeWordSplitter(object):
             pdb.set_trace()
         """
 
-        return new_batch, new_lengths, origin_mask, new_mask
+        return new_batch, new_lengths  #, origin_mask, new_mask
 
     def re_encode_sentence(self, sentence, kept_words=None):
         """

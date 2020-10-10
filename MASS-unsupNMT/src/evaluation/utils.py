@@ -213,13 +213,12 @@ class WordEmbedderWithCombiner(nn.Module):
     """
     encode word with mass encoder and a combiner
     """
-    def __init__(self, encoder, combiner, mass_params, dico, context_extractor):
+    def __init__(self, encoder, combiner, mass_params, dico):
         super().__init__()
         self._encoder = encoder
         self._combiner = combiner
         self._mass_params = mass_params
         self._dico = dico
-        self._context2sentence = Context2Sentence(context_extractor)
 
     def forward(self, sentences, lang):
         """
@@ -233,7 +232,6 @@ class WordEmbedderWithCombiner(nn.Module):
                                                                        sentences, lang)
 
 
-        batch_context_word_representations = self._combiner(batch_context_word_representations.transpose(0, 1), lengths, lang).transpose(0, 1)
+        batch_sentence_representation = self._combiner(batch_context_word_representations.transpose(0, 1), lengths, lang).transpose(0, 1)
 
-        batch_sentence_representation = self._context2sentence(batch_context_word_representations, lengths)
         return batch_sentence_representation

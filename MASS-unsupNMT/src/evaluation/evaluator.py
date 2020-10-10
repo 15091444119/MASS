@@ -336,9 +336,10 @@ class CombinerEvaluator(Evaluator):
         self._data = data
         self._params = params
         self._model = trainer.model
+        self._origin_tokens2word = trainer.origin_tokens2word
         self._combiner = trainer.combiner
-        self._whole_word_embedder = SenteceEmbedder(trainer.model, params, data["dico"], context_extractor="before_eos")
-        self._separated_word_embedder = WordEmbedderWithCombiner(trainer.model, trainer.combiner, params, data["dico"], context_extractor="last_time")
+        self._whole_word_embedder = SenteceEmbedder(trainer.model, params, data["dico"], context_extractor=params.origin_context_extractor)
+        self._separated_word_embedder = WordEmbedderWithCombiner(trainer.model, trainer.combiner, params, data["dico"])
         self._src_bped_words = read_bped_words(params.src_bped_words_path)
         self._tgt_bped_words = read_bped_words(params.tgt_bped_words_path)
         self._src_lang = params.dict_src_lang
@@ -384,12 +385,11 @@ class CombinerEvaluator(Evaluator):
         n_words = 0
         all_loss = 0
         for batch, lengths in self.get_iterator(data_set, lang):
-            new_batch, new_lengths, origin_mask, new_mask = self._whole_word_splitter.re_encode_batch_words(batch, lengths,
+            new_batch, new_lengths= self._whole_word_splitter.re_encode_batch_words(batch, lengths,
                                                                                                 self._data["dico"],
                                                                                                 params)
 
-            batch, lengths, new_batch, new_lengths, origin_mask, new_mask = to_cuda(batch, lengths, new_batch,
-                                                                                    new_lengths, origin_mask, new_mask)
+            batch, lengths, new_batch, new_lengths = to_cuda(batch, lengths, new_batch, new_lengths)
 
             langs = batch.clone().fill_(lang_id)
             self._model.eval()
@@ -397,17 +397,12 @@ class CombinerEvaluator(Evaluator):
             with torch.no_grad():
                 # original encode
                 origin_encoded = self._model('fwd', x=batch, lengths=lengths, langs=langs, causal=False)
+                origin_word_rep = self._origin_tokens2word(origin_encoded.transpose(0, 1), lengths)
 
                 # new encode
                 langs = new_batch.clone().fill_(lang_id)
                 new_encoded = self._model('fwd', x=new_batch, lengths=new_lengths, langs=langs, causal=False)
-                new_encoded = self._combiner(new_encoded, new_lengths, lang)
-
-            origin_mask = origin_mask.unsqueeze(-1)
-            new_mask = new_mask.unsqueeze(-1)
-            output_dim = new_encoded.size(-1)
-            origin_word_rep = torch.masked_select(origin_encoded.transpose(0, 1), origin_mask).view(-1, output_dim)
-            new_word_rep = torch.masked_select(new_encoded.transpose(0, 1), new_mask).view(-1, output_dim)
+                new_word_rep = self._combiner(new_encoded, new_lengths, lang)
 
             # mse loss
             loss = self._loss_function(origin_word_rep, new_word_rep)

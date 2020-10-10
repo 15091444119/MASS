@@ -228,6 +228,8 @@ def get_parser():
 
     # combiner
     parser.add_argument("--splitter", type=str, choices=["BPE", "CHAR"], help="use random bpe or character to split word")
+    parser.add_argument("--combiner_context_extractor", type=str)
+    parser.add_argument("--origin_context_extractor", type=str)
     parser.add_argument("--combiner", type=str)
     parser.add_argument("--combiner_steps", type=str, default="")
     parser.add_argument("--n_combiner_layers", type=int, default=4)

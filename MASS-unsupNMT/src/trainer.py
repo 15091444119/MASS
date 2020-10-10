@@ -23,6 +23,7 @@ from apex.fp16_utils import FP16_Optimizer
 
 from .utils import get_optimizer, to_cuda, concat_batches
 from .utils import parse_lambda_config, update_lambdas
+from src.evaluation.utils import Context2Sentence
 logger = getLogger()
 
 
@@ -723,6 +724,7 @@ class CombinerTrainer(Trainer):
 
         # model / data / params
         self.model = model
+        self.origin_tokens2word = Context2Sentence(params.origin_context_extractor)  # this is a non-parameter combiner
         self.combiner = combiner
         self.data = data
         self.params = params
@@ -740,28 +742,23 @@ class CombinerTrainer(Trainer):
         params = self.params
         lang_id = params.lang2id[lang]
         batch, lengths = self.get_batch("combine", lang)
-        new_batch, new_lengths, origin_mask, new_mask = self.whole_word_splitter.re_encode_batch_words(batch, lengths, self.data["dico"], params)
+        new_batch, new_lengths = self.whole_word_splitter.re_encode_batch_words(batch, lengths, self.data["dico"], params)
 
-        batch, lengths, new_batch, new_lengths, origin_mask, new_mask = to_cuda(batch, lengths, new_batch, new_lengths, origin_mask, new_mask)
+        batch, lengths, new_batch, new_lengths = to_cuda(batch, lengths, new_batch, new_lengths)
 
-        # original encode
+        # original word rep
         langs = batch.clone().fill_(lang_id)
         self.model.eval()
         with torch.no_grad():
             origin_encoded = self.model('fwd', x=batch, lengths=lengths, langs=langs, causal=False)
+            origin_word_rep = self.origin_tokens2word(origin_encoded.transpose(0, 1), lengths)
 
-        # new encode
-        self.model.train()
+        # new word rep
+        self.model.eval()
         self.combiner.train()
         langs = new_batch.clone().fill_(lang_id)
         new_encoded = self.model('fwd', x=new_batch, lengths=new_lengths, langs=langs, causal=False)
-        new_encoded = self.combiner(new_encoded, new_lengths, lang)
-
-        origin_mask = origin_mask.unsqueeze(-1)
-        new_mask = new_mask.unsqueeze(-1)
-        output_dim = new_encoded.size(-1)
-        origin_word_rep = torch.masked_select(origin_encoded.transpose(0, 1), origin_mask).view(-1, output_dim)
-        new_word_rep = torch.masked_select(new_encoded.transpose(0, 1), new_mask).view(-1, output_dim)
+        new_word_rep = self.combiner(new_encoded, new_lengths, lang)
 
         # mse loss
         loss = self.loss_function(origin_word_rep, new_word_rep)
