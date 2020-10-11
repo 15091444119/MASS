@@ -1,6 +1,7 @@
 import torch
 import logging
 import torch.nn as nn
+import pdb
 from src.data.dictionary import Dictionary
 from src.model.transformer import TransformerModel
 from src.utils import AttrDict
@@ -226,12 +227,12 @@ class WordEmbedderWithCombiner(nn.Module):
             sentences: each sentence is just a word, tokenized by bpe
 
         Returns:
-            batch_sentence_representation: torch.FloatTensor size:(batch_size, max_length)
+            batch_sentence_representation: torch.FloatTensor size:(batch_size, emb_dim)
         """
         batch_context_word_representations, lengths = encode_sentences(self._encoder, self._dico, self._mass_params,
                                                                        sentences, lang)
 
 
-        batch_sentence_representation = self._combiner(batch_context_word_representations.transpose(0, 1), lengths, lang).transpose(0, 1)
+        batch_sentence_representation = self._combiner(batch_context_word_representations.transpose(0, 1), lengths, lang)
 
         return batch_sentence_representation

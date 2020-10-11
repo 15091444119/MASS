@@ -24,7 +24,7 @@ class TransformerCombiner(nn.Module):
             embeddings: torch.FloatTensor, (max_length, batch_size)
             lengths: torch.LongTensor (batch_size)
         returns:
-            outputs: torch.FloatTensor, (max_length, batch_size)
+            outputs: torch.FloatTensor, (batch_size, emb_dim)
         """
         assert embeddings.size(1) == lengths.size(0)
         max_length = embeddings.size(0)
@@ -56,6 +56,7 @@ class GRUCombiner(nn.Module):
         returns:
             outputs: torch.FloatTensor, (batch_size, emb_dim)
         """
+        assert embeddings.size(1) == lengths.size(0)
         output, _ = self._gru(embeddings)
         rep = self._context2rep(output.transpose(0, 1), lengths)
         rep = self._linear2(self._act(self._linear1(rep)))

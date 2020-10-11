@@ -30,6 +30,8 @@ def generate_context_word_representation(words, lang, embedder, batch_size=128):
         lang: language
         embedder:
         batch_size:
+    Returns:
+        representation: torch.floattensor, shape=(len(words), emb_dim)
     """
     representations = []
     last_print = 0
@@ -48,7 +50,6 @@ def generate_context_word_representation(words, lang, embedder, batch_size=128):
         if (start_idx - last_print >= 10000):
             print(start_idx, file=sys.stderr)
             last_print = start_idx
-
     representations = torch.cat(representations, dim=0)
 
     return representations
@@ -130,7 +131,6 @@ def encode_whole_word_separated_word(bped_words, lang, whole_word_embedder, sepa
             word2id[word] = len(word2id)
 
     id2word = {idx: word for word, idx in word2id.items()}
-
     if len(whole_words) != 0 and len(separated_word2bpe) != 0:
         embeddings = torch.cat([whole_word_embeddings, separated_word_embeddings], dim=0)
     elif len(whole_words) == 0:
