@@ -126,7 +126,7 @@ def read_dict(dict_path, src_word2id, tgt_word2id):
     return dic
 
 
-def save_translation(translation, src_id2word, tgt_id2word, save_path, topk):
+def save_translation(translation, src_id2word, tgt_id2word, save_path, dic, topk):
     """
     save translations to a given file
     params:
@@ -134,6 +134,7 @@ def save_translation(translation, src_id2word, tgt_id2word, save_path, topk):
         src_id2word:
         tgt_id2word:
         save_path:
+        dic: dictionary from src index to target index list
         topk: save topk id in tgt list
     """
     with open(save_path, 'w') as f:
@@ -141,7 +142,11 @@ def save_translation(translation, src_id2word, tgt_id2word, save_path, topk):
             for idx, tgt_id in enumerate(translation[src_id]):
                 if idx >= topk:
                     break
-                f.write("{} {}\n".format(src_id2word[src_id], tgt_id2word[tgt_id]))
+                if tgt_id in dic[src_id]:
+                    ans = "True"
+                else:
+                    ans = "False"
+                f.write("{} {} {}\n".format(src_id2word[src_id], tgt_id2word[tgt_id], ans))
 
 
 class BLI(object):
@@ -182,7 +187,7 @@ class BLI(object):
                                 batch_size=self._batch_size, metric=self._metric)
 
         if save_path is not None:
-            save_translation(translation, src_id2word, tgt_id2word, save_path, topk=5)
+            save_translation(translation, src_id2word, tgt_id2word, save_path, dic, topk=5)
 
         top1_acc = calculate_word_translation_accuracy(translation, dic, topk=1)
         top5_acc = calculate_word_translation_accuracy(translation, dic, topk=5)

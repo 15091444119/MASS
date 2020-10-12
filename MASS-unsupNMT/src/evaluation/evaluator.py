@@ -366,7 +366,7 @@ class CombinerEvaluator(Evaluator):
         all_embs["tgt"] = encode_whole_word_separated_word(self._tgt_bped_words, self._tgt_lang, self._whole_word_embedder, self._separated_word_embedder)
         for lang in ["src", "tgt"]:
             for data in ["valid", "train"]:
-                self.eval_combiner_acc(scores, data, lang, all_embs[lang])
+                self.eval_combiner_acc(scores, data, lang, all_embs[lang], save_path=os.path.join(self.params.dump_path, "{}_{}".format(lang, data)))
 
         # evaluate bli
         self.eval_bli(scores, all_embs["src"], all_embs["tgt"])
@@ -411,6 +411,22 @@ class CombinerEvaluator(Evaluator):
             all_loss += loss.item() * origin_word_rep.size(0)
 
         scores["{}-{}-combiner".format(data_set, lang)] = all_loss / n_words
+
+    def check_dataset(self):
+        """
+        Assert all data are whole word and valid set have no intersection with training set
+        """
+        for lang in self.params.combiner_steps:
+            valid_word_idxs = set()
+            for batch, lengths in self.get_iterator("valid", lang):
+                assert (lengths == 3).all()
+                for word in batch.transpose(0, 1):
+                    valid_word_idxs.add(word[1].item())
+            for batch, lengths in self.get_iterator("train", lang):
+                assert (lengths == 3).all()
+                for word in batch.transpose(0, 1):
+                    assert word[1].item() not in valid_word_idxs, self._data["dico"].id2word[word[1].item()]
+        logger.info("Training data and valid data have no intersection.")
 
     def eval_split_whole_word_bli(self, scores):
         """
@@ -468,7 +484,7 @@ class CombinerEvaluator(Evaluator):
         for key, value in separated_word_scores.items():
             scores["BLI_separated_word " + key] = value
 
-    def eval_combiner_acc(self, scores, data, src_or_tgt, whole_separated_embeddings):
+    def eval_combiner_acc(self, scores, data, src_or_tgt, whole_separated_embeddings, save_path=None):
         """
             For each word in the valid set and training set(this are whole word), we first split into bpe tokens,
         then get the combiner representation of it, then we search nearest neighbor in the original embedding
@@ -487,6 +503,9 @@ class CombinerEvaluator(Evaluator):
 
             whole_separated_embeddings: WholeSeparatedEmbs
                 The original embedding space
+
+            save_path: str
+                Path to save nearest neighbor of each word in the valid set
         """
         if src_or_tgt == "src":
             lang = self._src_lang
@@ -515,14 +534,14 @@ class CombinerEvaluator(Evaluator):
         # generate a dictionary
         dic = {}
         for word, combiner_idx in combiner_word2id.items():
-            if word in origin_word2id:
-                origin_idx = origin_word2id[word]
-                dic[combiner_idx] = [origin_idx]
+            assert word in origin_word2id
+            origin_idx = origin_word2id[word]
+            dic[combiner_idx] = [origin_idx]
 
         logger.info("Number of combiner word: {} Number of origin word: {} Number of dic word: {}".format(len(combiner_id2word), len(origin_word2id), len(dic)))
 
         # bli
-        bli_scores = self._bli.eval(combiner_embeddings, origin_embeddings, combiner_id2word, combiner_word2id, origin_id2word, origin_word2id, dic)
+        bli_scores = self._bli.eval(combiner_embeddings, origin_embeddings, combiner_id2word, combiner_word2id, origin_id2word, origin_word2id, dic, save_path=save_path)
 
         for key, value in bli_scores.items():
             scores["{data}-{lang}-combiner-acc-{key}".format(data=data, lang=lang, key=key)] = value

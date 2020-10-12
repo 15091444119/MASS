@@ -312,6 +312,7 @@ def main(params):
 
     # evaluation
     if params.eval_only:
+        evaluator.check_dataset()
         scores = evaluator.run_all_evals(trainer)
         for k, v in scores.items():
             logger.info("%s -> %.6f" % (k, v))
