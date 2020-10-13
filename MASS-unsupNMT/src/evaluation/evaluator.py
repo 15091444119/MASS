@@ -15,6 +15,7 @@ import torch
 
 from ..utils import to_cuda, restore_segmentation, concat_batches
 from .utils import SenteceEmbedder, WordEmbedderWithCombiner
+from src.combiner.combiner import MultiLingualNoneParaCombiner
 from .bli import BLI
 from .eval_context_bli import eval_whole_separated_bli, read_bped_words, generate_context_word_representation, encode_whole_word_separated_word, generate_and_eval
 
@@ -340,6 +341,10 @@ class CombinerEvaluator(Evaluator):
         self._combiner = trainer.combiner
         self._whole_word_embedder = SenteceEmbedder(trainer.model, params, data["dico"], context_extractor=params.origin_context_extractor)
         self._separated_word_embedder = WordEmbedderWithCombiner(trainer.model, trainer.combiner, params, data["dico"])
+
+        # used to evaluate none parameter word embedder
+        self._non_para_word_embedder = SenteceEmbedder(trainer.model, params, data["dico"], context_extractor=params.combiner_context_extractor)
+
         self._src_bped_words = read_bped_words(params.src_bped_words_path)
         self._tgt_bped_words = read_bped_words(params.tgt_bped_words_path)
         self._src_lang = params.dict_src_lang
@@ -348,11 +353,25 @@ class CombinerEvaluator(Evaluator):
         self._whole_word_splitter = trainer.whole_word_splitter
         self._loss_function = trainer.loss_function
 
-    def run_all_evals(self, trainer):
+    def eval_non_para(self):
+        # small hack here to run all evals on none parameter embedder
+        tmp_separated = self._separated_word_embedder
+        tmp_whole = self._whole_word_embedder
+
+        self._separated_word_embedder = self._non_para_word_embedder
+        self._whole_word_embedder = self._non_para_word_embedder
+        scores = self.run_all_evals(-1)
+
+        self._separated_word_embedder = tmp_separated
+        self._whole_word_embedder = tmp_whole
+
+        return scores
+
+    def run_all_evals(self, epoch):
         """
         Rewrite parent method
         """
-        scores = OrderedDict({'epoch': trainer.epoch})
+        scores = OrderedDict({'epoch': epoch})
 
         # evaluate combiner
         for lang in self.params.combiner_steps:

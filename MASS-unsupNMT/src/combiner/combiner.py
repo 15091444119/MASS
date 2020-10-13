@@ -38,6 +38,26 @@ class TransformerCombiner(nn.Module):
         return rep
 
 
+class MultiLingualNoneParaCombiner(nn.Module):
+    def __init__(self, method):
+        super().__init__()
+        self._context2sentence = Context2Sentence(method)
+
+    def forward(self, embeddings, lengths, lang):
+        """
+        params
+            embeddings: torch.FloatTensor (max_length, batch_size)
+
+            lengths: torch.FloatTensor (batch_size)
+
+            lang: list of strings
+
+        Returns:
+            rep
+        """
+        return self._context2sentence(embeddings.transpose(0, 1), lengths)
+
+
 class GRUCombiner(nn.Module):
     def __init__(self, params):
         super().__init__()

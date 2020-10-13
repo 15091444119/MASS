@@ -18,13 +18,15 @@ from torch import nn
 from src.slurm import init_signal_handler, init_distributed_mode
 from src.data.loader import check_data_params, load_data
 from src.utils import bool_flag, initialize_exp, set_sampling_probs, shuf_order
-from src.model import check_model_params, build_model, reload_model_combiner
+from src.model import check_model_params, build_model
 from src.trainer import SingleTrainer, EncDecTrainer, CombinerTrainer
 from src.evaluation.evaluator import SingleEvaluator, EncDecEvaluator, CombinerEvaluator
 from src.combiner.combiner import MultiLingualCombiner
 from src.combiner.splitter import WholeWordSplitter
+from src.model.transformer import TransformerModel
 
 import apex
+import logging
 from src.fp16 import network_to_half
 
 
@@ -250,7 +252,7 @@ def get_parser():
     parser.add_argument("--bli_metric", type=str, default="nn")
     parser.add_argument("--bli_csls_topk", type=int, default=10)
 
-    parser.add_argument("--combiner_loss", type=str, default="MSE", choices=["MSE", "COS"])
+    parser.add_argument("--combiner_loss", type=str, default="MSE", choices=["MSE", "COS", "BNC"])
     parser.add_argument("--eval_loss_sentences", type=int, default=10000)
 
     return parser
@@ -263,6 +265,15 @@ def get_loss_function(params):
         def cos_loss(x, y):
             return -torch.nn.CosineSimilarity(dim=1)(x, y).mean()
         return cos_loss
+    elif params.combiner_loss == "BNC":
+        def batch_neg_cos(x, y):
+            x = torch.nn.functional.normalize(x, p=2, dim=1)
+            y = torch.nn.functional.normalize(y, p=2, dim=1)
+            positive_cos = x.mul(y).sum(dim=-1).mean()
+            negative_cos = x.matmul(y.transpose(0, 1)).mean()
+            loss = -positive_cos + negative_cos
+            return loss
+        return batch_neg_cos
     else:
         return NotImplementedError
 
@@ -310,10 +321,17 @@ def main(params):
     trainer = CombinerTrainer(model, combiner, data, params, whole_word_splitter, loss_function)
     evaluator = CombinerEvaluator(trainer, data, params)
 
+    # eval non para
+    logger.info("Eval non para")
+    scores = evaluator.eval_non_para()
+    for k, v in scores.items():
+        logger.info("%s -> %.6f" % (k, v))
+    logger.info("__log__:%s" % json.dumps(scores))
+
     # evaluation
     if params.eval_only:
         evaluator.check_dataset()
-        scores = evaluator.run_all_evals(trainer)
+        scores = evaluator.run_all_evals(trainer.epoch)
         for k, v in scores.items():
             logger.info("%s -> %.6f" % (k, v))
         logger.info("__log__:%s" % json.dumps(scores))
@@ -349,7 +367,7 @@ def main(params):
         logger.info("============ End of epoch %i ============" % trainer.epoch)
 
         # evaluate perplexity
-        scores = evaluator.run_all_evals(trainer)
+        scores = evaluator.run_all_evals(trainer.epoch)
 
         # print / JSON log
         for k, v in scores.items():
@@ -362,6 +380,29 @@ def main(params):
         trainer.save_periodic()
         trainer.end_epoch(scores)
 
+
+def reload_model_combiner(params, dico):
+    reloaded = torch.load(params.reload_encoder_combiner_path, map_location=lambda storage, loc: storage.cuda(params.local_rank))
+    logger = logging.getLogger()
+    # reload encoder
+    encoder = TransformerModel(params, dico, is_encoder=True,
+                               with_output=True)  # TODO: only output when necessary - len(params.clm_steps + params.mlm_steps) > 0
+    enc_reload = reloaded['model' if 'model' in reloaded else 'encoder']
+    if all([k.startswith('module.') for k in enc_reload.keys()]):
+        enc_reload = {k[len('module.'):]: v for k, v in enc_reload.items()}
+    encoder.load_state_dict(enc_reload)
+    logger.info("Reload encoder from {}".format(params.reload_encoder_combiner_path))
+
+    # reload combiner
+    combiner = MultiLingualCombiner(params)
+    combiner_reload = reloaded['combiner']
+    if all([k.startswith('module.') for k in combiner_reload.keys()]):
+        combiner_reload = {k[len('module.'):]: v for k, v in combiner_reload.items()}
+
+    combiner.load_state_dict(combiner_reload)
+    logger.info("Reload combiner from {}".format(params.reload_encoder_combiner_path))
+
+    return encoder.cuda(), combiner.cuda()
 
 if __name__ == '__main__':
     # generate parser / parse parameters

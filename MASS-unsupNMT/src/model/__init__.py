@@ -11,7 +11,6 @@ import torch
 
 from .transformer import TransformerModel
 
-from src.combiner.combiner import MultiLingualCombiner
 
 logger = getLogger()
 
@@ -150,26 +149,5 @@ def build_model(params, dico):
         return encoder.cuda(), decoder.cuda()
 
 
-def reload_model_combiner(params, dico):
-    reloaded = torch.load(params.reload_encoder_combiner_path, map_location=lambda storage, loc: storage.cuda(params.local_rank))
 
-    # reload encoder
-    encoder = TransformerModel(params, dico, is_encoder=True,
-                               with_output=True)  # TODO: only output when necessary - len(params.clm_steps + params.mlm_steps) > 0
-    enc_reload = reloaded['model' if 'model' in reloaded else 'encoder']
-    if all([k.startswith('module.') for k in enc_reload.keys()]):
-        enc_reload = {k[len('module.'):]: v for k, v in enc_reload.items()}
-    encoder.load_state_dict(enc_reload)
-    logger.info("Reload encoder from {}".format(params.reload_encoder_combiner_path))
-
-    # reload combiner
-    combiner = MultiLingualCombiner(params)
-    combiner_reload = reloaded['combiner']
-    if all([k.startswith('module.') for k in combiner_reload.keys()]):
-        combiner_reload = {k[len('module.'):]: v for k, v in combiner_reload.items()}
-
-    combiner.load_state_dict(combiner_reload)
-    logger.info("Reload combiner from {}".format(params.reload_encoder_combiner_path))
-
-    return encoder.cuda(), combiner.cuda()
 
