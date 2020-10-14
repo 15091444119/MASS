@@ -359,7 +359,7 @@ class CombinerEvaluator(Evaluator):
         tmp_whole = self._whole_word_embedder
 
         self._separated_word_embedder = self._non_para_word_embedder
-        self._whole_word_embedder = self._non_para_word_embedder
+        self._whole_word_embedder = self._whole_word_embedder
         scores = self.run_all_evals(-1)
 
         self._separated_word_embedder = tmp_separated

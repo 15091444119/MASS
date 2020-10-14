@@ -1,10 +1,10 @@
-export CUDA_VISIBLE_DEVICES="0"
+export CUDA_VISIBLE_DEVICES="1"
 MODEL=/home/data_ti5_d/zhouzh/low-resource-mt/MASS/MASS-unsupNMT/dumped/cn-en-zh-500w-wwm-reload/j03q6ubj61/periodic-50.pth
 #/home/data_ti5_d/zhouzh/low-resource-mt/MASS/MASS-unsupNMT/dumped/cn-en-zh-500w-ft-jointbpe-jointvocab/q6vn71z093/checkpoint.pth
 #/home/data_ti5_d/zhouzh/low-resource-mt/MASS/MASS-unsupNMT/dumped/cn-en-zh-500w-checkpoint-pretrain/x363q5pus9/periodic-150.pth
 
 python train_combiner.py \
-	--exp_name batch_neg_cos                             \
+	--exp_name tmp                             \
 	--data_path ./combiner_data \
 	--lgs 'zh-en'                                        \
 	--encoder_only False                                 \
@@ -26,7 +26,7 @@ python train_combiner.py \
 	--dict_path /home/data_ti5_d/zhouzh/low-resource-mt/XLM_MASS_preprocessed_data/BLI/zh-en/zh-en.txt.sim \
 	--codes_path /home/data_ti5_d/zhouzh/low-resource-mt/XLM_MASS_preprocessed_data/pretrain/cn-split-sen-zh-en-pretrain/codes \
 	--combiner_steps "zh,en" \
-	--combiner_loss "BNC" \
+	--combiner_loss "COS" \
 	--combiner "gru" \
   --share_combiner False \
   --n_combiner_layers 4 \
@@ -34,6 +34,6 @@ python train_combiner.py \
   --bli_preprocess_method 'u' \
   --splitter "CHAR" \
   --origin_context_extractor "before_eos" \
-  --combiner_context_extractor "average"
-#  --reload_encoder_combiner_path /home/data_ti5_d/zhouzh/low-resource-mt/subword-combiner/MASS-unsupNMT/dumped/char-gru-average/3r7pn05tf8/checkpoint.pth \
-#  --eval_only True
+  --combiner_context_extractor "average" \
+  --reload_encoder_combiner_path /home/data_ti5_d/zhouzh/low-resource-mt/subword-combiner/MASS-unsupNMT/dumped/char-gru-average/3r7pn05tf8/checkpoint.pth \
+  --eval_only True
