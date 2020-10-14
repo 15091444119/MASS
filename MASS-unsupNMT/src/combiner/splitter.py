@@ -12,7 +12,7 @@ def encode_word(orig, bpe_codes, max_merge_num=None, return_merge_count=False):
     Params:
         orig: string
             the word to be encoded
-        bpe_codes: dict, like {("1", "2</w>"): 1}
+        bpe_codes: dict, like {("1", "2</w>"): 1} the smaller the value the higher the priority
         max_merge_num: int
             max number of merge operation, the function is stopped after this number
         return_merge_count: bool
@@ -24,9 +24,9 @@ def encode_word(orig, bpe_codes, max_merge_num=None, return_merge_count=False):
     """
     if len(orig) == 1:
         if return_merge_count:
-            return orig, 0
+            return [orig], 0
         else:
-            return orig
+            return [orig]
 
     word = list(orig[:-1]) + [orig[-1] + WORD_END]  # wordend is add to the last character
 
@@ -135,6 +135,9 @@ class WholeWordSplitter(object):
             return NotImplementedError
 
     def split_word(self, word):
+        raise NotImplementedError
+
+    def inference_tokenize(self, word):
         raise NotImplementedError
 
     def re_encode_batch_words(self, batch, lengths, dico, params):
@@ -331,6 +334,7 @@ class CharSplitter(WholeWordSplitter):
 
         encoded_word = encode_word(word, {}, max_merge_num=0)
         return encoded_word
+
 
 
 if __name__ == "__main__":

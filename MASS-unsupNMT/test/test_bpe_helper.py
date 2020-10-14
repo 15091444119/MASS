@@ -25,6 +25,10 @@ class TestBpe(unittest.TestCase):
         res = bpe_applier.split_word("abac")
         self.assertTrue(res in [["a@@", "b@@", "a@@", "c"], ["ab@@", "a@@", "c"], ["ab@@", "ac"]])
 
+        # inference tokenize
+        self.assertEqual(bpe_applier.inference_tokenize("abac"), ["abac"])
+        self.assertEqual(bpe_applier.inference_tokenize("a"), ["a"])
+
     def test_re_encode_sentence(self):
         """ this need human check """
         bpe_applier = RandomBpeSplitter(self.bpe_codes)
@@ -35,3 +39,7 @@ class TestBpe(unittest.TestCase):
     def test_char_splitter(self):
         word_splitter = CharSplitter()
         self.assertEqual(['a@@', 'b@@', 'a@@', 'c'], word_splitter.split_word("abac"))
+
+        # inference tokenize
+        self.assertEqual(['a@@', 'b@@', 'a@@', 'c'], word_splitter.inference_tokenize("abac"))
+        self.assertEqual(["a"], word_splitter.inference_tokenize("a"))

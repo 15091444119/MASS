@@ -6,7 +6,20 @@ import sys
 import pdb
 from .bli import BLI, read_dict
 from .utils import SenteceEmbedder, WordEmbedderWithCombiner, load_mass_model
+from src.combiner.splitter import WholeWordSplitter, RandomBpeSplitter
 
+
+def restore_bpe(tokens):
+    """
+    Params:
+        tokens: string
+            bped tokens of a word, tokens are separated by a space
+    Returns:
+        word: string
+            restore bpe
+    """
+
+    return tokens.replace("@@", "").replace(" ", "")
 
 class WholeSeparatedEmbs(object):
 
@@ -73,7 +86,7 @@ def split_whole_separate(bped_words):
     separated_word2bpe = {}
 
     for tokens in bped_words:
-        word = tokens.replace("@@", "").replace(" ", "")
+        word = restore_bpe(tokens)
         lengths = len(tokens.split())
 
         if word in whole_words or word in separated_word2bpe:
@@ -206,19 +219,25 @@ def eval_whole_separated_bli(src_whole_separated_embeddings, tgt_whole_separated
             A bli method
 
         save_path: str, default: None
-            Path to save bli result
+            Path to save bli result, save_path + ".all", save_path + ".whole", save_path + ".separated"
     Returns:
         scores: dict
             top1, top5, top10 bli accuracy
         whole_word_score: dict
         separated_word_score: dict
     """
+
+    # saved_path
+    save_all_path = save_path + ".all" if save_path is not None else None
+    save_whole_path = save_path + ".whole" if save_path is not None else None
+    save_separated_path = save_path + ".separated" if save_path is not None else None
+
     src_whole_words, src_separated_word2bpe, src_word2id, src_id2word, src_embeddings = src_whole_separated_embeddings.properties()
     tgt_whole_words, tgt_separated_word2bpe, tgt_word2id, tgt_id2word, tgt_embeddings = tgt_whole_separated_embeddings.properties()
 
     dic = read_dict(dict_path=dic_path, src_word2id=src_word2id, tgt_word2id=tgt_word2id)
 
-    scores = bli.eval(src_embeddings, tgt_embeddings, src_id2word, src_word2id, tgt_id2word, tgt_word2id, dic, save_path=save_path)
+    scores = bli.eval(src_embeddings, tgt_embeddings, src_id2word, src_word2id, tgt_id2word, tgt_word2id, dic, save_path=save_all_path)
 
     # get whole source word dictionary and separated word dictionary
     whole_word_dic = {}
@@ -230,27 +249,36 @@ def eval_whole_separated_bli(src_whole_separated_embeddings, tgt_whole_separated
             assert src_id2word[src_id] in src_separated_word2bpe
             seperated_word_dic[src_id] = dic[src_id]
 
-    whole_word_scores = bli.eval(src_embeddings, tgt_embeddings, src_id2word, src_word2id, tgt_id2word, tgt_word2id, whole_word_dic)
-    seperated_word_scores = bli.eval(src_embeddings, tgt_embeddings, src_id2word, src_word2id, tgt_id2word, tgt_word2id, seperated_word_dic)
+    whole_word_scores = bli.eval(src_embeddings, tgt_embeddings, src_id2word, src_word2id, tgt_id2word, tgt_word2id, whole_word_dic, save_path=save_whole_path)
+    seperated_word_scores = bli.eval(src_embeddings, tgt_embeddings, src_id2word, src_word2id, tgt_id2word, tgt_word2id, seperated_word_dic, save_path=save_separated_path)
 
     return scores, whole_word_scores, seperated_word_scores
 
 
-def read_bped_words(path):
+def read_retokenize_words(path, splitter):
+    """
+    if splitter is not bpe splitter, retokenize separated word into characters
+    """
     words = []
     with open(path, 'r') as f:
         for line in f:
-            words.append(line.rstrip())
+            word = line.rstrip()
+            # re split separated word
+            if len(word.split()) > 1 and not isinstance(splitter, RandomBpeSplitter):
+                word = ' '.join(splitter.split_word(restore_bpe(word)))
+            words.append(word)
     return words
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_path", type=str)
-    parser.add_argument("--src_bped_words_path", help="path to load source words (bped)")
-    parser.add_argument("--tgt_bped_words_path", help="path to load target words (bped)")
+    parser.add_argument("--src_words_path", help="path to load source words (bped)")
+    parser.add_argument("--tgt_words_path", help="path to load target words (bped)")
     parser.add_argument("--src_lang", type=str)
     parser.add_argument("--tgt_lang", type=str)
+    parser.add_argument("--codes_path", type=str, help="bpe codes", default="")
+    parser.add_argument("--splitter", type=str, help="splitter, bpe or char", choices=["BPE", "CHAR"])
 
     # bli params
     parser.add_argument("--preprocess_method", type=str, default="ucu")
@@ -265,8 +293,9 @@ def main():
 
     bli = BLI(args.preprocess_method, args.batch_size, args.metric, args.csls_topk)
 
-    src_bped_words = read_bped_words(args.src_bped_words_path)
-    tgt_bped_words = read_bped_words(args.tgt_bped_words_path)
+    splitter = WholeWordSplitter.build_splitter(args)
+    src_bped_words = read_retokenize_words(args.src_words_path, splitter=splitter)
+    tgt_bped_words = read_retokenize_words(args.tgt_words_path, splitter=splitter)
 
     dico, mass_params, encoder, _ = load_mass_model(args.model_path)
     sentence_embedder = SenteceEmbedder(encoder, mass_params, dico, args.context_extractor)

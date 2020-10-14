@@ -187,7 +187,7 @@ class BLI(object):
                                 batch_size=self._batch_size, metric=self._metric)
 
         if save_path is not None:
-            save_translation(translation, src_id2word, tgt_id2word, save_path, dic, topk=5)
+            save_translation(translation, src_id2word, tgt_id2word, save_path, dic, topk=10)
 
         top1_acc = calculate_word_translation_accuracy(translation, dic, topk=1)
         top5_acc = calculate_word_translation_accuracy(translation, dic, topk=5)

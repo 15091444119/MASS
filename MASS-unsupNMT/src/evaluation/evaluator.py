@@ -17,7 +17,7 @@ from ..utils import to_cuda, restore_segmentation, concat_batches
 from .utils import SenteceEmbedder, WordEmbedderWithCombiner
 from src.combiner.combiner import MultiLingualNoneParaCombiner
 from .bli import BLI
-from .eval_context_bli import eval_whole_separated_bli, read_bped_words, generate_context_word_representation, encode_whole_word_separated_word, generate_and_eval
+from .eval_context_bli import eval_whole_separated_bli, read_retokenize_words, generate_context_word_representation, encode_whole_word_separated_word, generate_and_eval
 
 
 BLEU_SCRIPT_PATH = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'multi-bleu.perl')
@@ -345,13 +345,15 @@ class CombinerEvaluator(Evaluator):
         # used to evaluate none parameter word embedder
         self._non_para_word_embedder = SenteceEmbedder(trainer.model, params, data["dico"], context_extractor=params.combiner_context_extractor)
 
-        self._src_bped_words = read_bped_words(params.src_bped_words_path)
-        self._tgt_bped_words = read_bped_words(params.tgt_bped_words_path)
         self._src_lang = params.dict_src_lang
         self._tgt_lang = params.dict_tgt_lang
         self._bli = BLI(params.bli_preprocess_method, params.bli_batch_size, params.bli_metric, params.bli_csls_topk)
         self._whole_word_splitter = trainer.whole_word_splitter
         self._loss_function = trainer.loss_function
+        self._src_tokenized_words = read_retokenize_words(params.src_bped_words_path, self._whole_word_splitter)
+        self._tgt_tokenized_words = read_retokenize_words(params.tgt_bped_words_path, self._whole_word_splitter)
+        pdb.set_trace()
+
 
     def eval_non_para(self):
         # small hack here to run all evals on none parameter embedder
@@ -381,14 +383,14 @@ class CombinerEvaluator(Evaluator):
 
         all_embs = {}
         # this is calculated only once to save time
-        all_embs["src"] = encode_whole_word_separated_word(self._src_bped_words, self._src_lang, self._whole_word_embedder, self._separated_word_embedder)
-        all_embs["tgt"] = encode_whole_word_separated_word(self._tgt_bped_words, self._tgt_lang, self._whole_word_embedder, self._separated_word_embedder)
+        all_embs["src"] = encode_whole_word_separated_word(self._src_tokenized_words, self._src_lang, self._whole_word_embedder, self._separated_word_embedder)
+        all_embs["tgt"] = encode_whole_word_separated_word(self._tgt_tokenized_words, self._tgt_lang, self._whole_word_embedder, self._separated_word_embedder)
         for lang in ["src", "tgt"]:
             for data in ["valid", "train"]:
-                self.eval_combiner_acc(scores, data, lang, all_embs[lang], save_path=os.path.join(self.params.dump_path, "{}_{}".format(lang, data)))
+                self.eval_combiner_acc(scores, data, lang, all_embs[lang], save_path=os.path.join(self.params.dump_path, "{}_{}_{}".format(epoch, lang, data)))
 
         # evaluate bli
-        self.eval_bli(scores, all_embs["src"], all_embs["tgt"])
+        self.eval_bli(scores, all_embs["src"], all_embs["tgt"], save_path=os.path.join(self.params.dump_path, "{}_bli".format(epoch)))
             #self.eval_split_whole_word_bli(scores)
 
         return scores
@@ -486,13 +488,13 @@ class CombinerEvaluator(Evaluator):
         for key, value in separated_word_scores.items():
             scores["BLI_split_separated_word " + key] = value
 
-    def eval_bli(self, scores, src_whole_separated_embeddings, tgt_whole_separated_embeddings):
+    def eval_bli(self, scores, src_whole_separated_embeddings, tgt_whole_separated_embeddings, save_path=None):
         all_scores, whole_word_scores, separated_word_scores = eval_whole_separated_bli(
             src_whole_separated_embeddings=src_whole_separated_embeddings,
             tgt_whole_separated_embeddings=tgt_whole_separated_embeddings,
             dic_path=self._params.dict_path,
             bli=self._bli,
-            save_path=None)
+            save_path=save_path)
 
         for key, value in all_scores.items():
             scores["BLI_all " + key] = value
