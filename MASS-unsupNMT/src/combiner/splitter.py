@@ -129,10 +129,15 @@ class WholeWordSplitter(object):
     def build_splitter(cls, params):
         if params.splitter == "BPE":
             return RandomBpeSplitter.from_code_path(params.codes_path)
+        elif params.splitter == "ROB":
+            return ReduceOneBpeSplitter.from_code_path(params.codes_path)
         elif params.splitter == "CHAR":
             return CharSplitter()
         else:
-            return NotImplementedError
+            raise NotImplementedError
+
+    def need_retokenize(self):
+        raise NotImplementedError
 
     def split_word(self, word):
         raise NotImplementedError
@@ -314,6 +319,41 @@ class RandomBpeSplitter(WholeWordSplitter):
         encoded_word = encode_word(word, self.bpe_codes, max_merge_num=random_num)
         return encoded_word
 
+    def need_retokenize(self):
+        return False
+
+
+class ReduceOneBpeSplitter(WholeWordSplitter):
+
+    def __init__(self, bpe_codes):
+        super().__init__()
+        self.bpe_codes = bpe_codes
+
+    @classmethod
+    def from_code_path(cls, codes_path):
+        bpe_codes = read_codes(codes_path)
+        return RandomBpeSplitter(bpe_codes)
+
+    def split_word(self, word):
+        """ don't fully merge bpe
+        Params:
+            word: string
+                the word to be splitted
+        Returns:
+            encoded_word: list of strings
+                the splited word
+        """
+        assert len(word) != 1
+        _, merge_num = encode_word(word, self.bpe_codes, return_merge_count=True)
+        assert merge_num != 0
+
+        num = merge_num - 1
+        encoded_word = encode_word(word, self.bpe_codes, max_merge_num=num)
+        return encoded_word
+
+    def need_retokenize(self):
+        return False
+
 
 class CharSplitter(WholeWordSplitter):
     """ split the word into characters """
@@ -334,6 +374,9 @@ class CharSplitter(WholeWordSplitter):
 
         encoded_word = encode_word(word, {}, max_merge_num=0)
         return encoded_word
+
+    def need_retokenize(self):
+        return True
 
 
 

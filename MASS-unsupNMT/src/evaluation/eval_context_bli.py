@@ -6,7 +6,7 @@ import sys
 import pdb
 from .bli import BLI, read_dict
 from .utils import SenteceEmbedder, WordEmbedderWithCombiner, load_mass_model
-from src.combiner.splitter import WholeWordSplitter, RandomBpeSplitter
+from src.combiner.splitter import WholeWordSplitter
 
 
 def restore_bpe(tokens):
@@ -21,6 +21,7 @@ def restore_bpe(tokens):
 
     return tokens.replace("@@", "").replace(" ", "")
 
+
 class WholeSeparatedEmbs(object):
 
     def __init__(self, whole_words, separated_word2bpe, word2id, id2word, embeddings):
@@ -33,8 +34,27 @@ class WholeSeparatedEmbs(object):
     def properties(self):
         return self.whole_words, self.separated_word2bpe, self.word2id, self.id2word, self.embeddings
 
+    def whole_words_properties(self):
+        """
+        In order of original index
+        Returns:
+            whole_words_id2word:
+            whole_words_word2id:
+            whole_words_embeddings:
+        """
+        whole_words_word2id = {}
+        whole_words_embeddings = []
+        for id in range(len(self.id2word)):
+            word = self.id2word[id]
+            if word in self.whole_words:
+                whole_words_word2id[word] = len(whole_words_word2id)
+                whole_words_embeddings.append(self.embeddings[id])
+        whole_words_id2word = {id: word for word, id in whole_words_word2id.items()}
+        whole_words_embeddings = torch.stack(whole_words_embeddings, dim=0)
 
-from sklearn import cluster
+        return whole_words_id2word, whole_words_word2id, whole_words_embeddings
+
+
 def generate_context_word_representation(words, lang, embedder, batch_size=128):
     """
     Generate context word representations
@@ -264,7 +284,7 @@ def read_retokenize_words(path, splitter):
         for line in f:
             word = line.rstrip()
             # re split separated word
-            if len(word.split()) > 1 and not isinstance(splitter, RandomBpeSplitter):
+            if len(word.split()) > 1 and splitter.need_retokenize():
                 word = ' '.join(splitter.split_word(restore_bpe(word)))
             words.append(word)
     return words
@@ -278,7 +298,7 @@ def main():
     parser.add_argument("--src_lang", type=str)
     parser.add_argument("--tgt_lang", type=str)
     parser.add_argument("--codes_path", type=str, help="bpe codes", default="")
-    parser.add_argument("--splitter", type=str, help="splitter, bpe or char", choices=["BPE", "CHAR"])
+    parser.add_argument("--splitter", type=str, help="splitter, bpe or char", choices=["BPE", "CHAR", "ROB"])
 
     # bli params
     parser.add_argument("--preprocess_method", type=str, default="ucu")

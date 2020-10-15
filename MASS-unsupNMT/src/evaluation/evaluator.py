@@ -352,7 +352,6 @@ class CombinerEvaluator(Evaluator):
         self._loss_function = trainer.loss_function
         self._src_tokenized_words = read_retokenize_words(params.src_bped_words_path, self._whole_word_splitter)
         self._tgt_tokenized_words = read_retokenize_words(params.tgt_bped_words_path, self._whole_word_splitter)
-        pdb.set_trace()
 
 
     def eval_non_para(self):
@@ -465,8 +464,8 @@ class CombinerEvaluator(Evaluator):
                     new_words.append(' '.join(self._whole_word_splitter.split_word(word)))
             return new_words
 
-        new_src_bped_words = re_encode_whole_word(self._src_bped_words)
-        new_tgt_bped_words = re_encode_whole_word(self._tgt_bped_words)
+        new_src_bped_words = re_encode_whole_word(self._src_tokenized_words)
+        new_tgt_bped_words = re_encode_whole_word(self._tgt_tokenized_words)
 
         all_scores, whole_word_scores, separated_word_scores = generate_and_eval(
             src_bped_words=new_src_bped_words,
@@ -511,6 +510,10 @@ class CombinerEvaluator(Evaluator):
         then get the combiner representation of it, then we search nearest neighbor in the original embedding
         space(given by src_bped_words or tgt_bped_words) and see if the nearest neighbor is that word.
             This can be regarded as a BLI from combiner space to original mass output space.
+            The original mass output space may contain whole words and separated words,
+            So two original space will be considerd:
+                1. whole words
+                2. whole words + combined separated words
 
         Example:
             你好 -> 你@@ 好 -> representation([你@@, 好]) -> search nearest neighbor in (你好，我好，大家好，...）
@@ -549,8 +552,9 @@ class CombinerEvaluator(Evaluator):
         combiner_embeddings = generate_context_word_representation(combiner_words, lang, self._separated_word_embedder)
         combiner_id2word = {idx: word for word, idx in combiner_word2id.items()}
 
+
         # generate original mass representation
-        _, _, origin_word2id, origin_id2word, origin_embeddings = whole_separated_embeddings.properties()
+        whole_words, separated_words2bpe, origin_word2id, origin_id2word, origin_embeddings = whole_separated_embeddings.properties()
 
         # generate a dictionary
         dic = {}
@@ -561,11 +565,24 @@ class CombinerEvaluator(Evaluator):
 
         logger.info("Number of combiner word: {} Number of origin word: {} Number of dic word: {}".format(len(combiner_id2word), len(origin_word2id), len(dic)))
 
-        # bli
-        bli_scores = self._bli.eval(combiner_embeddings, origin_embeddings, combiner_id2word, combiner_word2id, origin_id2word, origin_word2id, dic, save_path=save_path)
-
+        # bli on whole + separated space
+        whole_separated_save_path = save_path + "_whole_sepa" if save_path is not None else None
+        bli_scores = self._bli.eval(combiner_embeddings, origin_embeddings, combiner_id2word, combiner_word2id, origin_id2word, origin_word2id, dic, save_path=whole_separated_save_path)
         for key, value in bli_scores.items():
-            scores["{data}-{lang}-combiner-acc-{key}".format(data=data, lang=lang, key=key)] = value
+            scores["{data}-{lang}-whole-sepa-combiner-acc-{key}".format(data=data, lang=lang, key=key)] = value
+
+        # only whole words space
+        whole_id2word, whole_word2id, whole_embeddings = whole_separated_embeddings.whole_words_properties()
+        dic = {}
+        for word, combiner_idx in combiner_word2id.items():
+            assert word in whole_word2id
+            whole_idx = whole_word2id[word]
+            dic[combiner_idx] = [whole_idx]
+        whole_save_path = save_path +"_whole" if save_path is not None else None
+        whole_bli_scores = self._bli.eval(combiner_embeddings, whole_embeddings, combiner_id2word, combiner_word2id, whole_id2word, whole_word2id, dic, save_path=whole_save_path)
+        for key, value in whole_bli_scores.items():
+            scores["{data}-{lang}-whole-combiner-acc-{key}".format(data=data, lang=lang, key=key)] = value
+
 
 
 class EncDecEvaluator(Evaluator):

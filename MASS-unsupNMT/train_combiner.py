@@ -229,7 +229,7 @@ def get_parser():
                         help="Master port (for multi-node SLURM jobs)")
 
     # combiner
-    parser.add_argument("--splitter", type=str, choices=["BPE", "CHAR"], help="use random bpe or character to split word")
+    parser.add_argument("--splitter", type=str, choices=["BPE", "CHAR", "ROB"], help="use random bpe or character to split word")
     parser.add_argument("--combiner_context_extractor", type=str)
     parser.add_argument("--origin_context_extractor", type=str)
     parser.add_argument("--combiner", type=str)
