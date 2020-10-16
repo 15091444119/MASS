@@ -328,7 +328,7 @@ def main(params):
         logger.info("%s -> %.6f" % (k, v))
     logger.info("__log__:%s" % json.dumps(scores))
 
-    # evaluation
+    # evation
     if params.eval_only:
         evaluator.check_dataset()
         scores = evaluator.run_all_evals(trainer.epoch)

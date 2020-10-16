@@ -356,6 +356,7 @@ class CombinerEvaluator(Evaluator):
 
     def eval_non_para(self):
         # small hack here to run all evals on none parameter embedder
+        # TODO loss here is not right, maybe we should not use sentence embedder or word embedderwith combiner
         tmp_separated = self._separated_word_embedder
         tmp_whole = self._whole_word_embedder
 
