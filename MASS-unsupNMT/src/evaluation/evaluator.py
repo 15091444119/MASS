@@ -8,6 +8,7 @@
 from logging import getLogger
 import pdb
 import os
+import sys
 import subprocess
 from collections import OrderedDict
 import numpy as np
@@ -331,7 +332,7 @@ class SingleEvaluator(Evaluator):
 class CombinerEvaluator(Evaluator):
     """ This is an evaluator for word level combiner (not sentence) """
 
-    def __init__(self, trainer, data, params):
+    def __init__(self, trainer, data, params, decoder):
 
         super().__init__(trainer, data, params)
         self._data = data
@@ -352,6 +353,58 @@ class CombinerEvaluator(Evaluator):
         self._loss_function = trainer.loss_function
         self._src_tokenized_words = read_retokenize_words(params.src_bped_words_path, self._whole_word_splitter)
         self._tgt_tokenized_words = read_retokenize_words(params.tgt_bped_words_path, self._whole_word_splitter)
+
+        # decoder ( for evaluate word translate)
+        self._decoder = decoder
+
+    def eval_encoder_decoder_word_translate(self):
+
+        # generate dictionary, only use source words which can be splitted
+        dictionary = {}
+        used_srcs = []
+        right = 0
+        with open(self._params.dict_path) as f:
+            for line in f:
+                src, tgt = line.rstrip().split()
+                if len(src) <= 1:
+                    continue
+                src = self._whole_word_splitter.split_word(src)
+                if len(src) > 1:
+                    src = ' '.join(src)
+                    if src not in dictionary:
+                        dictionary[src] = [tgt]
+                        used_srcs.append(src)
+                    else:
+                        dictionary[src].append(tgt)
+
+        # translate
+        for i in range(0, len(used_srcs), self._params.batch_size):
+            words = used_srcs[i: min(len(used_srcs), i + self._params.batch_size)]
+            encoded, lengths = self._separated_word_embedder.with_special_token_forward(words, self._src_lang)
+            encoded = encoded.transpose(0, 1)
+            decoded, dec_lengths = self._decoder.generate(encoded, lengths.cuda(), self._params.lang2id[self._tgt_lang], max_len=int(1.5 * lengths.max().item() + 10))
+
+            for j in range(decoded.size(1)):
+                # remove delimiters
+                sent = decoded[:, j]
+                delimiters = (sent == self._params.eos_index).nonzero().view(-1)
+                assert len(delimiters) >= 1 and delimiters[0].item() == 0
+                sent = sent[1:] if len(delimiters) == 1 else sent[1:delimiters[1]]
+
+                # output translation
+                source = used_srcs[i + j]
+                dico = self._data["dico"]
+                target = " ".join([dico[sent[k].item()] for k in range(len(sent))])
+                if target.replace("@@", "").replace(" ", ' ') in dictionary[source]:
+                    ans = "True"
+                else:
+                    ans = "False"
+                if ans == "True":
+                    right += 1
+                sys.stderr.write("%i %s -> %s\nans:%s\n" % (i + j, source, target, ans))
+                pdb.set_trace()
+
+        sys.stderr.write("acc:{}".format(right / len(dictionary)))
 
 
     def eval_non_para(self):

@@ -236,3 +236,31 @@ class WordEmbedderWithCombiner(nn.Module):
         batch_sentence_representation = self._combiner(batch_context_word_representations.transpose(0, 1), lengths, lang)
 
         return batch_sentence_representation
+
+    def with_special_token_forward(self, sentences, lang):
+        """
+        Params:
+            sentences: each sentence is just a word, tokenized by bpe
+
+        Returns:
+            batch_sentence_representation: torch.FloatTensor size:(3, batch_size, emb_dim)
+                sentence representation of each word
+        """
+        batch_context_word_representations, lengths = encode_sentences(self._encoder, self._dico, self._mass_params,
+                                                                       sentences, lang)
+
+        for length in lengths:
+            assert length.item() > 3 #(all are separated word)
+
+        batch_sentence_representation = self._combiner(batch_context_word_representations.transpose(0, 1), lengths, lang)
+
+        batch_size, emb_dim = batch_sentence_representation.size()
+        outputs = torch.FloatTensor(batch_size, 3, emb_dim).to(batch_sentence_representation.device)
+        for i in range(batch_size):
+            outputs[i][1] = batch_sentence_representation[i]
+            outputs[i][0] = batch_context_word_representations[i][0]
+            outputs[i][2] = batch_context_word_representations[i][2]
+
+        outputs_lengths = torch.tensor([3] * batch_size).to(batch_sentence_representation.device)
+        return outputs.transpose(0, 1), outputs_lengths
+

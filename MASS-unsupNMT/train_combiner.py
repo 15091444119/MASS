@@ -298,11 +298,12 @@ def main(params):
     assert not params.encoder_only
     if params.reload_encoder_combiner_path == "":
         # only reload model or don't reload anything
-        model, _ = build_model(params, data['dico'])
+        model, decoder = build_model(params, data['dico'])
         combiner = MultiLingualCombiner(params).cuda()
         logger.info("{}".format(combiner))
     else:
         # reload model and combiner from a checkpoint
+        _, decoder = build_model(params, data['dico']) # reload decoder
         model, combiner = reload_model_combiner(params, data['dico'])
         logger.info("{}\n{}".format(model, combiner))
 
@@ -319,10 +320,12 @@ def main(params):
     # build trainer, reload potential checkpoints / build evaluator
     loss_function = get_loss_function(params)
     trainer = CombinerTrainer(model, combiner, data, params, whole_word_splitter, loss_function)
-    evaluator = CombinerEvaluator(trainer, data, params)
+    evaluator = CombinerEvaluator(trainer, data, params, decoder)
 
     # eval non para
     logger.info("Eval non para")
+    evaluator.eval_encoder_decoder_word_translate()
+    exit()
     scores = evaluator.eval_non_para()
     for k, v in scores.items():
         logger.info("%s -> %.6f" % (k, v))
