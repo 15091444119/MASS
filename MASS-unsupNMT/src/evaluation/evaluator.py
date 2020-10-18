@@ -351,6 +351,8 @@ class CombinerEvaluator(Evaluator):
         self._bli = BLI(params.bli_preprocess_method, params.bli_batch_size, params.bli_metric, params.bli_csls_topk)
         self._whole_word_splitter = trainer.whole_word_splitter
         self._loss_function = trainer.loss_function
+
+        # tokenize words if we want to split to word in to char
         self._src_tokenized_words = read_retokenize_words(params.src_bped_words_path, self._whole_word_splitter)
         self._tgt_tokenized_words = read_retokenize_words(params.tgt_bped_words_path, self._whole_word_splitter)
 
