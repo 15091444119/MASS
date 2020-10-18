@@ -84,11 +84,39 @@ class GRUCombiner(nn.Module):
         return rep
 
 
+class LinearCombiner(nn.Module):
+    """
+    context2rep, then linear
+    """
+
+    def __init__(self, params):
+        super().__init__()
+        self._context2rep = Context2Sentence(params.combiner_context_extractor)
+        self._linear = nn.Linear(params.emb_dim, params.emb_dim)
+
+    def forward(self, embeddings, lengths):
+        """
+        forward function of the combiner
+        params:
+            embeddings: torch.FloatTensor, (max_length, batch_size)
+            lengths: torch.LongTensor (batch_size)
+        returns:
+            outputs: torch.FloatTensor, (batch_size, emb_dim)
+        """
+        assert embeddings.size(1) == lengths.size(0)
+        rep = self._context2rep(embeddings.transpose(0, 1), lengths)
+        rep = self._linear(rep)
+
+        return rep
+
+
 def build_combiner(params):
     if params.combiner == "transformer":
         return TransformerCombiner(params)
     elif params.combiner == "gru":
         return GRUCombiner(params)
+    elif params.combiner == "linear":
+        return LinearCombiner(params)
     else:
         raise NotImplementedError
 
@@ -110,4 +138,3 @@ class MultiLingualCombiner(nn.Module):
     def forward(self, embeddings, lengths, lang):
         combiner = self._lang2combiner[lang]
         return combiner(embeddings, lengths)
-

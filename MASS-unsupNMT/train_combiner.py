@@ -324,14 +324,13 @@ def main(params):
 
     # eval non para
     logger.info("Eval non para")
-    evaluator.eval_encoder_decoder_word_translate()
-    exit()
+    # evaluator.eval_encoder_decoder_word_translate()
     scores = evaluator.eval_non_para()
     for k, v in scores.items():
         logger.info("%s -> %.6f" % (k, v))
     logger.info("__log__:%s" % json.dumps(scores))
 
-    # evation
+    # evaluation
     if params.eval_only:
         evaluator.check_dataset()
         scores = evaluator.run_all_evals(trainer.epoch)
