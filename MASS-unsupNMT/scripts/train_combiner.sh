@@ -22,11 +22,11 @@ python train_combiner.py \
 	--max_epoch 200                                      \
 	--src_bped_words_path ./word_vocab/zh.vocab.bpe \
 	--tgt_bped_words_path ./word_vocab/en.vocab.bpe \
-	--dict_src_lang zh \
-	--dict_tgt_lang en \
+	--trained_lang zh \
+	--other_lang en \
 	--dict_path /home/data_ti5_d/zhouzh/low-resource-mt/XLM_MASS_preprocessed_data/BLI/zh-en/zh-en.txt.sim \
 	--codes_path /home/data_ti5_d/zhouzh/low-resource-mt/XLM_MASS_preprocessed_data/pretrain/cn-split-sen-zh-en-pretrain/codes \
-	--combiner_steps "zh,en" \
+	--combiner_steps "zh" \
 	--combiner_loss "COS" \
 	--combiner "gru" \
   --share_combiner False \

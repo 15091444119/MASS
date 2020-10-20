@@ -718,12 +718,12 @@ class CombinerTrainer(Trainer):
     only update parameters of a combiner
     """
 
-    def __init__(self, model, combiner, data, params, whole_word_splitter, loss_function):
+    def __init__(self, encoder, combiner, data, params, whole_word_splitter, loss_function):
 
-        self.MODEL_NAMES = ["model", "combiner"]
+        self.MODEL_NAMES = ["combiner"]
 
         # model / data / params
-        self.model = model
+        self.encoder = encoder
         self.origin_tokens2word = Context2Sentence(params.origin_context_extractor)  # this is a non-parameter combiner
         self.combiner = combiner
         self.data = data
@@ -732,8 +732,7 @@ class CombinerTrainer(Trainer):
         self.loss_function = loss_function
 
         # optimizers
-        self.optimizers = {'combiner': self.get_optimizer_fp('combiner'),
-                           'model': self.get_optimizer_fp('model')}
+        self.optimizers = {'combiner': self.get_optimizer_fp('combiner')}
 
         super().__init__(data, params)
 
@@ -742,22 +741,23 @@ class CombinerTrainer(Trainer):
         params = self.params
         lang_id = params.lang2id[lang]
         batch, lengths = self.get_batch("combine", lang)
+        # TODO recode in datasets, not in trainer
         new_batch, new_lengths = self.whole_word_splitter.re_encode_batch_words(batch, lengths, self.data["dico"], params)
 
         batch, lengths, new_batch, new_lengths = to_cuda(batch, lengths, new_batch, new_lengths)
 
         # original word rep
         langs = batch.clone().fill_(lang_id)
-        self.model.eval()
+        self.encoder.eval()
         with torch.no_grad():
-            origin_encoded = self.model('fwd', x=batch, lengths=lengths, langs=langs, causal=False)
+            origin_encoded = self.encoder('fwd', x=batch, lengths=lengths, langs=langs, causal=False)
             origin_word_rep = self.origin_tokens2word(origin_encoded.transpose(0, 1), lengths)
 
         # new word rep
-        self.model.eval()
+        self.encoder.eval()
         self.combiner.train()
         langs = new_batch.clone().fill_(lang_id)
-        new_encoded = self.model('fwd', x=new_batch, lengths=new_lengths, langs=langs, causal=False)
+        new_encoded = self.encoder('fwd', x=new_batch, lengths=new_lengths, langs=langs, causal=False)
         new_word_rep = self.combiner(new_encoded, new_lengths, lang)
 
         # mse loss

@@ -340,21 +340,18 @@ class CombinerEvaluator(Evaluator):
         self._model = trainer.model
         self._origin_tokens2word = trainer.origin_tokens2word
         self._combiner = trainer.combiner
-        self._whole_word_embedder = SenteceEmbedder(trainer.model, params, data["dico"], context_extractor=params.origin_context_extractor)
-        self._separated_word_embedder = WordEmbedderWithCombiner(trainer.model, trainer.combiner, params, data["dico"])
-
-        # used to evaluate none parameter word embedder
-        self._non_para_word_embedder = SenteceEmbedder(trainer.model, params, data["dico"], context_extractor=params.combiner_context_extractor)
-
-        self._src_lang = params.dict_src_lang
-        self._tgt_lang = params.dict_tgt_lang
+        self._trained_lang = params.trained_lang
+        self._other_lang = params.other_lang
         self._bli = BLI(params.bli_preprocess_method, params.bli_batch_size, params.bli_metric, params.bli_csls_topk)
         self._whole_word_splitter = trainer.whole_word_splitter
+
+        self._whole_word_embedder = SenteceEmbedder(self._model, params, self._data["dico"], context_extractor=params.origin_context_extractor)
+        self._separated_word_embedder = WordEmbedderWithCombiner(self._encoder, self._combiner, params, self.data["dico"])
+
         self._loss_function = trainer.loss_function
 
         # tokenize words if we want to split to word in to char
-        self._src_tokenized_words = read_retokenize_words(params.src_bped_words_path, self._whole_word_splitter)
-        self._tgt_tokenized_words = read_retokenize_words(params.tgt_bped_words_path, self._whole_word_splitter)
+        self._tokenized_words = read_retokenize_words(params.bped_words_path, self._whole_word_splitter)
 
         # decoder ( for evaluate word translate)
         self._decoder = decoder
@@ -382,9 +379,9 @@ class CombinerEvaluator(Evaluator):
         # translate
         for i in range(0, len(used_srcs), self._params.batch_size):
             words = used_srcs[i: min(len(used_srcs), i + self._params.batch_size)]
-            encoded, lengths = self._separated_word_embedder.with_special_token_forward(words, self._src_lang)
+            encoded, lengths = self._separated_word_embedder.with_special_token_forward(words, self._trained_lang)
             encoded = encoded.transpose(0, 1)
-            decoded, dec_lengths = self._decoder.generate(encoded, lengths.cuda(), self._params.lang2id[self._tgt_lang], max_len=int(1.5 * lengths.max().item() + 10))
+            decoded, dec_lengths = self._decoder.generate(encoded, lengths.cuda(), self._params.lang2id[self._other_lang], max_len=int(1.5 * lengths.max().item() + 10))
 
             for j in range(decoded.size(1)):
                 # remove delimiters
@@ -409,21 +406,6 @@ class CombinerEvaluator(Evaluator):
         sys.stderr.write("acc:{}".format(right / len(dictionary)))
 
 
-    def eval_non_para(self):
-        # small hack here to run all evals on none parameter embedder
-        # TODO loss here is not right, maybe we should not use sentence embedder or word embedderwith combiner
-        tmp_separated = self._separated_word_embedder
-        tmp_whole = self._whole_word_embedder
-
-        self._separated_word_embedder = self._non_para_word_embedder
-        self._whole_word_embedder = self._whole_word_embedder
-        scores = self.run_all_evals(-1)
-
-        self._separated_word_embedder = tmp_separated
-        self._whole_word_embedder = tmp_whole
-
-        return scores
-
     def run_all_evals(self, epoch):
         """
         Rewrite parent method
@@ -431,22 +413,13 @@ class CombinerEvaluator(Evaluator):
         scores = OrderedDict({'epoch': epoch})
 
         # evaluate combiner
-        for lang in self.params.combiner_steps:
-            self.eval_loss(scores, lang)
-        scores["valid-average-loss"] = sum(
-            [scores["valid-{}-combiner".format(lang)] for lang in self.params.combiner_steps]) / 2.0
+        self.eval_loss(scores, self._trained_lang)
 
-        all_embs = {}
         # this is calculated only once to save time
-        all_embs["src"] = encode_whole_word_separated_word(self._src_tokenized_words, self._src_lang, self._whole_word_embedder, self._separated_word_embedder)
-        all_embs["tgt"] = encode_whole_word_separated_word(self._tgt_tokenized_words, self._tgt_lang, self._whole_word_embedder, self._separated_word_embedder)
-        for lang in ["src", "tgt"]:
-            for data in ["valid", "train"]:
-                self.eval_combiner_acc(scores, data, lang, all_embs[lang], save_path=os.path.join(self.params.dump_path, "{}_{}_{}".format(epoch, lang, data)))
+        embs = encode_whole_word_separated_word(self._tokenized_words, self._trained_lang, self._whole_word_embedder, self._separated_word_embedder)
+        for data in ["valid", "train"]:
+            self.eval_combiner_acc(scores, data, self._trained_lang, embs, save_path=os.path.join(self.params.dump_path, "{}_{}_{}".format(epoch, self._trained_lang, data)))
 
-        # evaluate bli
-        self.eval_bli(scores, all_embs["src"], all_embs["tgt"], save_path=os.path.join(self.params.dump_path, "{}_bli".format(epoch)))
-            #self.eval_split_whole_word_bli(scores)
 
         return scores
 
@@ -504,63 +477,8 @@ class CombinerEvaluator(Evaluator):
                     assert word[1].item() not in valid_word_idxs, self._data["dico"].id2word[word[1].item()]
         logger.info("Training data and valid data have no intersection.")
 
-    def eval_split_whole_word_bli(self, scores):
-        """
-        Under this setting, we split whole word (with more then one character) using a random bpe helper(so this results is not stable)
-        """
 
-        def re_encode_whole_word(words):
-            new_words = []
-            for word in words:
-                if len(word) == 1:
-                    new_words.append(word)
-                elif "@@" in word:
-                    new_words.append(word)
-                else:
-                    new_words.append(' '.join(self._whole_word_splitter.split_word(word)))
-            return new_words
-
-        new_src_bped_words = re_encode_whole_word(self._src_tokenized_words)
-        new_tgt_bped_words = re_encode_whole_word(self._tgt_tokenized_words)
-
-        all_scores, whole_word_scores, separated_word_scores = generate_and_eval(
-            src_bped_words=new_src_bped_words,
-            src_lang=self._src_lang,
-            tgt_bped_words=new_tgt_bped_words,
-            tgt_lang=self._tgt_lang,
-            dic_path=self._params.dict_path,
-            whole_word_embedder=self._separated_word_embedder,
-            separated_word_embedder=self._separated_word_embedder,
-            bli=self._bli,
-            save_path=None)
-
-        for key, value in all_scores.items():
-            scores["BLI_split_all " + key] = value
-
-        for key, value in whole_word_scores.items():
-            scores["BLI_split_whole_word " + key] = value
-
-        for key, value in separated_word_scores.items():
-            scores["BLI_split_separated_word " + key] = value
-
-    def eval_bli(self, scores, src_whole_separated_embeddings, tgt_whole_separated_embeddings, save_path=None):
-        all_scores, whole_word_scores, separated_word_scores = eval_whole_separated_bli(
-            src_whole_separated_embeddings=src_whole_separated_embeddings,
-            tgt_whole_separated_embeddings=tgt_whole_separated_embeddings,
-            dic_path=self._params.dict_path,
-            bli=self._bli,
-            save_path=save_path)
-
-        for key, value in all_scores.items():
-            scores["BLI_all " + key] = value
-
-        for key, value in whole_word_scores.items():
-            scores["BLI_whole_word " + key] = value
-
-        for key, value in separated_word_scores.items():
-            scores["BLI_separated_word " + key] = value
-
-    def eval_combiner_acc(self, scores, data, src_or_tgt, whole_separated_embeddings, save_path=None):
+    def eval_combiner_acc(self, scores, data, lang, whole_separated_embeddings, save_path=None):
         """
             For each word in the valid set and training set(this are whole word), we first split into bpe tokens,
         then get the combiner representation of it, then we search nearest neighbor in the original embedding
@@ -579,7 +497,7 @@ class CombinerEvaluator(Evaluator):
 
             data: string, choices=["valid", "train"]
 
-            src_or_tgt: string, choices=["src", "tgt"]
+            lang: string,
 
             whole_separated_embeddings: WholeSeparatedEmbs
                 The original embedding space
@@ -587,11 +505,6 @@ class CombinerEvaluator(Evaluator):
             save_path: str
                 Path to save nearest neighbor of each word in the valid set
         """
-        if src_or_tgt == "src":
-            lang = self._src_lang
-        else:
-            lang = self._tgt_lang
-
         # generate combiner space representation
         combiner_word2id = {}
         combiner_words = []  # re bped combiner words for generate representation

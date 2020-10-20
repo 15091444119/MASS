@@ -17,12 +17,13 @@ class TransformerCombiner(nn.Module):
         self._linear2 = nn.Linear(params.emb_dim, params.emb_dim)
         self._act = torch.nn.ReLU()
 
-    def forward(self, embeddings, lengths):
+    def forward(self, embeddings, lengths, lang):
         """
         forward function of the combiner
         params:
             embeddings: torch.FloatTensor, (max_length, batch_size)
             lengths: torch.LongTensor (batch_size)
+            lang: not used
         returns:
             outputs: torch.FloatTensor, (batch_size, emb_dim)
         """
@@ -67,12 +68,13 @@ class GRUCombiner(nn.Module):
         self._linear2 = nn.Linear(params.emb_dim, params.emb_dim)
         self._act = torch.nn.ReLU()
 
-    def forward(self, embeddings, lengths):
+    def forward(self, embeddings, lengths, lang=None):
         """
         forward function of the combiner
         params:
             embeddings: torch.FloatTensor, (max_length, batch_size)
             lengths: torch.LongTensor (batch_size)
+            lang: interface para, not used
         returns:
             outputs: torch.FloatTensor, (batch_size, emb_dim)
         """
@@ -94,12 +96,13 @@ class LinearCombiner(nn.Module):
         self._context2rep = Context2Sentence(params.combiner_context_extractor)
         self._linear = nn.Linear(params.emb_dim, params.emb_dim)
 
-    def forward(self, embeddings, lengths):
+    def forward(self, embeddings, lengths, lang=None):
         """
         forward function of the combiner
         params:
             embeddings: torch.FloatTensor, (max_length, batch_size)
             lengths: torch.LongTensor (batch_size)
+            lang: not used
         returns:
             outputs: torch.FloatTensor, (batch_size, emb_dim)
         """
@@ -121,19 +124,13 @@ def build_combiner(params):
         raise NotImplementedError
 
 
-class MultiLingualCombiner(nn.Module):
+class BiLingualCombiner(nn.Module):
 
-    def __init__(self, params):
+    def __init__(self, src_lang, src_combiner, tgt_lang, tgt_combiner):
         super().__init__()
-        if params.share_combiner:
-            combiner = build_combiner(params)
-            self._lang2combiner = nn.ModuleDict({
-                lang: combiner for lang in params.combiner_steps
-            })
-        else:
-            self._lang2combiner = nn.ModuleDict({
-                lang: build_combiner(params) for lang in params.combiner_steps
-            })
+        self._lang2combiner = nn.ModuleDict({
+            src_lang: src_combiner, tgt_lang: tgt_combiner
+        })
 
     def forward(self, embeddings, lengths, lang):
         combiner = self._lang2combiner[lang]

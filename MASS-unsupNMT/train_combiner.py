@@ -21,7 +21,7 @@ from src.utils import bool_flag, initialize_exp, set_sampling_probs, shuf_order
 from src.model import check_model_params, build_model
 from src.trainer import SingleTrainer, EncDecTrainer, CombinerTrainer
 from src.evaluation.evaluator import SingleEvaluator, EncDecEvaluator, CombinerEvaluator
-from src.combiner.combiner import MultiLingualCombiner
+from src.combiner.combiner import build_combiner
 from src.combiner.splitter import WholeWordSplitter
 from src.model.transformer import TransformerModel
 
@@ -240,13 +240,11 @@ def get_parser():
     parser.add_argument("--share_combiner", type=bool_flag, default=False, help="share combiner in different languages")
 
     # bli data
-    parser.add_argument("--src_bped_words_path", type=str)
-    parser.add_argument("--tgt_bped_words_path", type=str)
-    parser.add_argument("--dict_path", type=str)
+    parser.add_argument("--bped_words_path", type=str)
 
     # bli model
-    parser.add_argument("--dict_src_lang", type=str)
-    parser.add_argument("--dict_tgt_lang", type=str)
+    parser.add_argument("--trained_lang", type=str)
+    parser.add_argument("--other_lang", type=str)
     parser.add_argument("--bli_preprocess_method", type=str, default="ucu")
     parser.add_argument("--bli_batch_size", type=int, default=64)
     parser.add_argument("--bli_metric", type=str, default="nn")
@@ -298,14 +296,14 @@ def main(params):
     assert not params.encoder_only
     if params.reload_encoder_combiner_path == "":
         # only reload model or don't reload anything
-        model, decoder = build_model(params, data['dico'])
-        combiner = MultiLingualCombiner(params).cuda()
+        encoder, decoder = build_model(params, data['dico'])
+        combiner = build_combiner(params).cuda()
         logger.info("{}".format(combiner))
     else:
         # reload model and combiner from a checkpoint
-        _, decoder = build_model(params, data['dico']) # reload decoder
-        model, combiner = reload_model_combiner(params, data['dico'])
-        logger.info("{}\n{}".format(model, combiner))
+        encoder, decoder = build_model(params, data['dico']) # reload decoder
+        combiner = reload_combiner(params, data['dico'])
+        logger.info("{}\n{}".format(encoder, combiner))
 
     # float16
     if params.fp16:
@@ -319,7 +317,7 @@ def main(params):
 
     # build trainer, reload potential checkpoints / build evaluator
     loss_function = get_loss_function(params)
-    trainer = CombinerTrainer(model, combiner, data, params, whole_word_splitter, loss_function)
+    trainer = CombinerTrainer(encoder, combiner, data, params, whole_word_splitter, loss_function)
     evaluator = CombinerEvaluator(trainer, data, params, decoder)
 
     # eval non para
@@ -383,20 +381,11 @@ def main(params):
         trainer.end_epoch(scores)
 
 
-def reload_model_combiner(params, dico):
+def reload_combiner(params, dico):
     reloaded = torch.load(params.reload_encoder_combiner_path, map_location=lambda storage, loc: storage.cuda(params.local_rank))
     logger = logging.getLogger()
     # reload encoder
-    encoder = TransformerModel(params, dico, is_encoder=True,
-                               with_output=True)  # TODO: only output when necessary - len(params.clm_steps + params.mlm_steps) > 0
-    enc_reload = reloaded['model' if 'model' in reloaded else 'encoder']
-    if all([k.startswith('module.') for k in enc_reload.keys()]):
-        enc_reload = {k[len('module.'):]: v for k, v in enc_reload.items()}
-    encoder.load_state_dict(enc_reload)
-    logger.info("Reload encoder from {}".format(params.reload_encoder_combiner_path))
-
-    # reload combiner
-    combiner = MultiLingualCombiner(params)
+    combiner = build_combiner(params)
     combiner_reload = reloaded['combiner']
     if all([k.startswith('module.') for k in combiner_reload.keys()]):
         combiner_reload = {k[len('module.'):]: v for k, v in combiner_reload.items()}
@@ -404,7 +393,7 @@ def reload_model_combiner(params, dico):
     combiner.load_state_dict(combiner_reload)
     logger.info("Reload combiner from {}".format(params.reload_encoder_combiner_path))
 
-    return encoder.cuda(), combiner.cuda()
+    return combiner.cuda()
 
 if __name__ == '__main__':
     # generate parser / parse parameters
