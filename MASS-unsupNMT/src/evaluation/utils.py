@@ -11,6 +11,22 @@ from src.utils import to_cuda
 logger = logging.getLogger()
 
 
+def package_module(modules):
+    """
+    Return model state dict, take multi-gpu case into account
+    """
+    state_dict = OrderedDict()
+    for k, v in modules.items():
+        if k.startswith('module.'):
+            state_dict[k[7:]] = v
+        else:
+            state_dict[k] = v
+    return state_dict
+
+
+
+
+
 def load_mass_model(model_path):
     """ reload a mass model
     Params:
@@ -27,14 +43,7 @@ def load_mass_model(model_path):
     encoder = TransformerModel(model_params, dico, is_encoder=True, with_output=True).cuda().eval()
     decoder = TransformerModel(model_params, dico, is_encoder=False, with_output=True).cuda().eval()
 
-    def package_module(modules):
-        state_dict = OrderedDict()
-        for k, v in modules.items():
-            if k.startswith('module.'):
-                state_dict[k[7:]] = v
-            else:
-                state_dict[k] = v
-        return state_dict
+
 
     encoder.load_state_dict(package_module(reloaded['encoder']))
     decoder.load_state_dict(package_module(reloaded['decoder']))
@@ -263,4 +272,5 @@ class WordEmbedderWithCombiner(nn.Module):
 
         outputs_lengths = torch.tensor([3] * batch_size).to(batch_sentence_representation.device)
         return outputs.transpose(0, 1), outputs_lengths
+
 
