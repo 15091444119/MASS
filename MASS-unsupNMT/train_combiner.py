@@ -10,8 +10,10 @@
 
 import json
 import argparse
+import tensorboardX
 import torch
 import pdb
+import os
 import numpy as np
 from torch import nn
 
@@ -154,7 +156,7 @@ def get_parser():
     parser.add_argument("--stopping_criterion", type=str, default="",
                         help="Stopping criterion, and number of non-increase before stopping the experiment")
     parser.add_argument("--validation_metrics", type=str, default="",
-                        help="Validation metrics")
+                        help="Validation metrics, if start with _, the smaller the better")
 
     # training coefficients
     parser.add_argument("--lambda_mlm", type=str, default="1",
@@ -237,10 +239,9 @@ def get_parser():
     parser.add_argument("--n_combiner_layers", type=int, default=4)
     parser.add_argument("--codes_path", type=str)
     parser.add_argument("--reload_encoder_combiner_path", type=str, default="")
-    parser.add_argument("--share_combiner", type=bool_flag, default=False, help="share combiner in different languages")
 
     # bli data
-    parser.add_argument("--bped_words_path", type=str)
+    parser.add_argument("--bped_words_path", type=str, help="whole vocab for testing ")
 
     # bli model
     parser.add_argument("--trained_lang", type=str)
@@ -305,37 +306,21 @@ def main(params):
         combiner = reload_combiner(params, data['dico'])
         logger.info("{}\n{}".format(encoder, combiner))
 
-    # float16
-    if params.fp16:
-        assert torch.backends.cudnn.enabled
-        model = network_to_half(model)
-
-    # distributed
-    if params.multi_gpu:
-        model = apex.parallel.DistributedDataParallel(model, delay_allreduce=True)
-        combiner = apex.parallel.DistributedDataParallel(combiner, delay_allreduce=True)
-
     # build trainer, reload potential checkpoints / build evaluator
     loss_function = get_loss_function(params)
     trainer = CombinerTrainer(encoder, combiner, data, params, whole_word_splitter, loss_function)
     evaluator = CombinerEvaluator(trainer, data, params, decoder)
 
-    # eval non para
-    logger.info("Eval non para")
-    # evaluator.eval_encoder_decoder_word_translate()
-    scores = evaluator.eval_non_para()
-    for k, v in scores.items():
-        logger.info("%s -> %.6f" % (k, v))
-    logger.info("__log__:%s" % json.dumps(scores))
-
     # evaluation
     if params.eval_only:
-        evaluator.check_dataset()
         scores = evaluator.run_all_evals(trainer.epoch)
         for k, v in scores.items():
             logger.info("%s -> %.6f" % (k, v))
         logger.info("__log__:%s" % json.dumps(scores))
         exit()
+
+    # summary writer
+    writer = tensorboardX.SummaryWriter(os.path.join(params.dump_path, 'tensorboard'))
 
     # training
     for _ in range(params.max_epoch):
@@ -374,6 +359,10 @@ def main(params):
             logger.info("%s -> %.6f" % (k, v))
         if params.is_master:
             logger.info("__log__:%s" % json.dumps(scores))
+
+        # save log in tensorboard
+        for k, v in scores.items():
+            writer.add_scalar(k, v, trainer.epoch)
 
         # end of epoch
         trainer.save_best_model(scores)

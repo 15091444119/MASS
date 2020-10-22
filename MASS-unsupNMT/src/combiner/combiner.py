@@ -4,6 +4,9 @@ import pdb
 from src.model.transformer import get_masks
 from src.evaluation.utils import Context2Sentence
 
+from src.utils import AttrDict
+from src.evaluation.utils import package_module
+
 
 class TransformerCombiner(nn.Module):
 
@@ -12,7 +15,7 @@ class TransformerCombiner(nn.Module):
         transformer_layer = nn.TransformerEncoderLayer(d_model=params.emb_dim, nhead=params.n_heads,
                                                        dim_feedforward=params.emb_dim * 4)
         self._transformer_encoder = nn.TransformerEncoder(transformer_layer, num_layers=params.n_combiner_layers)
-        self._context2rep = Context2Sentence(params.combiner_context2sentence)
+        self._context2rep = Context2Sentence(params.combiner_context_extractor)
         self._linear1 = nn.Linear(params.emb_dim, params.emb_dim)
         self._linear2 = nn.Linear(params.emb_dim, params.emb_dim)
         self._act = torch.nn.ReLU()
@@ -135,3 +138,13 @@ class BiLingualCombiner(nn.Module):
     def forward(self, embeddings, lengths, lang):
         combiner = self._lang2combiner[lang]
         return combiner(embeddings, lengths)
+
+
+def load_combiner_model(model_path):
+    reloaded = torch.load(model_path)
+    model_params = AttrDict(reloaded['params'])
+    combiner = build_combiner(model_params).cuda()
+
+    combiner.load_state_dict(package_module(reloaded["combiner"]))
+
+    return model_params, combiner

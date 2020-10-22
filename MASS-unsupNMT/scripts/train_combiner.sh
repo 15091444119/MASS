@@ -1,11 +1,17 @@
-export CUDA_VISIBLE_DEVICES="0"
-MODEL=/home/data_ti5_d/zhouzh/low-resource-mt/MASS/MASS-unsupNMT/dumped/cn-en-zh-500w-wwm-reload/j03q6ubj61/periodic-50.pth
+export CUDA_VISIBLE_DEVICES="1"
+#MODEL=/home/data_ti5_d/zhouzh/low-resource-mt/MASS/MASS-unsupNMT/dumped/cn-en-zh-500w-ft-jointbpe-jointvocab/q6vn71z093/checkpoint.pth
+#MODEL=/home/data_ti5_d/zhouzh/low-resource-mt/MASS/MASS-unsupNMT/dumped/cn-en-zh-500w-wwm-reload/j03q6ubj61/periodic-50.pth
 #/home/data_ti5_d/zhouzh/low-resource-mt/MASS/MASS-unsupNMT/dumped/cn-en-zh-500w-wwm-reload/j03q6ubj61/periodic-50.pth
-#/home/data_ti5_d/zhouzh/low-resource-mt/MASS/MASS-unsupNMT/dumped/cn-en-zh-500w-ft-jointbpe-jointvocab/q6vn71z093/checkpoint.pth
 #/home/data_ti5_d/zhouzh/low-resource-mt/MASS/MASS-unsupNMT/dumped/cn-en-zh-500w-checkpoint-pretrain/x363q5pus9/periodic-150.pth
+MODEL=/home/data_ti5_d/zhouzh/low-resource-mt/MASS/MASS-unsupNMT/dumped/cn-en-zh-500w-pretrain-jointbpe-jointvocab/1jnrqg51bz/periodic-100.pth
+SPLIT="CHAR"
+COMBINER="transformer"
 
+train(){
+  trained_lang=$1
+  other_lang=$2
 python train_combiner.py \
-	--exp_name pre-bpe-average-gru                             \
+	--exp_name pretrain-$SPLIT-$COMBINER-"$trained_lang"                             \
 	--data_path ./combiner_data \
 	--lgs 'zh-en'                                        \
 	--encoder_only False                                 \
@@ -18,23 +24,26 @@ python train_combiner.py \
 	--gelu_activation true                               \
 	--batch_size 100 \
 	--optimizer adam_inverse_sqrt,beta1=0.9,beta2=0.98,lr=0.0001 \
-	--epoch_size 300000                                  \
+	--epoch_size 50000                                  \
 	--max_epoch 200                                      \
-	--src_bped_words_path ./word_vocab/zh.vocab.bpe \
-	--tgt_bped_words_path ./word_vocab/en.vocab.bpe \
-	--trained_lang zh \
-	--other_lang en \
-	--dict_path /home/data_ti5_d/zhouzh/low-resource-mt/XLM_MASS_preprocessed_data/BLI/zh-en/zh-en.txt.sim \
+	--bped_words_path ./word_vocab/"$trained_lang".vocab.bpe \
+	--trained_lang "$trained_lang" \
+	--other_lang "$other_lang" \
 	--codes_path /home/data_ti5_d/zhouzh/low-resource-mt/XLM_MASS_preprocessed_data/pretrain/cn-split-sen-zh-en-pretrain/codes \
-	--combiner_steps "zh" \
+	--combiner_steps "$trained_lang" \
 	--combiner_loss "COS" \
-	--combiner "gru" \
-  --share_combiner False \
+	--combiner $COMBINER \
   --n_combiner_layers 4 \
-  --validation_metrics _valid-average-loss \
+  --validation_metrics _valid_loss,valid_whole_combiner_acc_top1_acc \
+  --stopping_criterion valid_whole_combiner_acc_top1_acc,20 \
   --bli_preprocess_method 'u' \
-  --splitter "BPE" \
+  --splitter $SPLIT \
   --origin_context_extractor "before_eos" \
   --combiner_context_extractor "average"
 #  --reload_encoder_combiner_path /home/data_ti5_d/zhouzh/low-resource-mt/subword-combiner/MASS-unsupNMT/dumped/new-char-average/kpg7a93ttg/checkpoint.pth \
 #  --eval_only True
+
+}
+
+train zh en
+train en zh

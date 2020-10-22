@@ -337,7 +337,7 @@ class CombinerEvaluator(Evaluator):
         super().__init__(trainer, data, params)
         self._data = data
         self._params = params
-        self._model = trainer.model
+        self._encoder = trainer.encoder
         self._origin_tokens2word = trainer.origin_tokens2word
         self._combiner = trainer.combiner
         self._trained_lang = params.trained_lang
@@ -345,7 +345,7 @@ class CombinerEvaluator(Evaluator):
         self._bli = BLI(params.bli_preprocess_method, params.bli_batch_size, params.bli_metric, params.bli_csls_topk)
         self._whole_word_splitter = trainer.whole_word_splitter
 
-        self._whole_word_embedder = SenteceEmbedder(self._model, params, self._data["dico"], context_extractor=params.origin_context_extractor)
+        self._whole_word_embedder = SenteceEmbedder(self._encoder, params, self._data["dico"], context_extractor=params.origin_context_extractor)
         self._separated_word_embedder = WordEmbedderWithCombiner(self._encoder, self._combiner, params, self.data["dico"])
 
         self._loss_function = trainer.loss_function
@@ -355,6 +355,8 @@ class CombinerEvaluator(Evaluator):
 
         # decoder ( for evaluate word translate)
         self._decoder = decoder
+
+        self.check_dataset()
 
     def eval_encoder_decoder_word_translate(self):
 
@@ -441,16 +443,16 @@ class CombinerEvaluator(Evaluator):
             batch, lengths, new_batch, new_lengths = to_cuda(batch, lengths, new_batch, new_lengths)
 
             langs = batch.clone().fill_(lang_id)
-            self._model.eval()
+            self._encoder.eval()
             self._combiner.eval()
             with torch.no_grad():
                 # original encode
-                origin_encoded = self._model('fwd', x=batch, lengths=lengths, langs=langs, causal=False)
+                origin_encoded = self._encoder('fwd', x=batch, lengths=lengths, langs=langs, causal=False)
                 origin_word_rep = self._origin_tokens2word(origin_encoded.transpose(0, 1), lengths)
 
                 # new encode
                 langs = new_batch.clone().fill_(lang_id)
-                new_encoded = self._model('fwd', x=new_batch, lengths=new_lengths, langs=langs, causal=False)
+                new_encoded = self._encoder('fwd', x=new_batch, lengths=new_lengths, langs=langs, causal=False)
                 new_word_rep = self._combiner(new_encoded, new_lengths, lang)
 
             # mse loss
@@ -459,7 +461,7 @@ class CombinerEvaluator(Evaluator):
             n_words += origin_word_rep.size(0)
             all_loss += loss.item() * origin_word_rep.size(0)
 
-        scores["{}-{}-combiner".format(data_set, lang)] = all_loss / n_words
+        scores["{}_loss".format(data_set)] = all_loss / n_words
 
     def check_dataset(self):
         """
@@ -538,7 +540,7 @@ class CombinerEvaluator(Evaluator):
         whole_separated_save_path = save_path + "_whole_sepa" if save_path is not None else None
         bli_scores = self._bli.eval(combiner_embeddings, origin_embeddings, combiner_id2word, combiner_word2id, origin_id2word, origin_word2id, dic, save_path=whole_separated_save_path)
         for key, value in bli_scores.items():
-            scores["{data}-{lang}-whole-sepa-combiner-acc-{key}".format(data=data, lang=lang, key=key)] = value
+            scores["{data}_whole_sepa_combiner_acc_{key}".format(data=data, key=key)] = value
 
         # only whole words space
         whole_id2word, whole_word2id, whole_embeddings = whole_separated_embeddings.whole_words_properties()
@@ -550,7 +552,7 @@ class CombinerEvaluator(Evaluator):
         whole_save_path = save_path +"_whole" if save_path is not None else None
         whole_bli_scores = self._bli.eval(combiner_embeddings, whole_embeddings, combiner_id2word, combiner_word2id, whole_id2word, whole_word2id, dic, save_path=whole_save_path)
         for key, value in whole_bli_scores.items():
-            scores["{data}-{lang}-whole-combiner-acc-{key}".format(data=data, lang=lang, key=key)] = value
+            scores["{data}_whole_combiner_acc_{key}".format(data=data, key=key)] = value
 
 
 
