@@ -116,7 +116,6 @@ class CombinerBliEvaluator(object):
                         used_srcs.append(src)
                     else:
                         dictionary[src].append(tgt)
-
         # translate
         for i in range(0, len(used_srcs), self._mass_params.batch_size):
             words = used_srcs[i: min(len(used_srcs), i + self._mass_params.batch_size)]

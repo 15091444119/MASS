@@ -257,7 +257,6 @@ class WordEmbedderWithCombiner(nn.Module):
         """
         batch_context_word_representations, lengths = encode_sentences(self._encoder, self._dico, self._mass_params,
                                                                        sentences, lang)
-
         for length in lengths:
             assert length.item() > 3 #(all are separated word)
 
@@ -272,5 +271,6 @@ class WordEmbedderWithCombiner(nn.Module):
 
         outputs_lengths = torch.tensor([3] * batch_size).to(batch_sentence_representation.device)
         return outputs.transpose(0, 1), outputs_lengths
+#        return batch_context_word_representations.transpose(0, 1), lengths
 
 
