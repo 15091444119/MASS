@@ -18,6 +18,7 @@ def load_mass_model(model_path):
     Returns:
         dico, model_params, encoder, decoder
     """
+    print("Load model from {}".format(model_path))
     reloaded = torch.load(model_path)
     model_params = AttrDict(reloaded['params'])
     logger.info("Supported languages: %s" % ", ".join(model_params.lang2id.keys()))
