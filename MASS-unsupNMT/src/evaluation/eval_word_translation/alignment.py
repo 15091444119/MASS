@@ -44,7 +44,7 @@ def filter_alignment_one2one(alignment):
     
     return ' '.join(filtered_alignment)
 
-def calculate_whole_word_seperated_word_translation_acc(alignments, srcs, bped_srcs, tgts, hyps, bped_hyps):
+def calculate_whole_word_seperated_word_translation_acc(alignments, srcs, bped_srcs, tgts, hyps, bped_hyps, train_count=None):
     """
         Given the alignment, we choose one-one alignment to generate word-pairs,
         for each word, if it's translation is in hyp, we think this translate is good.
@@ -57,6 +57,8 @@ def calculate_whole_word_seperated_word_translation_acc(alignments, srcs, bped_s
         tgts: list of strings containing target sentences
         hyps: list of strings containing model hyp sentences
         bped_hyps:
+        train_count:  dict
+            word in the training set from word to count
     Returns:
         whole word translation accuarcy and seperated word translation accuarcy
     """
@@ -67,6 +69,15 @@ def calculate_whole_word_seperated_word_translation_acc(alignments, srcs, bped_s
 
     all_seperated_word_cnt = 0
     all_whole_word_cnt = 0
+
+
+    # check if separated word are in training set
+    if train_count is not None:
+        separated_in_train_cnt = 0
+        separated_in_train_correct_cnt = 0
+        separated_oov_cnt = 0
+        separated_oov_correct_cnt = 0
+
     assert len(alignments) == len(srcs) == len(tgts) == len(hyps) == len(bped_srcs) == len(bped_hyps)
 
     for alignment, src, tgt, hyp, bped_src, bped_hyp in zip(alignments, srcs, tgts, hyps, bped_srcs, bped_hyps):
@@ -97,7 +108,18 @@ def calculate_whole_word_seperated_word_translation_acc(alignments, srcs, bped_s
                     seperated_word_correct_cnt += 1
                 else: 
                     print("****{}-{}-{}".format(src[src_id], ' '.join(bped_src[src_id]), tgt[tgt_id]))
-        
+
+                # check if is in train vocab
+                if train_count is not None:
+                    if src[src_id] in train_count:
+                        separated_in_train_cnt += 1
+                        if tgt[tgt_id] in hyp:
+                            separated_in_train_correct_cnt += 1
+                    else:
+                        separated_oov_cnt += 1
+                        if tgt[tgt_id] in hyp:
+                            separated_oov_correct_cnt += 1
+
         for i in range(len(src)):
             if len(bped_src[i]) == 1:
                 all_whole_word_cnt += 1
@@ -107,6 +129,10 @@ def calculate_whole_word_seperated_word_translation_acc(alignments, srcs, bped_s
     print("All whole word: {} All seperated word: {}".format(all_whole_word_cnt, all_seperated_word_cnt))
     whole_word_acc = whole_word_correct_cnt / whole_word_cnt
     seperated_word_acc = seperated_word_correct_cnt / seperated_word_cnt
+
+    if train_count is not None:
+        print("Separated in train: {} acc:{}".format(separated_in_train_cnt, separated_in_train_correct_cnt / separated_in_train_cnt))
+        print("Separated oov: {} acc:{}".format(separated_oov_cnt, separated_oov_correct_cnt / separated_oov_cnt))
 
     return whole_word_acc, seperated_word_acc
 
@@ -118,6 +144,7 @@ def parse_params():
     parser.add_argument("--hyps", help="hyp sentence path")
     parser.add_argument("--bped_hyps", help="bped hyp sentence path")
     parser.add_argument("--alignments", help="Alignment result path")
+    parser.add_argument("--count_file", help="train word count", default=None)
     params = parser.parse_args()
 
     return params
@@ -183,6 +210,16 @@ def group_tokens(bped_sentences):
         sentences.append(cur_sentence)
     return sentences
 
+def read_count(count_file):
+    train_count = {}
+    with open(count_file, 'r') as f:
+        for line in f:
+            word, count = line.rstrip().split()
+            assert word not in train_count
+            train_count[word] = count
+    return train_count
+
+
 def main(params):
     alignments = read_alignments(params.alignments)
     srcs = read_sentences(params.src)
@@ -192,7 +229,11 @@ def main(params):
     bped_srcs = read_sentences(params.bped_src)
     bped_hyps = group_tokens(bped_hyps)
     bped_srcs = group_tokens(bped_srcs)
-    whole_word_acc, seperated_word_acc = calculate_whole_word_seperated_word_translation_acc(alignments, srcs, bped_srcs, tgts, hyps, bped_hyps)
+    if params.count_file is not None:
+        train_count = read_count(params.count_file)
+    else:
+        train_count = None
+    whole_word_acc, seperated_word_acc = calculate_whole_word_seperated_word_translation_acc(alignments, srcs, bped_srcs, tgts, hyps, bped_hyps, train_count)
     print("Whole word accuarcy:{} Seperated word accuarcy:{}".format(whole_word_acc, seperated_word_acc))
 
 if __name__ == "__main__":
