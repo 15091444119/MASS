@@ -51,9 +51,11 @@ def split_word(sentence, train_vocab, splitter):
             splitted_sentence.extend(splitted_word)
             end_position = len(splitted_sentence)
             splitted_pos = list(range(start_position, end_position))
+            print(splitted_word)
 
     if len(splitted_pos) != 2:
         pdb.set_trace()
+
 
     return splitted_sentence, origin_pos, splitted_pos
 
@@ -73,14 +75,14 @@ def read_corpus(path):
     return sentences
 
 
-def get_mask(shape, batch_pos):
+def get_mask(shape, batch_pos, de=0):
     """
     mask position in batch_pos
     """
     batch_size, max_length, dim = shape
     mask = torch.BoolTensor(batch_size, max_length).fill_(False).cuda()
     for idx, pos in enumerate(batch_pos):
-        mask[idx][pos] = True
+        mask[idx][pos - de] = True
     mask = mask.unsqueeze(-1).expand(shape)
 
     return mask
@@ -149,12 +151,16 @@ def main(params):
             splitted_batch.append(' '.join(splitted_sentence))
             origin_batch.append(' '.join(original_sentence))
 
-        first_token_pos = [poses[0] for poses in batch_splitted_pos]
-        second_token_pos = [poses[1] for poses in batch_splitted_pos]
+        assert len(origin_batch) != 0
 
         # encode
         origin_encoded, origin_length = encode_sentences(encoder, dico, model_params, origin_batch, params.lang)
         splitted_encoded, splitted_length = encode_sentences(encoder, dico, model_params, splitted_batch, params.lang)
+
+        # add one considering the bos token (This fix a bug of old version !!)
+        first_token_pos = [poses[0] + 1 for poses in batch_splitted_pos]
+        second_token_pos = [poses[1] + 1 for poses in batch_splitted_pos]
+        batch_origin_pos = [pos + 1 for pos in batch_origin_pos]
 
         # get mask
         original_mask = get_mask(origin_encoded.size(), batch_origin_pos)
@@ -170,6 +176,7 @@ def main(params):
         # calculating cos similarity
         first_token_sim = torch.nn.CosineSimilarity(dim=-1)(original_word, first_token)
         second_token_sim = torch.nn.CosineSimilarity(dim=-1)(original_word, second_token)
+
 
         # add to statistic
         statistic.add_statistics(first_token_sim, second_token_sim)
