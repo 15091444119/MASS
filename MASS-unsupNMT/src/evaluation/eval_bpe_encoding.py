@@ -54,7 +54,7 @@ def split_word(sentence, train_vocab, splitter):
             print(splitted_word)
 
     if len(splitted_pos) != 2:
-        pdb.set_trace()
+        raise ValueError
 
 
     return splitted_sentence, origin_pos, splitted_pos

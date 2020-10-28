@@ -423,7 +423,7 @@ class TransformerModel(nn.Module):
         scores, loss = self.pred_layer(masked_tensor, y, get_scores)
         return scores, loss
 
-    def generate(self, src_enc, src_len, tgt_lang_id, max_len=200, sample_temperature=None):
+    def generate(self, src_enc, src_len, tgt_lang_id, max_len=200, sample_temperature=None, language_mask=None):
         """
         Decode a sentence given initial start.
         `x`:
@@ -439,7 +439,11 @@ class TransformerModel(nn.Module):
             - must be None if the model only supports one language
             - lang_id if only one language is involved (LM)
             - (lang_id1, lang_id2) if two languages are involved (MT)
+        language_mask:
+            if it is tgt language, plus 0, else plus -1e9
         """
+
+        language_mask = language_mask.to(src_enc)
 
         # input batch
         bs = len(src_len)
@@ -483,6 +487,9 @@ class TransformerModel(nn.Module):
             assert tensor.size() == (1, bs, self.dim)
             tensor = tensor.data[-1, :, :]               # (bs, dim)
             scores = self.pred_layer.get_scores(tensor)  # (bs, n_words)
+
+            if language_mask is not None:
+                scores += language_mask
 
             # select next words: sample or greedy
             if sample_temperature is None:
