@@ -408,6 +408,21 @@ class CombinerEvaluator(Evaluator):
         sys.stderr.write("acc:{}".format(right / len(dictionary)))
 
 
+    def eval_non_para(self):
+        """
+        this is a small hack here
+        """
+        tmp_embedder = self._separated_word_embedder
+        tmp_combiner = self._combiner
+        self._combiner = MultiLingualNoneParaCombiner(method=self._params.combiner_context_extractor)
+        self._separated_word_embedder = WordEmbedderWithCombiner(self._encoder, self._combiner, self._params, self.data['dico'])
+        scores = self.run_all_evals(-1)
+        self._separated_word_embedder = tmp_embedder
+        self._combiner = tmp_combiner
+
+        return scores
+
+
     def run_all_evals(self, epoch):
         """
         Rewrite parent method

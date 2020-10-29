@@ -332,7 +332,7 @@ class ReduceOneBpeSplitter(WholeWordSplitter):
     @classmethod
     def from_code_path(cls, codes_path):
         bpe_codes = read_codes(codes_path)
-        return RandomBpeSplitter(bpe_codes)
+        return ReduceOneBpeSplitter(bpe_codes)
 
     def split_word(self, word):
         """ don't fully merge bpe

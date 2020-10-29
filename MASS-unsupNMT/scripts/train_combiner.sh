@@ -5,13 +5,13 @@ export CUDA_VISIBLE_DEVICES="1"
 #/home/data_ti5_d/zhouzh/low-resource-mt/MASS/MASS-unsupNMT/dumped/cn-en-zh-500w-checkpoint-pretrain/x363q5pus9/periodic-150.pth
 MODEL=/home/data_ti5_d/zhouzh/low-resource-mt/MASS/MASS-unsupNMT/dumped/cn-en-zh-500w-pretrain-jointbpe-jointvocab/1jnrqg51bz/periodic-100.pth
 SPLIT="CHAR"
-COMBINER="transformer"
+COMBINER="gru"
 
 train(){
   trained_lang=$1
   other_lang=$2
 python train_combiner.py \
-	--exp_name pretrain-$SPLIT-$COMBINER-"$trained_lang"                             \
+	--exp_name eval-pretrain-$SPLIT-$COMBINER-"$trained_lang"                             \
 	--data_path ./combiner_data \
 	--lgs 'zh-en'                                        \
 	--encoder_only False                                 \
@@ -39,11 +39,11 @@ python train_combiner.py \
   --bli_preprocess_method 'u' \
   --splitter $SPLIT \
   --origin_context_extractor "before_eos" \
-  --combiner_context_extractor "average"
-#  --reload_encoder_combiner_path /home/data_ti5_d/zhouzh/low-resource-mt/subword-combiner/MASS-unsupNMT/dumped/new-char-average/kpg7a93ttg/checkpoint.pth \
-#  --eval_only True
+  --combiner_context_extractor "average" \
+  --reload_combiner_path ./dumped/pretrain100-CHAR-gru-zh/dvptir0l0h/best-valid_whole_combiner_acc_top1_acc.pth \
+  --eval_only True
 
 }
 
 train zh en
-train en zh
+#train en zh

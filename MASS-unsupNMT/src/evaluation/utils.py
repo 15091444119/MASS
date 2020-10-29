@@ -172,6 +172,15 @@ def get_mask(lengths, all_words, expand=None, ignore_first=False, batch_first=Fa
         mask = mask.cuda()
     return mask
 
+def word_token_mask(lengths, hidden_dim):
+    bs, slen = lengths.size(0), lengths.max()
+    mask = torch.BoolTensor(slen, bs).zero_()
+    for i in range(bs):
+        mask[1:lengths[i] - 1, i] = 1
+    mask = mask.unsqueeze(2).expand(slen, bs, hidden_dim)
+    mask = mask.transpose(0, 1)
+    mask = mask.cuda()
+    return mask
 
 class Context2Sentence(nn.Module):
     def __init__(self, context_extractor):
@@ -186,7 +195,7 @@ class Context2Sentence(nn.Module):
             return h_t
         elif self._method == "average":
             mask = get_mask(lengths, True, expand=hidden_dim, batch_first=True, cuda=context.is_cuda)
-            context.masked_fill(~mask, 0)
+            context = context.masked_fill(~mask, 0)
             context_sum = context.sum(dim=1)
             context_average = context_sum / lengths.unsqueeze(-1)
             return context_average
@@ -198,6 +207,12 @@ class Context2Sentence(nn.Module):
             mask = before_eos_mask(lengths, hidden_dim=hidden_dim, cuda=context.is_cuda)
             h_t = context.masked_select(mask).view(batch_size, hidden_dim)
             return h_t
+        elif self._method == "word_token_average":
+            mask = word_token_mask(lengths, hidden_dim)
+            context = context.masked_fill(~mask, 0)
+            context_sum = context.sum(dim=1)
+            context_average = context_sum / (lengths - 2).unsqueeze(-1)
+            return context_average
 
 
 class SenteceEmbedder(nn.Module):

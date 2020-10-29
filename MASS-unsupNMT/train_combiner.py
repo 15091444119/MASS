@@ -238,7 +238,7 @@ def get_parser():
     parser.add_argument("--combiner_steps", type=str, default="")
     parser.add_argument("--n_combiner_layers", type=int, default=4)
     parser.add_argument("--codes_path", type=str)
-    parser.add_argument("--reload_encoder_combiner_path", type=str, default="")
+    parser.add_argument("--reload_combiner_path", type=str, default="")
 
     # bli data
     parser.add_argument("--bped_words_path", type=str, help="whole vocab for testing ")
@@ -295,9 +295,9 @@ def main(params):
 
     # build model
     assert not params.encoder_only
-    if params.reload_encoder_combiner_path == "":
+    if params.reload_combiner_path == "":
         # only reload model or don't reload anything
-        encoder, decoder = build_model(params, data['dico'])
+        encoder, decoder = build_model(params, data['dico']) # reload or build encoder
         combiner = build_combiner(params).cuda()
         logger.info("{}".format(combiner))
     else:
@@ -317,6 +317,10 @@ def main(params):
         for k, v in scores.items():
             logger.info("%s -> %.6f" % (k, v))
         logger.info("__log__:%s" % json.dumps(scores))
+        logger.info("None para:")
+        scores = evaluator.eval_non_para()
+        for k, v in scores.items():
+            logger.info("%s -> %.6f" % (k, v))
         exit()
 
     # summary writer
@@ -371,7 +375,7 @@ def main(params):
 
 
 def reload_combiner(params, dico):
-    reloaded = torch.load(params.reload_encoder_combiner_path, map_location=lambda storage, loc: storage.cuda(params.local_rank))
+    reloaded = torch.load(params.reload_combiner_path, map_location=lambda storage, loc: storage.cuda(params.local_rank))
     logger = logging.getLogger()
     # reload encoder
     combiner = build_combiner(params)
@@ -380,7 +384,7 @@ def reload_combiner(params, dico):
         combiner_reload = {k[len('module.'):]: v for k, v in combiner_reload.items()}
 
     combiner.load_state_dict(combiner_reload)
-    logger.info("Reload combiner from {}".format(params.reload_encoder_combiner_path))
+    logger.info("Reload combiner from {}".format(params.reload_combiner_path))
 
     return combiner.cuda()
 

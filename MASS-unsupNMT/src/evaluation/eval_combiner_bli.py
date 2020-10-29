@@ -37,7 +37,7 @@ class CombinerBliEvaluator(object):
 
         self.eval_bli(scores, src_embs, tgt_embs, self._save_path)
 
-        self.eval_split_whole_word_bli(scores)
+        #self.eval_split_whole_word_bli(scores)
 
         return scores
 
@@ -200,7 +200,7 @@ if __name__ == "__main__":
                                      dico=dico,
                                      decoder=decoder)
 
-    scores = evaluator.eval_encoder_decoder_word_translate()
+    scores = evaluator.run_all_evals()
 
     for k, v in scores.items():
         print("{} -> {}".format(k, v))
