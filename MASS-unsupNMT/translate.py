@@ -63,7 +63,11 @@ def get_parser():
 
     parser.add_argument("--code_path", type=str)
 
+    # language mask
+    parser.add_argument("--language_mask", type=bool_flag, default=False)
+
     return parser
+
 
 def is_chinese(uchar):
     if uchar >= u'\u4e00' and uchar <= u'\u9fa5':
@@ -135,7 +139,6 @@ def main(params):
 
         return ' '.join(result_sentence)
 
-    language_mask = torch.tensor([-1e9 if is_chinese(dico.id2word[idx]) else 0 for idx in range(len(dico.id2word))])
 
     for i in range(0, len(src_sent), params.batch_size):
         # prepare batch
@@ -154,6 +157,11 @@ def main(params):
         encoded = encoder('fwd', x=batch.cuda(), lengths=lengths.cuda(), langs=langs.cuda(), causal=False)
         encoded = encoded.transpose(0, 1)
         if params.beam == 1:
+            if params.language_mask:
+                language_mask = torch.tensor(
+                [-1e9 if is_chinese(dico.id2word[idx]) else 0 for idx in range(len(dico.id2word))])
+            else:
+                language_mask = None
             decoded, dec_lengths = decoder.generate(encoded, lengths.cuda(), params.tgt_id, max_len=int(1.5 * lengths.max().item() + 10), language_mask=language_mask)
         else:
             decoded, dec_lengths = decoder.generate_beam(

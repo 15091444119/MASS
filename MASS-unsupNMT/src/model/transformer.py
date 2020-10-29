@@ -442,8 +442,8 @@ class TransformerModel(nn.Module):
         language_mask:
             if it is tgt language, plus 0, else plus -1e9
         """
-
-        language_mask = language_mask.to(src_enc)
+        if language_mask is not None:
+            language_mask = language_mask.to(src_enc)
 
         # input batch
         bs = len(src_len)
