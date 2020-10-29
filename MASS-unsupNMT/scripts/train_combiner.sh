@@ -1,17 +1,15 @@
-export CUDA_VISIBLE_DEVICES="1"
+export CUDA_VISIBLE_DEVICES="3"
 #MODEL=/home/data_ti5_d/zhouzh/low-resource-mt/MASS/MASS-unsupNMT/dumped/cn-en-zh-500w-ft-jointbpe-jointvocab/q6vn71z093/checkpoint.pth
 #MODEL=/home/data_ti5_d/zhouzh/low-resource-mt/MASS/MASS-unsupNMT/dumped/cn-en-zh-500w-wwm-reload/j03q6ubj61/periodic-50.pth
 #/home/data_ti5_d/zhouzh/low-resource-mt/MASS/MASS-unsupNMT/dumped/cn-en-zh-500w-wwm-reload/j03q6ubj61/periodic-50.pth
 #/home/data_ti5_d/zhouzh/low-resource-mt/MASS/MASS-unsupNMT/dumped/cn-en-zh-500w-checkpoint-pretrain/x363q5pus9/periodic-150.pth
 MODEL=/home/data_ti5_d/zhouzh/low-resource-mt/MASS/MASS-unsupNMT/dumped/cn-en-zh-500w-pretrain-jointbpe-jointvocab/1jnrqg51bz/periodic-100.pth
-SPLIT="CHAR"
-COMBINER="gru"
 
 train(){
   trained_lang=$1
   other_lang=$2
 python train_combiner.py \
-	--exp_name eval-pretrain-$SPLIT-$COMBINER-"$trained_lang"                             \
+	--exp_name pretrain-$SPLIT-$COMBINER-$COMBINER_EXTRACTOR-"$trained_lang"                             \
 	--data_path ./combiner_data \
 	--lgs 'zh-en'                                        \
 	--encoder_only False                                 \
@@ -35,15 +33,19 @@ python train_combiner.py \
 	--combiner $COMBINER \
   --n_combiner_layers 4 \
   --validation_metrics _valid_loss,valid_whole_combiner_acc_top1_acc \
-  --stopping_criterion valid_whole_combiner_acc_top1_acc,20 \
+  --stopping_criterion valid_whole_combiner_acc_top1_acc,10 \
   --bli_preprocess_method 'u' \
   --splitter $SPLIT \
   --origin_context_extractor "before_eos" \
-  --combiner_context_extractor "average" \
-  --reload_combiner_path ./dumped/pretrain100-CHAR-gru-zh/dvptir0l0h/best-valid_whole_combiner_acc_top1_acc.pth \
-  --eval_only True
+  --combiner_context_extractor $COMBINER_EXTRACTOR \
+#  --reload_combiner_path ./dumped/pretrain100-CHAR-gru-zh/dvptir0l0h/best-valid_whole_combiner_acc_top1_acc.pth \
+#  --eval_only True
 
 }
-
-train zh en
-#train en zh
+COMBINER="gru"
+for SPLIT in "CHAR" "BPE" "ROB"; do
+    for COMBINER_EXTRACTOR in "average" "word_token_average" "last_time"; do
+     train zh en
+     train en zh
+    done
+done
