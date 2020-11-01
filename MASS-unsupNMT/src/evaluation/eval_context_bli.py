@@ -34,6 +34,26 @@ class WholeSeparatedEmbs(object):
     def properties(self):
         return self.whole_words, self.separated_word2bpe, self.word2id, self.id2word, self.embeddings
 
+    def separated_words_properties(self):
+        """
+            In order of original index
+            Returns:
+                separated_words_id2word:
+                separated_words_word2id:
+                separated_words_embeddings:
+        """
+        separated_words_word2id = {}
+        separated_words_embeddings = []
+        for id in range(len(self.id2word)):
+            word = self.id2word[id]
+            if word in self.separated_word2bpe:
+                separated_words_word2id[word] = len(separated_words_word2id)
+                separated_words_embeddings.append(self.embeddings[id])
+        separated_words_id2word = {id: word for word, id in separated_words_word2id.items()}
+        separated_words_embeddings = torch.stack(separated_words_embeddings, dim=0)
+
+        return separated_words_id2word, separated_words_word2id, separated_words_embeddings
+
     def whole_words_properties(self):
         """
         In order of original index
@@ -222,7 +242,7 @@ def generate_and_eval(src_bped_words, src_lang, tgt_bped_words, tgt_lang, dic_pa
     return eval_whole_separated_bli(src_whole_separated_embeddings, tgt_whole_separated_embeddings, dic_path, bli, save_path)
 
 
-def eval_whole_separated_bli(src_whole_separated_embeddings, tgt_whole_separated_embeddings, dic_path, bli:BLI, save_path=None):
+def eval_whole_separated_bli(src_whole_separated_embeddings: WholeSeparatedEmbs, tgt_whole_separated_embeddings: WholeSeparatedEmbs, dic_path, bli:BLI, save_path=None):
     """
         Evaluate bli on separated whole embeddings
     Params
@@ -261,18 +281,52 @@ def eval_whole_separated_bli(src_whole_separated_embeddings, tgt_whole_separated
 
     # get whole source word dictionary and separated word dictionary
     whole_word_dic = {}
-    seperated_word_dic = {}
+    separated_word_dic = {}
     for src_id in dic:
         if src_id2word[src_id] in src_whole_words:
             whole_word_dic[src_id] = dic[src_id]
         else:
             assert src_id2word[src_id] in src_separated_word2bpe
-            seperated_word_dic[src_id] = dic[src_id]
+            separated_word_dic[src_id] = dic[src_id]
 
     whole_word_scores = bli.eval(src_embeddings, tgt_embeddings, src_id2word, src_word2id, tgt_id2word, tgt_word2id, whole_word_dic, save_path=save_whole_path)
-    seperated_word_scores = bli.eval(src_embeddings, tgt_embeddings, src_id2word, src_word2id, tgt_id2word, tgt_word2id, seperated_word_dic, save_path=save_separated_path)
+    separated_word_scores, translation = bli.eval(src_embeddings, tgt_embeddings, src_id2word, src_word2id, tgt_id2word, tgt_word2id, separated_word_dic, save_path=save_separated_path, return_translation=True)
 
-    return scores, whole_word_scores, seperated_word_scores
+    src_evaluated_separated_words = [src_id2word[id] for id in separated_word_dic.keys()]
+    # 1. 每一个被切分的词，translate一遍。
+    # 2. 每一个被切分的词，找到最近的src whole word
+    # 3. 每一个被切分的词，找到最近的src separated word
+    # 4. 每一个被切分的词，找到最近的tgt whole word
+
+    src_sep_id2word, src_sep_word2id, src_sep_embs = src_whole_separated_embeddings.separated_words_properties()
+    src_whole_id2word, src_whole_word2id, src_whole_embs = src_whole_separated_embeddings.whole_words_properties()
+    tgt_whole_id2word, tgt_whole_word2id, tgt_whole_embs = tgt_whole_separated_embeddings.whole_words_properties()
+    tgt_sep_id2word, tgt_sep_word2id, tgt_sep_embs = tgt_whole_separated_embeddings.separated_words_properties()
+
+    nearest_tgt_whole = bli.translate_words(src_embeddings, tgt_whole_embs, src_id2word, src_word2id, tgt_whole_id2word, tgt_whole_word2id, src_evaluated_separated_words)
+    nearest_tgt_separated = bli.translate_words(src_embeddings, tgt_sep_embs, src_id2word, src_word2id, tgt_sep_id2word, tgt_sep_word2id, src_evaluated_separated_words)
+    nearest_src_whole = bli.translate_words(src_embeddings, src_whole_embs, src_id2word, src_word2id, src_whole_id2word, src_whole_word2id, src_evaluated_separated_words)
+    nearest_src_separated = bli.translate_words(src_embeddings, src_sep_embs, src_id2word, src_word2id, src_sep_id2word, src_sep_word2id, src_evaluated_separated_words)
+
+    with open(save_path + ".evaluate_sep.txt", 'w') as f:
+        for word in src_evaluated_separated_words:
+            f.write("Src: {} Target:{}\n".format(word, [tgt_id2word[x] for x in dic[src_word2id[word]]]))
+            f.write("Hyp: {}\n".format([tgt_id2word[x] for x in translation[src_word2id[word]]]))
+            f.write("Neighbor in tgt whole {}\n".format([tgt_whole_id2word[x] for x in nearest_tgt_whole[src_word2id[word]]]))
+            f.write("Neighbor in tgt sep {}\n".format([tgt_sep_id2word[x] for x in nearest_tgt_separated[src_word2id[word]]]))
+            f.write("Neighbor in src whole {}\n".format([src_whole_id2word[x] for x in nearest_src_whole[src_word2id[word]]]))
+            f.write("Neighbor in src sep {}\n".format([src_sep_id2word[x] for x in nearest_src_separated[src_word2id[word]]]))
+
+    dic2 = read_dict(dic_path, src_sep_word2id, tgt_whole_word2id)
+
+
+
+    scores2 = bli.eval(src_sep_embs, tgt_whole_embs, src_sep_id2word, src_sep_word2id, tgt_whole_id2word, tgt_whole_word2id, dic2)
+    print("!!")
+    print(scores2)
+    print("!!")
+
+    return scores, whole_word_scores, separated_word_scores
 
 
 def read_retokenize_words(path, splitter):

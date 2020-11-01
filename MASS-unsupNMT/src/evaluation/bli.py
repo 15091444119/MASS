@@ -159,7 +159,7 @@ class BLI(object):
         self._csls_topk = csls_topk
 
     def eval(self, src_embeddings, tgt_embeddings, src_id2word, src_word2id, tgt_id2word, tgt_word2id, dic,
-             save_path=None):
+             save_path=None, return_translation=False):
         """Evaluate bilingual dictionary induction
         Params:
             dic(dict): dict from src id to tgt id list
@@ -195,7 +195,10 @@ class BLI(object):
 
         scores = {"top1_acc": top1_acc, "top5_acc": top5_acc, "top10_acc": top10_acc}
 
-        return scores
+        if not return_translation:
+            return scores
+        else:
+            return scores, translation
 
     def translate_words(
             self,
