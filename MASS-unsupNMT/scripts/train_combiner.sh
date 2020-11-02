@@ -1,15 +1,15 @@
-export CUDA_VISIBLE_DEVICES="3"
-#MODEL=/home/data_ti5_d/zhouzh/low-resource-mt/MASS/MASS-unsupNMT/dumped/cn-en-zh-500w-ft-jointbpe-jointvocab/q6vn71z093/checkpoint.pth
+export CUDA_VISIBLE_DEVICES="5"
+MODEL=/home/data_ti5_d/zhouzh/low-resource-mt/MASS/MASS-unsupNMT/dumped/cn-en-zh-500w-ft-jointbpe-jointvocab/q6vn71z093/checkpoint.pth
 #MODEL=/home/data_ti5_d/zhouzh/low-resource-mt/MASS/MASS-unsupNMT/dumped/cn-en-zh-500w-wwm-reload/j03q6ubj61/periodic-50.pth
 #/home/data_ti5_d/zhouzh/low-resource-mt/MASS/MASS-unsupNMT/dumped/cn-en-zh-500w-wwm-reload/j03q6ubj61/periodic-50.pth
 #/home/data_ti5_d/zhouzh/low-resource-mt/MASS/MASS-unsupNMT/dumped/cn-en-zh-500w-checkpoint-pretrain/x363q5pus9/periodic-150.pth
-MODEL=/home/data_ti5_d/zhouzh/low-resource-mt/MASS/MASS-unsupNMT/dumped/cn-en-zh-500w-pretrain-jointbpe-jointvocab/1jnrqg51bz/periodic-100.pth
+#MODEL=/home/data_ti5_d/zhouzh/low-resource-mt/MASS/MASS-unsupNMT/dumped/cn-en-zh-500w-pretrain-jointbpe-jointvocab/1jnrqg51bz/periodic-100.pth
 
 train(){
   trained_lang=$1
   other_lang=$2
 python train_combiner.py \
-	--exp_name pretrain-$SPLIT-$COMBINER-$COMBINER_EXTRACTOR-"$trained_lang"                             \
+	--exp_name ft-$SPLIT-$COMBINER-$COMBINER_EXTRACTOR-"$trained_lang"                             \
 	--data_path ./combiner_data \
 	--lgs 'zh-en'                                        \
 	--encoder_only False                                 \
@@ -42,6 +42,15 @@ python train_combiner.py \
 #  --eval_only True
 
 }
+
+COMBINER="gru"
+SPLIT="CHAR"
+COMBINER_EXTRACTOR="average"
+train zh en
+train en zh
+exit
+
+
 COMBINER="gru"
 for SPLIT in "CHAR" "BPE" "ROB"; do
     for COMBINER_EXTRACTOR in "average" "word_token_average" "last_time"; do
