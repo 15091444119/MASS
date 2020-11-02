@@ -66,6 +66,9 @@ def get_parser():
     # language mask
     parser.add_argument("--language_mask", type=bool_flag, default=False)
 
+    # split whole words
+    parser.add_argument("--split_whole_words", type=bool_flag, default=False,help="split whole words using rob")
+
     return parser
 
 
@@ -118,7 +121,10 @@ def main(params):
 
     splitter = ReduceOneBpeSplitter.from_code_path(params.code_path)
 
-    def split_whole_words(sentence, splitter):
+    def maybe_split_whole_words(sentence, splitter, params):
+        if not params.split_whole_words:
+            return sentence
+
         result_sentence = []
         sentence = sentence.strip().split()
 
@@ -142,7 +148,7 @@ def main(params):
 
     for i in range(0, len(src_sent), params.batch_size):
         # prepare batch
-        word_ids = [torch.LongTensor([dico.index(w) for w in split_whole_words(s, splitter).strip().split()])
+        word_ids = [torch.LongTensor([dico.index(w) for w in maybe_split_whole_words(s, splitter, params).strip().split()])
                     for s in src_sent[i:i + params.batch_size]]
         lengths = torch.LongTensor([len(s) + 2 for s in word_ids])
         batch = torch.LongTensor(lengths.max().item(), lengths.size(0)).fill_(params.pad_index)

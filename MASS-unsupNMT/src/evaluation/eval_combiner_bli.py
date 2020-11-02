@@ -81,7 +81,7 @@ class CombinerBliEvaluator(object):
             scores["BLI_split_separated_word " + key] = value
 
     def eval_bli(self, scores, src_whole_separated_embeddings, tgt_whole_separated_embeddings, save_path=None):
-        all_scores, whole_word_scores, separated_word_scores = eval_whole_separated_bli(
+        all_scores, whole_word_scores, separated_word_scores, sep2whole_scores = eval_whole_separated_bli(
             src_whole_separated_embeddings=src_whole_separated_embeddings,
             tgt_whole_separated_embeddings=tgt_whole_separated_embeddings,
             dic_path=self._dict_path,
@@ -96,6 +96,9 @@ class CombinerBliEvaluator(object):
 
         for key, value in separated_word_scores.items():
             scores["BLI_separated_word " + key] = value
+
+        for key, value in sep2whole_scores.items():
+            scores["BLI_separate_source2_whole_target " + key] = value
 
     def eval_encoder_decoder_word_translate(self):
 

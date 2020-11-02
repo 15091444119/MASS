@@ -303,30 +303,29 @@ def eval_whole_separated_bli(src_whole_separated_embeddings: WholeSeparatedEmbs,
     tgt_whole_id2word, tgt_whole_word2id, tgt_whole_embs = tgt_whole_separated_embeddings.whole_words_properties()
     tgt_sep_id2word, tgt_sep_word2id, tgt_sep_embs = tgt_whole_separated_embeddings.separated_words_properties()
 
-    nearest_tgt_whole = bli.translate_words(src_embeddings, tgt_whole_embs, src_id2word, src_word2id, tgt_whole_id2word, tgt_whole_word2id, src_evaluated_separated_words)
-    nearest_tgt_separated = bli.translate_words(src_embeddings, tgt_sep_embs, src_id2word, src_word2id, tgt_sep_id2word, tgt_sep_word2id, src_evaluated_separated_words)
-    nearest_src_whole = bli.translate_words(src_embeddings, src_whole_embs, src_id2word, src_word2id, src_whole_id2word, src_whole_word2id, src_evaluated_separated_words)
-    nearest_src_separated = bli.translate_words(src_embeddings, src_sep_embs, src_id2word, src_word2id, src_sep_id2word, src_sep_word2id, src_evaluated_separated_words)
 
-    with open(save_path + ".evaluate_sep.txt", 'w') as f:
-        for word in src_evaluated_separated_words:
-            f.write("Src: {} Target:{}\n".format(word, [tgt_id2word[x] for x in dic[src_word2id[word]]]))
-            f.write("Hyp: {}\n".format([tgt_id2word[x] for x in translation[src_word2id[word]]]))
-            f.write("Neighbor in tgt whole {}\n".format([tgt_whole_id2word[x] for x in nearest_tgt_whole[src_word2id[word]]]))
-            f.write("Neighbor in tgt sep {}\n".format([tgt_sep_id2word[x] for x in nearest_tgt_separated[src_word2id[word]]]))
-            f.write("Neighbor in src whole {}\n".format([src_whole_id2word[x] for x in nearest_src_whole[src_word2id[word]]]))
-            f.write("Neighbor in src sep {}\n".format([src_sep_id2word[x] for x in nearest_src_separated[src_word2id[word]]]))
-
-    dic2 = read_dict(dic_path, src_sep_word2id, tgt_whole_word2id)
+    sep2whole_dic = read_dict(dic_path, src_sep_word2id, tgt_whole_word2id)
 
 
+    sep2whole_scores = bli.eval(src_sep_embs, tgt_whole_embs, src_sep_id2word, src_sep_word2id, tgt_whole_id2word, tgt_whole_word2id, sep2whole_dic)
 
-    scores2 = bli.eval(src_sep_embs, tgt_whole_embs, src_sep_id2word, src_sep_word2id, tgt_whole_id2word, tgt_whole_word2id, dic2)
-    print("!!")
-    print(scores2)
-    print("!!")
+    # translate
+    if save_path is not None:
+        nearest_tgt_whole = bli.translate_words(src_embeddings, tgt_whole_embs, src_id2word, src_word2id, tgt_whole_id2word, tgt_whole_word2id, src_evaluated_separated_words)
+        nearest_tgt_separated = bli.translate_words(src_embeddings, tgt_sep_embs, src_id2word, src_word2id, tgt_sep_id2word, tgt_sep_word2id, src_evaluated_separated_words)
+        nearest_src_whole = bli.translate_words(src_embeddings, src_whole_embs, src_id2word, src_word2id, src_whole_id2word, src_whole_word2id, src_evaluated_separated_words)
+        nearest_src_separated = bli.translate_words(src_embeddings, src_sep_embs, src_id2word, src_word2id, src_sep_id2word, src_sep_word2id, src_evaluated_separated_words)
 
-    return scores, whole_word_scores, separated_word_scores
+        with open(save_path + ".evaluate_sep.txt", 'w') as f:
+            for word in src_evaluated_separated_words:
+                f.write("Src: {} Target:{}\n".format(word, [tgt_id2word[x] for x in dic[src_word2id[word]]]))
+                f.write("Hyp: {}\n".format([tgt_id2word[x] for x in translation[src_word2id[word]]]))
+                f.write("Neighbor in tgt whole {}\n".format([tgt_whole_id2word[x] for x in nearest_tgt_whole[src_word2id[word]]]))
+                f.write("Neighbor in tgt sep {}\n".format([tgt_sep_id2word[x] for x in nearest_tgt_separated[src_word2id[word]]]))
+                f.write("Neighbor in src whole {}\n".format([src_whole_id2word[x] for x in nearest_src_whole[src_word2id[word]]]))
+                f.write("Neighbor in src sep {}\n".format([src_sep_id2word[x] for x in nearest_src_separated[src_word2id[word]]]))
+
+    return scores, whole_word_scores, separated_word_scores, sep2whole_scores
 
 
 def read_retokenize_words(path, splitter):
@@ -374,7 +373,7 @@ def main():
     dico, mass_params, encoder, _ = load_mass_model(args.model_path)
     sentence_embedder = SenteceEmbedder(encoder, mass_params, dico, args.context_extractor)
 
-    scores, whole_word_scores, separated_word_scores = generate_and_eval(
+    scores, whole_word_scores, separated_word_scores, sep2whole_scores = generate_and_eval(
         src_bped_words=src_bped_words,
         src_lang=args.src_lang,
         tgt_bped_words=tgt_bped_words,
@@ -384,7 +383,7 @@ def main():
         separated_word_embedder=sentence_embedder,
         bli=bli,
         save_path=args.save_path)
-    print("scores: {}\nwhole word scores{}\nseparated word scores{}\n".format(scores, whole_word_scores, separated_word_scores))
+    print("scores: {}\nwhole word scores{}\nseparated word scores{}\nseparate source to target whole score{}\n".format(scores, whole_word_scores, separated_word_scores, sep2whole_scores))
 
 if __name__ == "__main__":
     main()
