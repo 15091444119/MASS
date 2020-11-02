@@ -15,8 +15,10 @@
 #     --model_path trained_model.pth --output_path output
 #
 
+import string
 import os
 import io
+import pdb
 import sys
 import argparse
 import torch
@@ -25,6 +27,8 @@ from src.utils import AttrDict
 from src.utils import bool_flag, initialize_exp
 from src.data.dictionary import Dictionary
 from src.model.transformer import TransformerModel
+from src.evaluation.utils import package_module
+from src.combiner.splitter import ReduceOneBpeSplitter
 
 from src.fp16 import network_to_half
 
@@ -57,7 +61,19 @@ def get_parser():
     parser.add_argument("--src_lang", type=str, default="", help="Source language")
     parser.add_argument("--tgt_lang", type=str, default="", help="Target language")
 
+    parser.add_argument("--code_path", type=str)
+
+    # language mask
+    parser.add_argument("--language_mask", type=bool_flag, default=False)
+
     return parser
+
+
+def is_chinese(uchar):
+    if uchar >= u'\u4e00' and uchar <= u'\u9fa5':
+        return True
+    else:
+        return False
 
 
 def main(params):
@@ -80,8 +96,8 @@ def main(params):
     dico = Dictionary(reloaded['dico_id2word'], reloaded['dico_word2id'], reloaded['dico_counts'])
     encoder = TransformerModel(model_params, dico, is_encoder=True, with_output=True).cuda().eval()
     decoder = TransformerModel(model_params, dico, is_encoder=False, with_output=True).cuda().eval()
-    encoder.load_state_dict(reloaded['encoder'])
-    decoder.load_state_dict(reloaded['decoder'])
+    encoder.load_state_dict(package_module(reloaded['encoder']))
+    decoder.load_state_dict(package_module(reloaded['decoder']))
     params.src_id = model_params.lang2id[params.src_lang]
     params.tgt_id = model_params.lang2id[params.tgt_lang]
 
@@ -100,10 +116,33 @@ def main(params):
 
     f = io.open(params.output_path, 'w', encoding='utf-8')
 
-    for i in range(0, len(src_sent), params.batch_size):
+    splitter = ReduceOneBpeSplitter.from_code_path(params.code_path)
 
+    def split_whole_words(sentence, splitter):
+        result_sentence = []
+        sentence = sentence.strip().split()
+
+        for idx, word in enumerate(sentence):
+            # unk
+            if word not in dico.word2id:
+                result_sentence.append(word)
+            # subword
+            elif "@@" in word or (idx > 0 and "@@" in sentence[idx - 1]):
+                result_sentence.append(word)
+            # whole word
+            else:
+                # length 1
+                if len(word) == 1:
+                    result_sentence.append(word)
+                else:
+                    result_sentence.extend(splitter.split_word(word))
+
+        return ' '.join(result_sentence)
+
+
+    for i in range(0, len(src_sent), params.batch_size):
         # prepare batch
-        word_ids = [torch.LongTensor([dico.index(w) for w in s.strip().split()])
+        word_ids = [torch.LongTensor([dico.index(w) for w in split_whole_words(s, splitter).strip().split()])
                     for s in src_sent[i:i + params.batch_size]]
         lengths = torch.LongTensor([len(s) + 2 for s in word_ids])
         batch = torch.LongTensor(lengths.max().item(), lengths.size(0)).fill_(params.pad_index)
@@ -118,7 +157,12 @@ def main(params):
         encoded = encoder('fwd', x=batch.cuda(), lengths=lengths.cuda(), langs=langs.cuda(), causal=False)
         encoded = encoded.transpose(0, 1)
         if params.beam == 1:
-            decoded, dec_lengths = decoder.generate(encoded, lengths.cuda(), params.tgt_id, max_len=int(1.5 * lengths.max().item() + 10))
+            if params.language_mask:
+                language_mask = torch.tensor(
+                [-1e9 if is_chinese(dico.id2word[idx]) else 0 for idx in range(len(dico.id2word))])
+            else:
+                language_mask = None
+            decoded, dec_lengths = decoder.generate(encoded, lengths.cuda(), params.tgt_id, max_len=int(1.5 * lengths.max().item() + 10), language_mask=language_mask)
         else:
             decoded, dec_lengths = decoder.generate_beam(
                 encoded, lengths.cuda(), params.tgt_id, beam_size=params.beam,

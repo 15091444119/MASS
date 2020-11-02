@@ -34,6 +34,7 @@ def load_mass_model(model_path):
     Returns:
         dico, model_params, encoder, decoder
     """
+    print("Load model from {}".format(model_path))
     reloaded = torch.load(model_path)
     model_params = AttrDict(reloaded['params'])
     logger.info("Supported languages: %s" % ", ".join(model_params.lang2id.keys()))
@@ -42,8 +43,6 @@ def load_mass_model(model_path):
     dico = Dictionary(reloaded['dico_id2word'], reloaded['dico_word2id'], reloaded['dico_counts'])
     encoder = TransformerModel(model_params, dico, is_encoder=True, with_output=True).cuda().eval()
     decoder = TransformerModel(model_params, dico, is_encoder=False, with_output=True).cuda().eval()
-
-
 
     encoder.load_state_dict(package_module(reloaded['encoder']))
     decoder.load_state_dict(package_module(reloaded['decoder']))
@@ -272,6 +271,7 @@ class WordEmbedderWithCombiner(nn.Module):
         """
         batch_context_word_representations, lengths = encode_sentences(self._encoder, self._dico, self._mass_params,
                                                                        sentences, lang)
+
         for length in lengths:
             assert length.item() > 3 #(all are separated word)
 
@@ -286,6 +286,4 @@ class WordEmbedderWithCombiner(nn.Module):
 
         outputs_lengths = torch.tensor([3] * batch_size).to(batch_sentence_representation.device)
         return outputs.transpose(0, 1), outputs_lengths
-#        return batch_context_word_representations.transpose(0, 1), lengths
-
 
