@@ -15,4 +15,4 @@ python3 -m src.evaluation.eval_combiner_bli \
 --src_bped_word ./word_vocab/zh.vocab.bpe \
 --tgt_bped_word ./word_vocab/en.vocab.bpe \
 --dict_path /home/data_ti5_d/zhouzh/low-resource-mt/XLM_MASS_preprocessed_data/BLI/zh-en/zh-en.txt.sim \
---save_path ~/ft_eval
+--save_path ~/ft_eval_ave

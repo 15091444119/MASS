@@ -137,6 +137,9 @@ class WholeWordSplitter(object):
             raise NotImplementedError
 
     def need_retokenize(self):
+        """
+        Need to retokenize bped word
+        """
         raise NotImplementedError
 
     def split_word(self, word):
@@ -358,6 +361,7 @@ class ReduceOneBpeSplitter(WholeWordSplitter):
 class CharSplitter(WholeWordSplitter):
     """ split the word into characters """
 
+
     def __init__(self):
         super().__init__()
 
@@ -379,6 +383,30 @@ class CharSplitter(WholeWordSplitter):
         return True
 
 
+class BPESplitter(WholeWordSplitter):
+
+    def __init__(self, bpe_codes):
+        super().__init__()
+        self.bpe_codes = bpe_codes
+
+    @classmethod
+    def from_code_path(cls, codes_path):
+        bpe_codes = read_codes(codes_path)
+        return BPESplitter(bpe_codes)
+
+    def split_word(self, word):
+        """ don't fully merge bpe
+        Params:
+            word: string
+                the word to be splitted
+        Returns:
+            encoded_word: list of strings
+                the splited word
+        """
+        return encode_word(word, self.bpe_codes)
+
+    def need_retokenize(self):
+        return False
 
 if __name__ == "__main__":
     bpe_codes = {("a", "b"): 0, ("a", "c</w>"): 1, ("ab", "ac</w>"): 2}

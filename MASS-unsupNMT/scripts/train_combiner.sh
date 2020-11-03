@@ -38,8 +38,8 @@ python train_combiner.py \
   --splitter $SPLIT \
   --origin_context_extractor "before_eos" \
   --combiner_context_extractor $COMBINER_EXTRACTOR \
-#  --reload_combiner_path ./dumped/pretrain100-CHAR-gru-zh/dvptir0l0h/best-valid_whole_combiner_acc_top1_acc.pth \
-#  --eval_only True
+  --reload_combiner_path /home/data_ti5_d/zhouzh/low-resource-mt/subword-combiner/MASS-unsupNMT/dumped/ft-CHAR-gru-average-zh/nk6922nry0/best-valid_loss.pth \
+  --eval_only True
 
 }
 
@@ -47,7 +47,6 @@ COMBINER="gru"
 SPLIT="CHAR"
 COMBINER_EXTRACTOR="average"
 train zh en
-train en zh
 exit
 
 
