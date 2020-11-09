@@ -735,24 +735,25 @@ class CombinerTrainer(Trainer):
 
         super().__init__(data, params)
 
-
     def combiner_step(self, lang):
         params = self.params
         lang_id = params.lang2id[lang]
         batch, lengths = self.get_batch("combine", lang)
 
-        new_batch, new_lengths, whole_word_mask, subword_labels = self.whole_word_splitter.split_batch_sentences(batch, lengths, self.data["dico"])
+        new_batch, new_lengths, whole_word_mask, combine_labels = self.whole_word_splitter.split_batch_sentences(batch, lengths, self.data["dico"])
 
         # original word representations
         self.encoder.eval()
         with torch.no_grad():
-            langs =
-            origin_word_rep = self.encoder(batch, lengths, langs)
-        whole_word_rep = origin_word_rep.masked_select(whole_word_mask)
+            langs = batch.clone().fill_(lang_id)
+            origin_word_rep = self.encoder("fwd", x=batch, lengths=lengths, langs=langs, causal=False)  # [len, bs, dim]
+            origin_word_rep = origin_word_rep.transpose(0, 1)  # [bs, len, dim]
+
+        whole_word_rep = origin_word_rep.masked_select(whole_word_mask.unsqueeze(-1))  # [combine_word_num, dim]
 
         # combiner whole word representation
         self.combiner.train()
-        combiner_rep = self.combiner(origin_word_rep, new_lengths, subword_labels)
+        combiner_rep = self.combiner(origin_word_rep, new_lengths, combine_labels)  # [combine_word_num, dim]
 
         # mse loss
         loss = self.loss_function(whole_word_rep, combiner_rep)

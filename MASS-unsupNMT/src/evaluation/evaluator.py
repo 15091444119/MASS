@@ -19,6 +19,7 @@ from .utils import SenteceEmbedder, WordEmbedderWithCombiner
 from src.combiner.combiner import MultiLingualNoneParaCombiner
 from .bli import BLI
 from .eval_context_bli import eval_whole_separated_bli, read_retokenize_words, generate_context_word_representation, encode_whole_word_separated_word, generate_and_eval
+from src.combiner.constant import WHOLEWORD, SUBWORD_FRONT, SUBWORD_END
 
 
 BLEU_SCRIPT_PATH = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'multi-bleu.perl')
@@ -402,6 +403,7 @@ class CombinerEvaluator(Evaluator):
             enc1 = encoder('fwd', x=x1, lengths=len1, langs=langs1, causal=False)
             enc1 = enc1.transpose(0, 1)
 
+            # combine subword into whole word representation
             combined_enc, combined_len = combine(enc1, self._combiner, x1, len1, self.dico)
 
             # decode target sentence
@@ -769,7 +771,6 @@ def combine(combiner, encoded, x1, len1, dico):
     bs, len, _ = x1.size()
     subword_labels = torch.LongTensor(bs, len).fill_(-1)
     for sentence_id, sentence in enumerate(x1):
-        cur_subword_labels = []
         subword_finished = True
         for idx in range(len1[sentence_id]):
             cur_token = dico.id2word[sentence[idx].item()]

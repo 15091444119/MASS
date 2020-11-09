@@ -6,6 +6,8 @@ from src.evaluation.utils import Context2Sentence
 
 from src.utils import AttrDict
 from src.evaluation.utils import package_module
+from .constant import SKIPPED_TOKEN, SUBWORD_END, SUBWORD_FRONT, PAD_TOKEN
+
 
 class Combiner(nn.Module):
     """
@@ -15,38 +17,46 @@ class Combiner(nn.Module):
     def __init__(self):
         super.__init__()
 
-    def combine(self, encoded, lengths, subword_labels):
+    def combine(self, encoded, lengths, combine_labels):
         """
         Combine subword representations to whole word representation
+        combine subword front to subword end into whole word representation
         """
         raise NotImplementedError
 
-    def encode(self, encoded, lengths, subword_labels):
+    def encode(self, encoded, lengths, combine_labels):
         """
         Params:
             encoded: [bs, len, dim]
             lengths: [bs]
-            subword_labels: [bs, len]
+            combine_labels: [bs, len]
         combine, and get the new representation
-        """
-        representation = self.combine(encoded, lengths, subword_labels)
+        if combine label is skipped, use the original representation
+        else we use the combine function to generate a whole word representation
 
+        Returns:
+            new_encoded, new_lens
+        """
+        representation = self.combine(encoded, lengths, combine_labels) # [split word number, dim]
+
+        # get length
         new_lens = []
-        for sentence_labels in subword_labels:
+        for sentence_labels in combine_labels:
             len = 0
             for label in sentence_labels:
                 label = label.item()
-                if label == WHOLEWORD or label == SUBWORD_END:
+                if label == SKIPPED_TOKEN or label == SUBWORD_END:
                     len += 1
+            new_lens.append(len)
 
         cur_rep = 0
         bs, _, dim = encoded.size(0)
         new_encoded = torch.FloatTensor(bs, max(new_lens), dim).fill_(0.0).cuda()
-        for sentence_idx, sentence_labels in enumerate(subword_labels):
+        for sentence_idx, sentence_labels in enumerate(combine_labels):
             cur_pos = 0
             for token_idx, label in enumerate(sentence_labels):
                 label = label.item()
-                if label == WHOLEWORD:
+                if label == SKIPPED_TOKEN:
                     new_encoded[sentence_idx][cur_pos] = encoded[sentence_idx][token_idx]
                     cur_pos += 1
                 elif label == SUBWORD_END:
@@ -59,36 +69,45 @@ class Combiner(nn.Module):
         return new_encoded, new_lens
 
 
-
-
-
-
-
 class LastTokenCombiner(Combiner):
 
     def __init__(self, params):
         super.__init__()
         transformer_layer = nn.TransformerEncoderLayer(d_model=params.emb_dim, nhead=params.n_heads,
                                                        dim_feedforward=params.emb_dim * 4)
-        self._transformer_encoder = nn.TransformerEncoder(transformer_layer, num_layers=params.n_combiner_layers)
+        self.transformer_encoder = nn.TransformerEncoder(transformer_layer, num_layers=params.n_combiner_layers)
+        self.output_dim = params.emb_dim
 
-    def combine(self, encoded, lengths, subword_labels):
+    def combine(self, encoded, lengths, combine_labels):
+        """
+        Args:
+            encoded: [bs, len, dim]
+            lengths: [bs]
+            combine_labels: [bs, len]
 
+        Returns:
+            representation: [splitted word number, dim]
+
+        """
+
+        encoded = encoded.transpose(0, 1)
         assert encoded.size(1) == lengths.size(0)
         max_length = encoded.size(0)
         # src_key_padding_mask set padding with false
         padding_mask = (~(get_masks(slen=max_length, lengths=lengths, causal=False)[0])).to(
             encoded.device)  # (batch_size, max_length)
-        outputs = self._transformer_encoder(src=encoded, src_key_padding_mask=padding_mask)
+        outputs = self.transformer_encoder(src=encoded, src_key_padding_mask=padding_mask) #[len, bs, dim]
+        outputs = outputs.transpose(0, 1) #[bs, len, dim]
 
-        subword_last_token_mask = self.word_end_mask(subword_labels)
+        subword_last_token_mask = self.word_end_mask(combine_labels) # [bs, len]
         representation = outputs.masked_select(subword_last_token_mask).view(-1, self.output_dim)
 
         return representation
 
     @classmethod
-    def word_end_mask(cls, subword_labels):
-        mask = subword_labels.eq(SUBWORD_END)
+    def word_end_mask(cls, combine_labels):
+        mask = combine_labels.eq(SUBWORD_END)
+        return mask
 
 
 class TransformerCombiner(nn.Module):
