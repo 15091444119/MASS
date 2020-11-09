@@ -23,13 +23,45 @@ class Combiner(nn.Module):
 
     def encode(self, encoded, lengths, subword_labels):
         """
+        Params:
+            encoded: [bs, len, dim]
+            lengths: [bs]
+            subword_labels: [bs, len]
         combine, and get the new representation
         """
         representation = self.combine(encoded, lengths, subword_labels)
 
         new_lens = []
         for sentence_labels in subword_labels:
-            if label ==
+            len = 0
+            for label in sentence_labels:
+                label = label.item()
+                if label == WHOLEWORD or label == SUBWORD_END:
+                    len += 1
+
+        cur_rep = 0
+        bs, _, dim = encoded.size(0)
+        new_encoded = torch.FloatTensor(bs, max(new_lens), dim).fill_(0.0).cuda()
+        for sentence_idx, sentence_labels in enumerate(subword_labels):
+            cur_pos = 0
+            for token_idx, label in enumerate(sentence_labels):
+                label = label.item()
+                if label == WHOLEWORD:
+                    new_encoded[sentence_idx][cur_pos] = encoded[sentence_idx][token_idx]
+                    cur_pos += 1
+                elif label == SUBWORD_END:
+                    new_encoded[sentence_idx][cur_pos] = representation[cur_rep]
+                    cur_pos += 1
+                    cur_rep += 1
+
+        new_lens = torch.LongTensor(new_lens).cuda()
+
+        return new_encoded, new_lens
+
+
+
+
+
 
 
 class LastTokenCombiner(Combiner):
