@@ -723,8 +723,7 @@ class CombinerTrainer(Trainer):
         self.MODEL_NAMES = ["combiner"]
 
         # model / data / params
-        self.encoder = encoder
-        self.origin_tokens2word = Context2Sentence(params.origin_context_extractor)  # this is a non-parameter combiner
+        self.encoder = encoder  # a fixed mass encoder
         self.combiner = combiner
         self.data = data
         self.params = params
@@ -741,27 +740,22 @@ class CombinerTrainer(Trainer):
         params = self.params
         lang_id = params.lang2id[lang]
         batch, lengths = self.get_batch("combine", lang)
-        # TODO recode in datasets, not in trainer
-        new_batch, new_lengths = self.whole_word_splitter.re_encode_batch_words(batch, lengths, self.data["dico"], params)
 
-        batch, lengths, new_batch, new_lengths = to_cuda(batch, lengths, new_batch, new_lengths)
+        new_batch, new_lengths, whole_word_mask, subword_labels = self.whole_word_splitter.split_batch_sentences(batch, lengths, self.data["dico"])
 
-        # original word rep
-        langs = batch.clone().fill_(lang_id)
+        # original word representations
         self.encoder.eval()
         with torch.no_grad():
-            origin_encoded = self.encoder('fwd', x=batch, lengths=lengths, langs=langs, causal=False)
-            origin_word_rep = self.origin_tokens2word(origin_encoded.transpose(0, 1), lengths)
+            langs =
+            origin_word_rep = self.encoder(batch, lengths, langs)
+        whole_word_rep = origin_word_rep.masked_select(whole_word_mask)
 
-        # new word rep
-        self.encoder.eval()
+        # combiner whole word representation
         self.combiner.train()
-        langs = new_batch.clone().fill_(lang_id)
-        new_encoded = self.encoder('fwd', x=new_batch, lengths=new_lengths, langs=langs, causal=False)
-        new_word_rep = self.combiner(new_encoded, new_lengths, lang)
+        combiner_rep = self.combiner(origin_word_rep, new_lengths, subword_labels)
 
         # mse loss
-        loss = self.loss_function(origin_word_rep, new_word_rep)
+        loss = self.loss_function(whole_word_rep, combiner_rep)
 
         self.stats[("combiner-{}".format(lang))].append(loss.item())
 

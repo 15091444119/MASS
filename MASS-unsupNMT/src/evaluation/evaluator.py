@@ -356,89 +356,100 @@ class CombinerEvaluator(Evaluator):
         # decoder ( for evaluate word translate)
         self._decoder = decoder
 
-        self.check_dataset()
+    def evaluate_mt(self, scores, data_set, lang1, lang2, eval_bleu):
+        """
+        Evaluate perplexity and next word prediction accuracy.
+        """
+        params = self.params
+        assert data_set in ['valid', 'test']
+        assert lang1 in params.langs
+        assert lang2 in params.langs
 
-    def eval_encoder_decoder_word_translate(self):
+        self.encoder.eval()
+        self.decoder.eval()
+        encoder = self.encoder.module if params.multi_gpu else self.encoder
+        decoder = self.decoder.module if params.multi_gpu else self.decoder
 
-        # generate dictionary, only use source words which can be splitted
-        dictionary = {}
-        used_srcs = []
-        right = 0
-        with open(self._params.dict_path) as f:
-            for line in f:
-                src, tgt = line.rstrip().split()
-                if len(src) <= 1:
-                    continue
-                src = self._whole_word_splitter.split_word(src)
-                if len(src) > 1:
-                    src = ' '.join(src)
-                    if src not in dictionary:
-                        dictionary[src] = [tgt]
-                        used_srcs.append(src)
-                    else:
-                        dictionary[src].append(tgt)
+        params = params
+        lang1_id = params.lang2id[lang1]
+        lang2_id = params.lang2id[lang2]
 
-        # translate
-        for i in range(0, len(used_srcs), self._params.batch_size):
-            words = used_srcs[i: min(len(used_srcs), i + self._params.batch_size)]
-            encoded, lengths = self._separated_word_embedder.with_special_token_forward(words, self._trained_lang)
-            encoded = encoded.transpose(0, 1)
-            decoded, dec_lengths = self._decoder.generate(encoded, lengths.cuda(), self._params.lang2id[self._other_lang], max_len=int(1.5 * lengths.max().item() + 10))
+        n_words = 0
+        xe_loss = 0
+        n_valid = 0
 
-            for j in range(decoded.size(1)):
-                # remove delimiters
-                sent = decoded[:, j]
-                delimiters = (sent == self._params.eos_index).nonzero().view(-1)
-                assert len(delimiters) >= 1 and delimiters[0].item() == 0
-                sent = sent[1:] if len(delimiters) == 1 else sent[1:delimiters[1]]
+        # store hypothesis to compute BLEU score
+        if eval_bleu:
+            hypothesis = []
 
-                # output translation
-                source = used_srcs[i + j]
-                dico = self._data["dico"]
-                target = " ".join([dico[sent[k].item()] for k in range(len(sent))])
-                if target.replace("@@", "").replace(" ", ' ') in dictionary[source]:
-                    ans = "True"
+        for batch in self.get_iterator(data_set, lang1, lang2):
+
+            # generate batch
+            (x1, len1), (x2, len2) = batch
+            langs1 = x1.clone().fill_(lang1_id)
+            langs2 = x2.clone().fill_(lang2_id)
+
+            # target words to predict
+            alen = torch.arange(len2.max(), dtype=torch.long, device=len2.device)
+            pred_mask = alen[:, None] < len2[None] - 1  # do not predict anything given the last target word
+            y = x2[1:].masked_select(pred_mask[:-1])
+            assert len(y) == (len2 - 1).sum().item()
+
+            # cuda
+            x1, len1, langs1, x2, len2, langs2, y = to_cuda(x1, len1, langs1, x2, len2, langs2, y)
+
+            # encode source sentence
+            enc1 = encoder('fwd', x=x1, lengths=len1, langs=langs1, causal=False)
+            enc1 = enc1.transpose(0, 1)
+
+            combined_enc, combined_len = combine(enc1, self._combiner, x1, len1, self.dico)
+
+            # decode target sentence
+            dec2 = decoder('fwd', x=x2, lengths=len2, langs=langs2, causal=True, src_enc=combined_enc, src_len=combined_len)
+
+            # loss
+            word_scores, loss = decoder('predict', tensor=dec2, pred_mask=pred_mask, y=y, get_scores=True)
+
+            # update stats
+            n_words += y.size(0)
+            xe_loss += loss.item() * len(y)
+            n_valid += (word_scores.max(1)[1] == y).sum().item()
+
+            # generate translation - translate / convert to text
+            if eval_bleu:
+                max_len = int(1.5 * len1.max().item() + 10)
+                if params.beam_size == 1:
+                    generated, lengths = decoder.generate(combined_enc, combined_len, lang2_id, max_len=max_len)
                 else:
-                    ans = "False"
-                if ans == "True":
-                    right += 1
-                sys.stderr.write("%i %s -> %s\nans:%s\n" % (i + j, source, target, ans))
-                pdb.set_trace()
+                    generated, lengths = decoder.generate_beam(
+                        combined_enc, combined_len, lang2_id, beam_size=params.beam_size,
+                        length_penalty=params.length_penalty,
+                        early_stopping=params.early_stopping,
+                        max_len=max_len
+                    )
+                hypothesis.extend(convert_to_text(generated, lengths, self.dico, params))
 
-        sys.stderr.write("acc:{}".format(right / len(dictionary)))
+        # compute perplexity and prediction accuracy
+        scores['%s_%s-%s_mt_ppl' % (data_set, lang1, lang2)] = np.exp(xe_loss / n_words)
+        scores['%s_%s-%s_mt_acc' % (data_set, lang1, lang2)] = 100. * n_valid / n_words
 
+        # compute BLEU
+        if eval_bleu:
+            # hypothesis / reference paths
+            hyp_name = 'hyp{0}.{1}-{2}.{3}.txt'.format(scores['epoch'], lang1, lang2, data_set)
+            hyp_path = os.path.join(params.hyp_path, hyp_name)
+            ref_path = params.ref_paths[(lang1, lang2, data_set)]
 
-    def eval_non_para(self):
-        """
-        this is a small hack here
-        """
-        tmp_embedder = self._separated_word_embedder
-        tmp_combiner = self._combiner
-        self._combiner = MultiLingualNoneParaCombiner(method=self._params.combiner_context_extractor)
-        self._separated_word_embedder = WordEmbedderWithCombiner(self._encoder, self._combiner, self._params, self.data['dico'])
-        scores = self.run_all_evals(-1)
-        self._separated_word_embedder = tmp_embedder
-        self._combiner = tmp_combiner
+            # export sentences to hypothesis file / restore BPE segmentation
+            with open(hyp_path, 'w', encoding='utf-8') as f:
+                f.write('\n'.join(hypothesis) + '\n')
+            restore_segmentation(hyp_path)
 
-        return scores
+            # evaluate BLEU score
+            bleu = eval_moses_bleu(ref_path, hyp_path)
+            logger.info("BLEU %s %s : %f" % (hyp_path, ref_path, bleu))
+            scores['%s_%s-%s_mt_bleu' % (data_set, lang1, lang2)] = bleu
 
-
-    def run_all_evals(self, epoch):
-        """
-        Rewrite parent method
-        """
-        scores = OrderedDict({'epoch': epoch})
-
-        # evaluate combiner
-        self.eval_loss(scores, self._trained_lang)
-
-        # this is calculated only once to save time
-        embs = encode_whole_word_separated_word(self._tokenized_words, self._trained_lang, self._whole_word_embedder, self._separated_word_embedder)
-        for data in ["valid", "train"]:
-            self.eval_combiner_acc(scores, data, self._trained_lang, embs, save_path=os.path.join(self.params.dump_path, "{}_{}_{}".format(epoch, self._trained_lang, data)))
-
-
-        return scores
 
     def eval_loss(self, scores, lang):
         """
@@ -451,123 +462,29 @@ class CombinerEvaluator(Evaluator):
         n_words = 0
         all_loss = 0
         for batch, lengths in self.get_iterator(data_set, lang):
-            new_batch, new_lengths= self._whole_word_splitter.re_encode_batch_words(batch, lengths,
-                                                                                                self._data["dico"],
-                                                                                                params)
+            new_batch, new_lengths, whole_word_mask, subword_labels = self.whole_word_splitter.split_batch_sentences(
+                batch, lengths, self.data["dico"])
 
-            batch, lengths, new_batch, new_lengths = to_cuda(batch, lengths, new_batch, new_lengths)
-
-            langs = batch.clone().fill_(lang_id)
-            self._encoder.eval()
-            self._combiner.eval()
+            # original word representations
+            self.encoder.eval()
             with torch.no_grad():
-                # original encode
-                origin_encoded = self._encoder('fwd', x=batch, lengths=lengths, langs=langs, causal=False)
-                origin_word_rep = self._origin_tokens2word(origin_encoded.transpose(0, 1), lengths)
+                langs =
+                origin_word_rep = self.encoder(batch, lengths, langs)
+            whole_word_rep = origin_word_rep.masked_select(whole_word_mask)
 
-                # new encode
-                langs = new_batch.clone().fill_(lang_id)
-                new_encoded = self._encoder('fwd', x=new_batch, lengths=new_lengths, langs=langs, causal=False)
-                new_word_rep = self._combiner(new_encoded, new_lengths, lang)
+            # combiner whole word representation
+            self.combiner.train()
+            combiner_rep = self.combiner(origin_word_rep, new_lengths, subword_labels)
 
             # mse loss
-            loss = self._loss_function(origin_word_rep, new_word_rep)
+            loss = self.loss_function(whole_word_rep, combiner_rep)
 
             n_words += origin_word_rep.size(0)
             all_loss += loss.item() * origin_word_rep.size(0)
 
         scores["{}_loss".format(data_set)] = all_loss / n_words
 
-    def check_dataset(self):
-        """
-        Assert all data are whole word and valid set have no intersection with training set
-        """
-        for lang in self.params.combiner_steps:
-            valid_word_idxs = set()
-            for batch, lengths in self.get_iterator("valid", lang):
-                assert (lengths == 3).all()
-                for word in batch.transpose(0, 1):
-                    valid_word_idxs.add(word[1].item())
-            for batch, lengths in self.get_iterator("train", lang):
-                assert (lengths == 3).all()
-                for word in batch.transpose(0, 1):
-                    assert word[1].item() not in valid_word_idxs, self._data["dico"].id2word[word[1].item()]
-        logger.info("Training data and valid data have no intersection.")
 
-
-    def eval_combiner_acc(self, scores, data, lang, whole_separated_embeddings, save_path=None):
-        """
-            For each word in the valid set and training set(this are whole word), we first split into bpe tokens,
-        then get the combiner representation of it, then we search nearest neighbor in the original embedding
-        space(given by src_bped_words or tgt_bped_words) and see if the nearest neighbor is that word.
-            This can be regarded as a BLI from combiner space to original mass output space.
-            The original mass output space may contain whole words and separated words,
-            So two original space will be considerd:
-                1. whole words
-                2. whole words + combined separated words
-
-        Example:
-            你好 -> 你@@ 好 -> representation([你@@, 好]) -> search nearest neighbor in (你好，我好，大家好，...）
-
-        Params:
-            scores: dict
-
-            data: string, choices=["valid", "train"]
-
-            lang: string,
-
-            whole_separated_embeddings: WholeSeparatedEmbs
-                The original embedding space
-
-            save_path: str
-                Path to save nearest neighbor of each word in the valid set
-        """
-        # generate combiner space representation
-        combiner_word2id = {}
-        combiner_words = []  # re bped combiner words for generate representation
-        for batch, length in self.get_iterator(data, lang):
-            assert (length == 3).all() # all are words
-            batch = batch.transpose(0, 1)
-            for token_idxs in batch:
-                word_id = token_idxs[1].item()  # [eos, word_id, eos]
-                word = self._data["dico"].id2word[word_id]
-                combiner_word2id[word] = len(combiner_word2id)
-                re_bped_word = ' '.join(self._whole_word_splitter.split_word(word))
-                combiner_words.append(re_bped_word)
-        assert len(combiner_word2id) == len(combiner_words)
-        combiner_embeddings = generate_context_word_representation(combiner_words, lang, self._separated_word_embedder)
-        combiner_id2word = {idx: word for word, idx in combiner_word2id.items()}
-
-
-        # generate original mass representation
-        whole_words, separated_words2bpe, origin_word2id, origin_id2word, origin_embeddings = whole_separated_embeddings.properties()
-
-        # generate a dictionary
-        dic = {}
-        for word, combiner_idx in combiner_word2id.items():
-            assert word in origin_word2id
-            origin_idx = origin_word2id[word]
-            dic[combiner_idx] = [origin_idx]
-
-        logger.info("Number of combiner word: {} Number of origin word: {} Number of dic word: {}".format(len(combiner_id2word), len(origin_word2id), len(dic)))
-
-        # bli on whole + separated space
-        whole_separated_save_path = save_path + "_whole_sepa" if save_path is not None else None
-        bli_scores = self._bli.eval(combiner_embeddings, origin_embeddings, combiner_id2word, combiner_word2id, origin_id2word, origin_word2id, dic, save_path=whole_separated_save_path)
-        for key, value in bli_scores.items():
-            scores["{data}_whole_sepa_combiner_acc_{key}".format(data=data, key=key)] = value
-
-        # only whole words space
-        whole_id2word, whole_word2id, whole_embeddings = whole_separated_embeddings.whole_words_properties()
-        dic = {}
-        for word, combiner_idx in combiner_word2id.items():
-            assert word in whole_word2id
-            whole_idx = whole_word2id[word]
-            dic[combiner_idx] = [whole_idx]
-        whole_save_path = save_path +"_whole" if save_path is not None else None
-        whole_bli_scores = self._bli.eval(combiner_embeddings, whole_embeddings, combiner_id2word, combiner_word2id, whole_id2word, whole_word2id, dic, save_path=whole_save_path)
-        for key, value in whole_bli_scores.items():
-            scores["{data}_whole_combiner_acc_{key}".format(data=data, key=key)] = value
 
 
 
@@ -826,3 +743,46 @@ def eval_moses_bleu(ref, hyp):
     else:
         logger.warning('Impossible to parse BLEU score! "%s"' % result)
         return -1
+
+
+def combine(combiner, encoded, x1, len1, dico):
+    """
+    combine subword representation to a whole word representation using the combiner
+    Params:
+        combiner:
+
+        encoded: torch.FloatTensor, shape:[batch_size, max_len, dim]
+            encoded representation
+
+        x1: torch.LongTensor, shape: [len, batch_size]
+
+        len1: torch.LongTensor, shape: [batch_size]
+
+        dico: dictionary
+
+    Returns:
+        new_encoded: torch.FloatTensor
+        new_len: new_length after combine
+    """
+
+    x1 = x1.transpose(0, 1)  # [batch_size, len]
+    bs, len, _ = x1.size()
+    subword_labels = torch.LongTensor(bs, len).fill_(-1)
+    for sentence_id, sentence in enumerate(x1):
+        cur_subword_labels = []
+        subword_finished = True
+        for idx in range(len1[sentence_id]):
+            cur_token = dico.id2word[sentence[idx].item()]
+            if not cur_token.endswith("@@"):
+                if subword_finished:
+                    subword_labels.append(WHOLEWORD)
+                else:
+                    subword_labels.append(SUBWORD_END)
+                    subword_finished = True
+            else:
+                subword_finished = False
+                subword_labels.append(SUBWORD_FRONT)
+
+    new_encoded, new_lens = combiner.encode(encoded, len1, subword_labels)
+
+    return new_encoded, new_lens

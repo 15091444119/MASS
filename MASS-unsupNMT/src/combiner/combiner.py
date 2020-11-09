@@ -7,6 +7,57 @@ from src.evaluation.utils import Context2Sentence
 from src.utils import AttrDict
 from src.evaluation.utils import package_module
 
+class Combiner(nn.Module):
+    """
+    Combine representations
+    """
+
+    def __init__(self):
+        super.__init__()
+
+    def combine(self, encoded, lengths, subword_labels):
+        """
+        Combine subword representations to whole word representation
+        """
+        raise NotImplementedError
+
+    def encode(self, encoded, lengths, subword_labels):
+        """
+        combine, and get the new representation
+        """
+        representation = self.combine(encoded, lengths, subword_labels)
+
+        new_lens = []
+        for sentence_labels in subword_labels:
+            if label ==
+
+
+class LastTokenCombiner(Combiner):
+
+    def __init__(self, params):
+        super.__init__()
+        transformer_layer = nn.TransformerEncoderLayer(d_model=params.emb_dim, nhead=params.n_heads,
+                                                       dim_feedforward=params.emb_dim * 4)
+        self._transformer_encoder = nn.TransformerEncoder(transformer_layer, num_layers=params.n_combiner_layers)
+
+    def combine(self, encoded, lengths, subword_labels):
+
+        assert encoded.size(1) == lengths.size(0)
+        max_length = encoded.size(0)
+        # src_key_padding_mask set padding with false
+        padding_mask = (~(get_masks(slen=max_length, lengths=lengths, causal=False)[0])).to(
+            encoded.device)  # (batch_size, max_length)
+        outputs = self._transformer_encoder(src=encoded, src_key_padding_mask=padding_mask)
+
+        subword_last_token_mask = self.word_end_mask(subword_labels)
+        representation = outputs.masked_select(subword_last_token_mask).view(-1, self.output_dim)
+
+        return representation
+
+    @classmethod
+    def word_end_mask(cls, subword_labels):
+        mask = subword_labels.eq(SUBWORD_END)
+
 
 class TransformerCombiner(nn.Module):
 
