@@ -6,6 +6,8 @@ import pdb
 SEPARATOR = "@@"
 WORD_END = "</w>"
 
+from src.combiner.constant import NOT_USED_TOKEN, SKIPPED_TOKEN, SUBWORD_END, SUBWORD_FRONT
+
 
 def encode_word(orig, bpe_codes, max_merge_num=None, return_merge_count=False):
     """Encode word based on list of BPE merge operations, which are applied consecutively
@@ -205,7 +207,7 @@ class WholeWordSplitter(object):
 
         return new_batch, new_lengths  #, origin_mask, new_mask
 
-    def re_encode_sentence(self, sentence, kept_words=None):
+    def re_encode_sentence(self, sentence, kept_words=None, re_encode_rate=1.0):
         """
         for each word in the sentence, if it is a whole word, we randomly encode it
         params:
@@ -214,6 +216,8 @@ class WholeWordSplitter(object):
             kept_words: set
                 set of words which should not be re encoded, if None, an empty set is used,
                 always some special tokens
+            re_encode_rate:  float
+                probability of splitting the whole word
         Returns:
             a list of new tokens
             and a dict to map the original word to the re encoded word
@@ -232,8 +236,15 @@ class WholeWordSplitter(object):
                 new_sentence.append(word)
             elif not word.endswith(SEPARATOR) and (idx == 0 or not sentence[idx - 1].endswith(SEPARATOR)):
                 # is a whole word
-                re_encoded_word = self.split_word(word)
-                new_sentence.extend(re_encoded_word)
+                if len(word) == 1:
+                    new_sentence.append(word)
+                else:
+                    prob = random.random()
+                    if prob <= re_encode_rate:
+                        re_encoded_word = self.split_word(word)
+                        new_sentence.extend(re_encoded_word)
+                    else:
+                        new_sentence.append(word)
             else:
                 new_sentence.append(word)
 
@@ -242,7 +253,7 @@ class WholeWordSplitter(object):
 
         return new_sentence, mapper
 
-    def re_encode_batch_sentences(self, batch, lengths, dico, params):
+    def re_encode_batch_sentences(self, batch, lengths, dico, re_encode_rate):
         """
         for batch and length generated from src.data.dataset,
         we re encode it to another batch which split the word
@@ -253,8 +264,9 @@ class WholeWordSplitter(object):
 
             dico: src.data.dictionary object
 
-            params:
-                mass params
+            re_encode_rate: float
+                probability to re encode a whole word
+
         returns:
             new_batch: torch.LongTensor (new_max_length, batch_size)
 
@@ -268,11 +280,11 @@ class WholeWordSplitter(object):
         mappers = []
         batch_size = len(lengths)
         kept_words = set([dico.id2word[x] for x in
-                          [params.eos_index, params.bos_index, params.unk_index, params.pad_index]])
+                          [dico.eos_index, dico.bos_index, dico.unk_index, dico.pad_index]])
 
         for i in range(batch_size):
             raw_sentence = [dico.id2word[idx.item()] for idx in batch[:lengths[i], i]]
-            new_sentence, mapper = self.re_encode_sentence(raw_sentence, kept_words)
+            new_sentence, mapper = self.re_encode_sentence(raw_sentence, kept_words, re_encode_rate=re_encode_rate)
             new_sentences.append(new_sentence)
             mappers.append(mapper)
 
@@ -282,16 +294,58 @@ class WholeWordSplitter(object):
         for i in range(batch_size):
             new_idxs.append(np.array([dico.index(word) for word in new_sentences[i]]))
 
-        new_batch = torch.LongTensor(new_max_length, batch_size).fill_(params.pad_index)
+        new_batch = torch.LongTensor(new_max_length, batch_size).fill_(dico.pad_index)
 
         for i in range(batch_size):
             new_batch[:new_lengths[i], i].copy_(torch.from_numpy(new_idxs[i]))
 
         new_lengths = torch.tensor(new_lengths)
 
-        origin_mask, new_mask = get_sentence_combiner_mask(mappers, lengths, new_lengths)
+        trained_whole_word_mask = get_train_mask(mappers, lengths)
+        combine_labels = get_combine_labels(mappers, lengths, new_lengths)
 
-        return new_batch, new_lengths, origin_mask, new_mask
+        return new_batch, new_lengths, trained_whole_word_mask, combine_labels
+
+def get_train_mask(mappers, lengths):
+    """
+    trained whole word will be masked as True
+    Params:
+        mappers:
+        lengths:
+        new_lengths:
+    Returns:
+        trained_whole_word_mask: shape: (bs, len)
+    """
+    mask = torch.BoolTensor(lengths.size(0), lengths.max().item()).fill_(False)
+    for sentence_id, mapper in enumerate(mappers):
+        for idx in range(lengths[sentence_id].item()):
+            if mapper[idx][1] - mapper[idx][0] > 1: # is a word be separated
+                mask[sentence_id][idx] = True
+    return mask
+
+
+def get_combine_labels(mappers, lengths, new_lengths):
+    """
+    for the new encoded words, set labels for skipped tokens, combiner subword front, combiner subword end
+     and not used tokens(pad)
+    Params:
+        mappers:
+        lengths:
+        new_lengths:
+    Returns: 
+        combine_labels: [bs, new_length]
+    """
+    combine_labels = torch.LongTensor(new_lengths.size(0), new_lengths.max().item()).fill_(NOT_USED_TOKEN)
+
+    for sentence_id, mapper in enumerate(mappers):
+        for idx in range(lengths[sentence_id].item()):
+            if mapper[idx][1] - mapper[idx][0] > 1:
+                combine_labels[sentence_id][mapper[idx][0]:mapper[idx][1] - 1].fill_(SUBWORD_FRONT)
+                combine_labels[sentence_id][mapper[idx][1] - 1].fill_(SUBWORD_END)
+            else:
+                combine_labels[sentence_id][mapper[idx][0]].fill_(SKIPPED_TOKEN)
+
+    return combine_labels
 
 
 class RandomBpeSplitter(WholeWordSplitter):

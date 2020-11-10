@@ -19,7 +19,8 @@ from .utils import SenteceEmbedder, WordEmbedderWithCombiner
 from src.combiner.combiner import MultiLingualNoneParaCombiner
 from .bli import BLI
 from .eval_context_bli import eval_whole_separated_bli, read_retokenize_words, generate_context_word_representation, encode_whole_word_separated_word, generate_and_eval
-from src.combiner.constant import WHOLEWORD, SUBWORD_FRONT, SUBWORD_END
+from src.combiner.constant import SKIPPED_TOKEN, SUBWORD_FRONT, SUBWORD_END, NOT_USED_TOKEN
+from src.trainer import combiner_loss
 
 
 BLEU_SCRIPT_PATH = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'multi-bleu.perl')
@@ -336,26 +337,24 @@ class CombinerEvaluator(Evaluator):
     def __init__(self, trainer, data, params, decoder):
 
         super().__init__(trainer, data, params)
-        self._data = data
-        self._params = params
-        self._encoder = trainer.encoder
-        self._origin_tokens2word = trainer.origin_tokens2word
-        self._combiner = trainer.combiner
-        self._trained_lang = params.trained_lang
-        self._other_lang = params.other_lang
-        self._bli = BLI(params.bli_preprocess_method, params.bli_batch_size, params.bli_metric, params.bli_csls_topk)
-        self._whole_word_splitter = trainer.whole_word_splitter
-
-        self._whole_word_embedder = SenteceEmbedder(self._encoder, params, self._data["dico"], context_extractor=params.origin_context_extractor)
-        self._separated_word_embedder = WordEmbedderWithCombiner(self._encoder, self._combiner, params, self.data["dico"])
-
-        self._loss_function = trainer.loss_function
-
-        # tokenize words if we want to split to word in to char
-        self._tokenized_words = read_retokenize_words(params.bped_words_path, self._whole_word_splitter)
+        self.encoder = trainer.encoder
+        self.combiner = trainer.combiner
+        self.whole_word_splitter = trainer.whole_word_splitter
+        self.loss_function = trainer.loss_function
 
         # decoder ( for evaluate word translate)
-        self._decoder = decoder
+        self.decoder = decoder
+
+    def run_all_evals(self, epoch):
+        scores = OrderedDict({'epoch': epoch})
+        params = self.params
+        for data_set in ['valid', 'test']:
+            self.evaluate_mt(scores, data_set, params.src_lang, params.tgt_lang, eval_bleu=True)
+        for data_set in ['valid', 'test']:
+            self.eval_loss(scores, data_set, params.src_lang)
+
+        return scores
+
 
     def evaluate_mt(self, scores, data_set, lang1, lang2, eval_bleu):
         """
@@ -401,10 +400,10 @@ class CombinerEvaluator(Evaluator):
 
             # encode source sentence
             enc1 = encoder('fwd', x=x1, lengths=len1, langs=langs1, causal=False)
-            enc1 = enc1.transpose(0, 1)
+            enc1 = enc1.transpose(0, 1) # [bs, len, dim]
 
             # combine subword into whole word representation
-            combined_enc, combined_len = combine(enc1, self._combiner, x1, len1, self.dico)
+            combined_enc, combined_len = combine(self.combiner, enc1, x1, len1, self.dico)
 
             # decode target sentence
             dec2 = decoder('fwd', x=x2, lengths=len2, langs=langs2, causal=True, src_enc=combined_enc, src_len=combined_len)
@@ -453,38 +452,32 @@ class CombinerEvaluator(Evaluator):
             scores['%s_%s-%s_mt_bleu' % (data_set, lang1, lang2)] = bleu
 
 
-    def eval_loss(self, scores, lang):
+    def eval_loss(self, scores, data_set, lang):
         """
         evaluate combiner valid loss
 
         """
-        params = self._params
+        params = self.params
         lang_id = params.lang2id[lang]
-        data_set = "valid"
         n_words = 0
         all_loss = 0
         for batch, lengths in self.get_iterator(data_set, lang):
-            new_batch, new_lengths, whole_word_mask, subword_labels = self.whole_word_splitter.split_batch_sentences(
-                batch, lengths, self.data["dico"])
+            loss, trained_words = combiner_loss(
+                encoder=self.encoder,
+                combiner=self.combiner,
+                batch=batch,
+                lengths=lengths,
+                lang_id=lang_id,
+                splitter=self.whole_word_splitter,
+                re_encode_rate=params.re_encode_rate,
+                dico=self.data["dico"],
+                loss_function=self.loss_function,
+                is_train=False
+            )
+            n_words += trained_words
+            all_loss += loss.item() * trained_words
 
-            # original word representations
-            self.encoder.eval()
-            with torch.no_grad():
-                langs =
-                origin_word_rep = self.encoder(batch, lengths, langs)
-            whole_word_rep = origin_word_rep.masked_select(whole_word_mask)
-
-            # combiner whole word representation
-            self.combiner.train()
-            combiner_rep = self.combiner(origin_word_rep, new_lengths, subword_labels)
-
-            # mse loss
-            loss = self.loss_function(whole_word_rep, combiner_rep)
-
-            n_words += origin_word_rep.size(0)
-            all_loss += loss.item() * origin_word_rep.size(0)
-
-        scores["{}_loss".format(data_set)] = all_loss / n_words
+        scores["{}_{}_loss".format(data_set, lang)] = all_loss / n_words
 
 
 
@@ -767,23 +760,42 @@ def combine(combiner, encoded, x1, len1, dico):
         new_len: new_length after combine
     """
 
-    x1 = x1.transpose(0, 1)  # [batch_size, len]
-    bs, len, _ = x1.size()
-    subword_labels = torch.LongTensor(bs, len).fill_(-1)
+    x1 = x1.transpose(0, 1)  # [batch_size, seq_len]
+    bs, seq_len = x1.size()
+    combine_labels = torch.LongTensor(bs, seq_len).fill_(NOT_USED_TOKEN)
+    need_combine = False  # no subword in the whole batch
+
     for sentence_id, sentence in enumerate(x1):
         subword_finished = True
+        cur_labels = []
         for idx in range(len1[sentence_id]):
             cur_token = dico.id2word[sentence[idx].item()]
             if not cur_token.endswith("@@"):
                 if subword_finished:
-                    subword_labels.append(WHOLEWORD)
+                    cur_labels.append(SKIPPED_TOKEN)
                 else:
-                    subword_labels.append(SUBWORD_END)
+                    cur_labels.append(SUBWORD_END)
+                    need_combine = True
                     subword_finished = True
             else:
                 subword_finished = False
-                subword_labels.append(SUBWORD_FRONT)
+                cur_labels.append(SUBWORD_FRONT)
 
-    new_encoded, new_lens = combiner.encode(encoded, len1, subword_labels)
+        assert subword_finished
+        combine_labels[sentence_id][:len(cur_labels)] = torch.LongTensor(cur_labels)
+
+    combine_labels = combine_labels.cuda()
+
+    """
+    print([dico.id2word[idx.item()] for idx in x1[0, :]])
+    print(len1[0])
+    print(combine_labels[0])
+    """
+
+    if need_combine:
+        new_encoded, new_lens = combiner.encode(encoded, len1, combine_labels)
+    else:
+        new_encoded = x1
+        new_lens = len1
 
     return new_encoded, new_lens

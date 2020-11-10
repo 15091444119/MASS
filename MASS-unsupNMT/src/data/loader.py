@@ -58,7 +58,9 @@ def load_binarized(path, params):
     """
     assert path.endswith('.pth')
     if params.debug_train:
-        path = path.replace('train', 'valid')
+        path = path.split("/")
+        path[-1] = path[-1].replace("train", "valid")
+        path = '/'.join(path)
     if getattr(params, 'multi_gpu', False):
         split_path = '%s.%i.pth' % (path[:-4], params.local_rank)
         if os.path.isfile(split_path):
@@ -136,7 +138,7 @@ def load_mono_data(params, data):
                 data['mono_stream'][lang][splt].select_data(a, b)
 
             # for denoising auto-encoding and online back-translation, we need a non-stream (batched) dataset
-            if lang in params.ae_steps or lang in params.bt_src_langs or lang in params.mass_steps or lang in params.combiner_steps:
+            if lang in params.ae_steps or lang in params.bt_src_langs or lang in params.mass_steps or lang == params.src_lang:
 
                 # create batched dataset
                 dataset = Dataset(mono_data['sentences'], mono_data['positions'], params)
@@ -325,9 +327,8 @@ def check_data_params(params):
                 mass_steps.append(tuple([src, tgt]))
 
     # combiner steps
-    params.combiner_steps = [s for s in params.combiner_steps.split(',') if len(s) > 0]
-    assert all([l in params.langs for l in params.combiner_steps])
-
+    assert params.src_lang in params.langs
+    assert params.tgt_lang in params.langs
 
     # back-translation steps
     params.bt_steps = [tuple(s.split('-')) for s in params.bt_steps.split(',') if len(s) > 0]
@@ -339,7 +340,7 @@ def check_data_params(params):
     params.bt_src_langs = [l1 for l1, _, _ in params.bt_steps]
 
     # check monolingual datasets
-    required_mono = set([l1 for l1, l2 in (params.mlm_steps + params.clm_steps) if l2 is None] + params.ae_steps + params.bt_src_langs + params.mass_steps + params.combiner_steps)
+    required_mono = set([l1 for l1, l2 in (params.mlm_steps + params.clm_steps) if l2 is None] + params.ae_steps + params.bt_src_langs + params.mass_steps + [params.src_lang])
     params.mono_dataset = {
         lang: {
             splt: os.path.join(params.data_path, '%s.%s.pth' % (splt, lang))
@@ -350,7 +351,7 @@ def check_data_params(params):
 
     # check parallel datasets
     required_para_train = set(params.clm_steps + params.mlm_steps + params.pc_steps + params.mt_steps)
-    required_para = required_para_train | set([(l2, l3) for _, l2, l3 in params.bt_steps] + mass_steps)
+    required_para = required_para_train | set([(l2, l3) for _, l2, l3 in params.bt_steps] + mass_steps + [(params.src_lang, params.tgt_lang)])
     params.para_dataset = {
         (src, tgt): {
             splt: (os.path.join(params.data_path, '%s.%s-%s.%s.pth' % (splt, src, tgt, src)),
@@ -361,7 +362,7 @@ def check_data_params(params):
         if src < tgt and ((src, tgt) in required_para or (tgt, src) in required_para)
     }
     assert all([all([os.path.isfile(p1) and os.path.isfile(p2) for p1, p2 in paths.values()]) for paths in params.para_dataset.values()])
-    
+
     # back parallel datasets
     params.back_dataset = {
         (src, tgt): (

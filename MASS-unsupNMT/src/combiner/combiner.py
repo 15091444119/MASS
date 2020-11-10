@@ -6,7 +6,7 @@ from src.evaluation.utils import Context2Sentence
 
 from src.utils import AttrDict
 from src.evaluation.utils import package_module
-from .constant import SKIPPED_TOKEN, SUBWORD_END, SUBWORD_FRONT, PAD_TOKEN
+from .constant import SKIPPED_TOKEN, SUBWORD_END, SUBWORD_FRONT, NOT_USED_TOKEN
 
 
 class Combiner(nn.Module):
@@ -15,9 +15,9 @@ class Combiner(nn.Module):
     """
 
     def __init__(self):
-        super.__init__()
+        super().__init__()
 
-    def combine(self, encoded, lengths, combine_labels):
+    def forward(self, encoded, lengths, combine_labels):
         """
         Combine subword representations to whole word representation
         combine subword front to subword end into whole word representation
@@ -26,6 +26,7 @@ class Combiner(nn.Module):
 
     def encode(self, encoded, lengths, combine_labels):
         """
+        combine subwords
         Params:
             encoded: [bs, len, dim]
             lengths: [bs]
@@ -35,9 +36,9 @@ class Combiner(nn.Module):
         else we use the combine function to generate a whole word representation
 
         Returns:
-            new_encoded, new_lens
+            new_encoded [bs, new_len, dim], new_lens [bs, new_len, dim]
         """
-        representation = self.combine(encoded, lengths, combine_labels) # [split word number, dim]
+        representation = self(encoded, lengths, combine_labels) # [split word number, dim]
 
         # get length
         new_lens = []
@@ -50,7 +51,7 @@ class Combiner(nn.Module):
             new_lens.append(len)
 
         cur_rep = 0
-        bs, _, dim = encoded.size(0)
+        bs, _, dim = encoded.size()
         new_encoded = torch.FloatTensor(bs, max(new_lens), dim).fill_(0.0).cuda()
         for sentence_idx, sentence_labels in enumerate(combine_labels):
             cur_pos = 0
@@ -66,19 +67,21 @@ class Combiner(nn.Module):
 
         new_lens = torch.LongTensor(new_lens).cuda()
 
+        assert cur_rep == representation.size(0)  # all representations are used
+
         return new_encoded, new_lens
 
 
 class LastTokenCombiner(Combiner):
 
     def __init__(self, params):
-        super.__init__()
+        super().__init__()
         transformer_layer = nn.TransformerEncoderLayer(d_model=params.emb_dim, nhead=params.n_heads,
                                                        dim_feedforward=params.emb_dim * 4)
         self.transformer_encoder = nn.TransformerEncoder(transformer_layer, num_layers=params.n_combiner_layers)
         self.output_dim = params.emb_dim
 
-    def combine(self, encoded, lengths, combine_labels):
+    def forward(self, encoded, lengths, combine_labels):
         """
         Args:
             encoded: [bs, len, dim]
@@ -99,7 +102,7 @@ class LastTokenCombiner(Combiner):
         outputs = self.transformer_encoder(src=encoded, src_key_padding_mask=padding_mask) #[len, bs, dim]
         outputs = outputs.transpose(0, 1) #[bs, len, dim]
 
-        subword_last_token_mask = self.word_end_mask(combine_labels) # [bs, len]
+        subword_last_token_mask = self.word_end_mask(combine_labels).unsqueeze(-1) # [bs, len, 1]
         representation = outputs.masked_select(subword_last_token_mask).view(-1, self.output_dim)
 
         return representation
@@ -218,18 +221,8 @@ class LinearCombiner(nn.Module):
         return rep
 
 
-
-
-
 def build_combiner(params):
-    if params.combiner == "transformer":
-        return TransformerCombiner(params)
-    elif params.combiner == "gru":
-        return GRUCombiner(params)
-    elif params.combiner == "linear":
-        return LinearCombiner(params)
-    else:
-        raise NotImplementedError
+    return LastTokenCombiner(params)
 
 
 class BiLingualCombiner(nn.Module):

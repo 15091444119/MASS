@@ -232,27 +232,16 @@ def get_parser():
 
     # combiner
     parser.add_argument("--splitter", type=str, choices=["BPE", "CHAR", "ROB"], help="use random bpe or character to split word")
-    parser.add_argument("--combiner_context_extractor", type=str)
-    parser.add_argument("--origin_context_extractor", type=str)
-    parser.add_argument("--combiner", type=str)
-    parser.add_argument("--combiner_steps", type=str, default="")
     parser.add_argument("--n_combiner_layers", type=int, default=4)
     parser.add_argument("--codes_path", type=str)
     parser.add_argument("--reload_combiner_path", type=str, default="")
 
-    # bli data
-    parser.add_argument("--bped_words_path", type=str, help="whole vocab for testing ")
-
-    # bli model
-    parser.add_argument("--trained_lang", type=str)
-    parser.add_argument("--other_lang", type=str)
-    parser.add_argument("--bli_preprocess_method", type=str, default="ucu")
-    parser.add_argument("--bli_batch_size", type=int, default=64)
-    parser.add_argument("--bli_metric", type=str, default="nn")
-    parser.add_argument("--bli_csls_topk", type=int, default=10)
-
     parser.add_argument("--combiner_loss", type=str, default="MSE", choices=["MSE", "COS", "BNC"])
     parser.add_argument("--eval_loss_sentences", type=int, default=10000)
+
+    parser.add_argument("--src_lang", type=str)
+    parser.add_argument("--tgt_lang", type=str)
+    parser.add_argument("--re_encode_rate", type=float, default=1.0)
 
     return parser
 
@@ -317,10 +306,6 @@ def main(params):
         for k, v in scores.items():
             logger.info("%s -> %.6f" % (k, v))
         logger.info("__log__:%s" % json.dumps(scores))
-        logger.info("None para:")
-        scores = evaluator.eval_non_para()
-        for k, v in scores.items():
-            logger.info("%s -> %.6f" % (k, v))
         exit()
 
     # summary writer
@@ -337,16 +322,15 @@ def main(params):
         while trainer.n_sentences < trainer.epoch_size:
 
             # combiner step
-            for lang in params.combiner_steps:
-                trainer.combiner_step(lang)
+            trainer.combiner_step(params.src_lang)
 
             trainer.iter()
 
             # evaluate loss
             if params.eval_loss_sentences != -1 and trainer.n_sentences - last_eval_loss_sentences >= params.eval_loss_sentences:
                 scores = {}
-                for lang in params.combiner_steps:
-                    evaluator.eval_loss(scores, lang)
+                for dataset in ["valid", "test"]:
+                    evaluator.eval_loss(scores, dataset, params.src_lang)
                 for k, v in scores.items():
                     logger.info("%s -> %.6f" % (k, v))
                 if params.is_master:

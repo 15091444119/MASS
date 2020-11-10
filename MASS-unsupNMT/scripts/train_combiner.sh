@@ -1,4 +1,4 @@
-export CUDA_VISIBLE_DEVICES="5"
+export CUDA_VISIBLE_DEVICES="0"
 MODEL=/home/data_ti5_d/zhouzh/low-resource-mt/MASS/MASS-unsupNMT/dumped/cn-en-zh-500w-ft-jointbpe-jointvocab/q6vn71z093/checkpoint.pth
 #MODEL=/home/data_ti5_d/zhouzh/low-resource-mt/MASS/MASS-unsupNMT/dumped/cn-en-zh-500w-wwm-reload/j03q6ubj61/periodic-50.pth
 #/home/data_ti5_d/zhouzh/low-resource-mt/MASS/MASS-unsupNMT/dumped/cn-en-zh-500w-wwm-reload/j03q6ubj61/periodic-50.pth
@@ -6,11 +6,9 @@ MODEL=/home/data_ti5_d/zhouzh/low-resource-mt/MASS/MASS-unsupNMT/dumped/cn-en-zh
 #MODEL=/home/data_ti5_d/zhouzh/low-resource-mt/MASS/MASS-unsupNMT/dumped/cn-en-zh-500w-pretrain-jointbpe-jointvocab/1jnrqg51bz/periodic-100.pth
 
 train(){
-  trained_lang=$1
-  other_lang=$2
 python train_combiner.py \
-	--exp_name ft-$SPLIT-$COMBINER-$COMBINER_EXTRACTOR-"$trained_lang"                             \
-	--data_path ./combiner_data \
+	--exp_name tmp                             \
+	--data_path /home/data_ti5_d/zhouzh/low-resource-mt/XLM_MASS_preprocessed_data/pretrain/cn-split-sen-zh-en-pretrain \
 	--lgs 'zh-en'                                        \
 	--encoder_only False                                 \
 	--reload_model "$MODEL,$MODEL" \
@@ -20,40 +18,20 @@ python train_combiner.py \
 	--dropout 0.1                                        \
 	--attention_dropout 0.1                              \
 	--gelu_activation true                               \
-	--batch_size 100 \
-	--optimizer adam_inverse_sqrt,beta1=0.9,beta2=0.98,lr=0.0001 \
+	--batch_size 32 \
+	--optimizer adam,lr=0.0001 \
 	--epoch_size 50000                                  \
-	--max_epoch 200                                      \
-	--bped_words_path ./word_vocab/"$trained_lang".vocab.bpe \
-	--trained_lang "$trained_lang" \
-	--other_lang "$other_lang" \
+	--max_epoch 1000                                      \
+	--src_lang "zh" \
+	--tgt_lang "en" \
 	--codes_path /home/data_ti5_d/zhouzh/low-resource-mt/XLM_MASS_preprocessed_data/pretrain/cn-split-sen-zh-en-pretrain/codes \
-	--combiner_steps "$trained_lang" \
 	--combiner_loss "COS" \
-	--combiner $COMBINER \
   --n_combiner_layers 4 \
-  --validation_metrics _valid_loss,valid_whole_combiner_acc_top1_acc \
-  --stopping_criterion valid_whole_combiner_acc_top1_acc,10 \
-  --bli_preprocess_method 'u' \
-  --splitter $SPLIT \
-  --origin_context_extractor "before_eos" \
-  --combiner_context_extractor $COMBINER_EXTRACTOR \
-  --reload_combiner_path /home/data_ti5_d/zhouzh/low-resource-mt/subword-combiner/MASS-unsupNMT/dumped/ft-CHAR-gru-average-zh/nk6922nry0/best-valid_loss.pth \
-  --eval_only True
-
+  --validation_metrics _valid_zh_loss,valid_zh-en_mt_bleu \
+  --stopping_criterion valid_zh-en_mt_bleu,10 \
+  --splitter ROB \
+  --debug_train False \
+  --eval_only False \
+  --re_encode_rate 0.3
 }
-
-COMBINER="gru"
-SPLIT="CHAR"
-COMBINER_EXTRACTOR="average"
-train zh en
-exit
-
-
-COMBINER="gru"
-for SPLIT in "CHAR" "BPE" "ROB"; do
-    for COMBINER_EXTRACTOR in "average" "word_token_average" "last_time"; do
-     train zh en
-     train en zh
-    done
-done
+train

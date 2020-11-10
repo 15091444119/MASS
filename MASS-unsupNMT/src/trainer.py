@@ -713,6 +713,63 @@ class SingleTrainer(Trainer):
         super().__init__(data, params)
 
 
+def combiner_loss(encoder, combiner, batch, lengths, lang_id, splitter, re_encode_rate, dico, loss_function, is_train):
+
+        new_batch, new_lengths, trained_whole_word_mask, combine_labels = splitter.re_encode_batch_sentences(batch, lengths, dico, re_encode_rate)
+
+        batch, lengths, new_batch, new_lengths, trained_whole_word_mask, combine_labels = to_cuda(batch, lengths, new_batch, new_lengths, trained_whole_word_mask, combine_labels)
+
+        """
+        dico = self.data["dico"]
+
+        debug data
+        print([dico.id2word[idx.item()] for idx in batch[:, 0]])
+
+        print(lengths[0])
+
+        print([dico.id2word[idx.item()] for idx in new_batch[:, 0]])
+
+        print(new_lengths[0])
+
+        print(trained_whole_word_mask[0])
+
+        print(combine_labels[0])
+        """
+
+
+        # original word representations
+        encoder.eval()
+        with torch.no_grad():
+            langs = batch.clone().fill_(lang_id)
+            origin_word_rep = encoder("fwd", x=batch, lengths=lengths, langs=langs, causal=False)  # [len, bs, dim]
+            origin_word_rep = origin_word_rep.transpose(0, 1)  # [bs, len, dim]
+            output_dim = origin_word_rep.size(-1)
+
+        whole_word_rep = origin_word_rep.masked_select(trained_whole_word_mask.unsqueeze(-1)).view(-1, output_dim)  # [combine_word_num, dim]
+
+        # combiner whole word representation
+        encoder.eval()
+        with torch.no_grad():
+            langs = new_batch.clone().fill_(lang_id)
+            new_rep = encoder("fwd", x=new_batch, lengths=new_lengths, langs=langs, causal=False)  # [len, bs, dim]
+            new_rep = new_rep.transpose(0, 1) #[bs, len, dim]
+
+        # combiner forward(only combiner is trained)
+        if is_train:
+            combiner.train()
+            combiner_rep = combiner(new_rep, new_lengths, combine_labels)  # [combine_word_num, dim]
+            loss = loss_function(whole_word_rep, combiner_rep)
+        else:
+            combiner.eval()
+            with torch.no_grad():
+                combiner_rep = combiner(new_rep, new_lengths, combine_labels)  # [combine_word_num, dim]
+                loss = loss_function(whole_word_rep, combiner_rep)
+
+        trained_words = whole_word_rep.size(0)
+
+        return loss, trained_words
+
+
 class CombinerTrainer(Trainer):
     """
     only update parameters of a combiner
@@ -740,23 +797,19 @@ class CombinerTrainer(Trainer):
         lang_id = params.lang2id[lang]
         batch, lengths = self.get_batch("combine", lang)
 
-        new_batch, new_lengths, whole_word_mask, combine_labels = self.whole_word_splitter.split_batch_sentences(batch, lengths, self.data["dico"])
-
-        # original word representations
-        self.encoder.eval()
-        with torch.no_grad():
-            langs = batch.clone().fill_(lang_id)
-            origin_word_rep = self.encoder("fwd", x=batch, lengths=lengths, langs=langs, causal=False)  # [len, bs, dim]
-            origin_word_rep = origin_word_rep.transpose(0, 1)  # [bs, len, dim]
-
-        whole_word_rep = origin_word_rep.masked_select(whole_word_mask.unsqueeze(-1))  # [combine_word_num, dim]
-
-        # combiner whole word representation
-        self.combiner.train()
-        combiner_rep = self.combiner(origin_word_rep, new_lengths, combine_labels)  # [combine_word_num, dim]
-
-        # mse loss
-        loss = self.loss_function(whole_word_rep, combiner_rep)
+        loss, trained_words = \
+            combiner_loss(
+                encoder=self.encoder,
+                combiner=self.combiner,
+                batch=batch,
+                lengths=lengths,
+                lang_id=lang_id,
+                splitter=self.whole_word_splitter,
+                re_encode_rate=params.re_encode_rate,
+                dico=self.data["dico"],
+                loss_function=self.loss_function,
+                is_train=True
+            )
 
         self.stats[("combiner-{}".format(lang))].append(loss.item())
 
@@ -764,7 +817,7 @@ class CombinerTrainer(Trainer):
 
         self.n_sentences += params.batch_size
         self.stats['processed_s'] += lengths.size(0)
-        self.stats['processed_w'] += (lengths - 1).sum().item()
+        self.stats['processed_w'] += trained_words
 
 
 class EncDecTrainer(Trainer):
