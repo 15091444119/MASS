@@ -18,7 +18,7 @@ python train_combiner.py \
 	--dropout 0.1                                        \
 	--attention_dropout 0.1                              \
 	--gelu_activation true                               \
-	--batch_size 32 \
+	--batch_size 64 \
 	--optimizer adam,lr=0.0001 \
 	--epoch_size 50000                                  \
 	--max_epoch 1000                                      \
@@ -31,7 +31,7 @@ python train_combiner.py \
   --stopping_criterion valid_zh-en_mt_bleu,10 \
   --splitter ROB \
   --debug_train False \
-  --eval_only False \
+  --eval_only True \
   --re_encode_rate 0.3
 }
 train

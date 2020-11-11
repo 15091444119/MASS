@@ -48,6 +48,7 @@ class Combiner(nn.Module):
                 label = label.item()
                 if label == SKIPPED_TOKEN or label == SUBWORD_END:
                     len += 1
+            assert len == (sentence_labels.eq(SKIPPED_TOKEN).sum() + sentence_labels.eq(SUBWORD_END).sum())
             new_lens.append(len)
 
         cur_rep = 0
