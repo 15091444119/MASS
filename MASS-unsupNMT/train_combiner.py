@@ -21,7 +21,7 @@ from src.slurm import init_signal_handler, init_distributed_mode
 from src.data.loader import check_data_params, load_data
 from src.utils import bool_flag, initialize_exp, set_sampling_probs, shuf_order
 from src.model import check_model_params, build_model
-from src.trainer import SingleTrainer, EncDecTrainer, CombinerTrainer
+from src.trainer import SingleTrainer, EncCombinerDecTrainer
 from src.evaluation.evaluator import SingleEvaluator, EncDecEvaluator, CombinerEvaluator
 from src.combiner.combiner import build_combiner
 from src.combiner.splitter import WholeWordSplitter
@@ -177,6 +177,8 @@ def get_parser():
                         help="MASS coefficient")
     parser.add_argument("--lambda_span", type=str, default="10000",
                         help="Span coefficient")
+    parser.add_argument("--lambda_mass_combine", type=str, default="1",
+                        help="MASS and combine coefficient")
 
     # training steps
     parser.add_argument("--clm_steps", type=str, default="",
@@ -297,7 +299,7 @@ def main(params):
 
     # build trainer, reload potential checkpoints / build evaluator
     loss_function = get_loss_function(params)
-    trainer = CombinerTrainer(encoder, combiner, data, params, whole_word_splitter, loss_function)
+    trainer = EncCombinerDecTrainer(encoder, combiner, decoder, data, whole_word_splitter, loss_function, params)
     evaluator = CombinerEvaluator(trainer, data, params, decoder)
 
     # evaluation
@@ -322,7 +324,11 @@ def main(params):
         while trainer.n_sentences < trainer.epoch_size:
 
             # combiner step
-            trainer.combiner_step(params.src_lang)
+            for lang in params.langs:
+               trainer.mass_step_with_explicit_split(lang, params.lambda_mass_combine)
+
+            for lang in params.langs:
+                trainer.mass_step_with_combiner(lang, params.lambda_mass)
 
             trainer.iter()
 

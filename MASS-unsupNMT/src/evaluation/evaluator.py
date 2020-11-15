@@ -20,7 +20,6 @@ from src.combiner.combiner import MultiLingualNoneParaCombiner
 from .bli import BLI
 from .eval_context_bli import eval_whole_separated_bli, read_retokenize_words, generate_context_word_representation, encode_whole_word_separated_word, generate_and_eval
 from src.combiner.constant import SKIPPED_TOKEN, SUBWORD_FRONT, SUBWORD_END, NOT_USED_TOKEN
-from src.trainer import combiner_loss
 
 
 BLEU_SCRIPT_PATH = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'multi-bleu.perl')
@@ -339,7 +338,7 @@ class CombinerEvaluator(Evaluator):
         super().__init__(trainer, data, params)
         self.encoder = trainer.encoder
         self.combiner = trainer.combiner
-        self.whole_word_splitter = trainer.whole_word_splitter
+        self.splitter = trainer.splitter
         self.loss_function = trainer.loss_function
 
         # decoder ( for evaluate word translate)

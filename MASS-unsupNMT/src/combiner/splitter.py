@@ -6,7 +6,8 @@ import pdb
 SEPARATOR = "@@"
 WORD_END = "</w>"
 
-from src.combiner.constant import NOT_USED_TOKEN, SKIPPED_TOKEN, SUBWORD_END, SUBWORD_FRONT
+from src.combiner.constant import NOT_USED_TOKEN, SKIPPED_TOKEN, SUBWORD_END, SUBWORD_FRONT, MASKED_TOKEN
+from src.data.dictionary import MASK_WORD
 
 
 def encode_word(orig, bpe_codes, max_merge_num=None, return_merge_count=False):
@@ -272,15 +273,17 @@ class WholeWordSplitter(object):
 
             new_lengths:
 
-            origin_mask: words been separated in new batch are masked
+            train_whole_word_mask: whole word which are new separated will be masked
 
-            new_mask: whole word end positions are masked
+            train_combiner_labels: -1, 1, 2, 3 for pad, skipped tokens, subword front, subword end (only new separated words are considered)
+
+            combine_labels:  (old separated tokens and new separated tokens are all considered)
         """
         new_sentences = []
         mappers = []
         batch_size = len(lengths)
         kept_words = set([dico.id2word[x] for x in
-                          [dico.eos_index, dico.bos_index, dico.unk_index, dico.pad_index]])
+                          [dico.eos_index, dico.bos_index, dico.unk_index, dico.pad_index]] + [MASK_WORD])  # these words will not be splitted
 
         for i in range(batch_size):
             raw_sentence = [dico.id2word[idx.item()] for idx in batch[:lengths[i], i]]
@@ -301,12 +304,59 @@ class WholeWordSplitter(object):
 
         new_lengths = torch.tensor(new_lengths)
 
-        trained_whole_word_mask = get_train_mask(mappers, lengths)
-        combine_labels = get_combine_labels(mappers, lengths, new_lengths)
+        trained_words_mask = get_trained_words_mask(mappers, lengths)
+        trained_subwords_labels = get_trained_subwords_labels(mappers, lengths, new_lengths)
 
-        return new_batch, new_lengths, trained_whole_word_mask, combine_labels
 
-def get_train_mask(mappers, lengths):
+        return new_batch, new_lengths, trained_words_mask, trained_subwords_labels
+
+
+def get_combine_labels(batch, dico):
+    """
+    pad: -1
+    whole_words(skipped token, containing masked token, eos, bos ...): 1
+    subword front: 2
+    subword end: 3
+
+    params:
+        batch: [len, bs]
+        dico:
+
+    returns:
+        combine_labels: [bs, len]
+    """
+
+    seq_len, bs = batch.size()
+    combine_labels = torch.LongTensor(bs, seq_len).fill_(NOT_USED_TOKEN)
+
+    for i in range(bs):
+        word_finished = True
+        for j in range(seq_len):
+            cur_word = dico.id2word[batch[j][i].item()]
+            label = 0
+            if cur_word == dico.id2word[dico.pad_index]:
+                label = NOT_USED_TOKEN
+            elif "@@" not in cur_word:
+                if word_finished is False:
+                    label = SUBWORD_END
+                else:
+                    if cur_word == MASK_WORD:
+                        label = MASKED_TOKEN
+                    else:
+                        label = SKIPPED_TOKEN
+                word_finished = True
+            elif "@@" in cur_word:
+                label = SUBWORD_FRONT
+                word_finished = False
+
+            combine_labels[i][j] = label
+
+        assert word_finished
+
+    return combine_labels
+
+
+def get_trained_words_mask(mappers, lengths):
     """
     trained whole word will be masked as True
     Params:
@@ -324,10 +374,13 @@ def get_train_mask(mappers, lengths):
     return mask
 
 
-def get_combine_labels(mappers, lengths, new_lengths):
+def get_trained_subwords_labels(mappers, lengths, new_lengths):
     """
     for the new encoded words, set labels for skipped tokens, combiner subword front, combiner subword end
      and not used tokens(pad)
+
+     words didn't be new splitted will not count
+
     Params:
         mappers:
         lengths:

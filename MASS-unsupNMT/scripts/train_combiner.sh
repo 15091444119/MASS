@@ -1,9 +1,9 @@
 export CUDA_VISIBLE_DEVICES="0"
-MODEL=/home/data_ti5_d/zhouzh/low-resource-mt/MASS/MASS-unsupNMT/dumped/cn-en-zh-500w-ft-jointbpe-jointvocab/q6vn71z093/checkpoint.pth
+#MODEL=/home/data_ti5_d/zhouzh/low-resource-mt/MASS/MASS-unsupNMT/dumped/cn-en-zh-500w-ft-jointbpe-jointvocab/q6vn71z093/checkpoint.pth
 #MODEL=/home/data_ti5_d/zhouzh/low-resource-mt/MASS/MASS-unsupNMT/dumped/cn-en-zh-500w-wwm-reload/j03q6ubj61/periodic-50.pth
 #/home/data_ti5_d/zhouzh/low-resource-mt/MASS/MASS-unsupNMT/dumped/cn-en-zh-500w-wwm-reload/j03q6ubj61/periodic-50.pth
 #/home/data_ti5_d/zhouzh/low-resource-mt/MASS/MASS-unsupNMT/dumped/cn-en-zh-500w-checkpoint-pretrain/x363q5pus9/periodic-150.pth
-#MODEL=/home/data_ti5_d/zhouzh/low-resource-mt/MASS/MASS-unsupNMT/dumped/cn-en-zh-500w-pretrain-jointbpe-jointvocab/1jnrqg51bz/periodic-100.pth
+MODEL=/home/data_ti5_d/zhouzh/low-resource-mt/MASS/MASS-unsupNMT/dumped/cn-en-zh-500w-pretrain-jointbpe-jointvocab/1jnrqg51bz/periodic-100.pth
 
 train(){
 python train_combiner.py \
@@ -11,7 +11,7 @@ python train_combiner.py \
 	--data_path /home/data_ti5_d/zhouzh/low-resource-mt/XLM_MASS_preprocessed_data/pretrain/cn-split-sen-zh-en-pretrain \
 	--lgs 'zh-en'                                        \
 	--encoder_only False                                 \
-	--reload_model "$MODEL,$MODEL" \
+	--reload_model "" \
 	--emb_dim 1024                                       \
 	--n_layers 6                                         \
 	--n_heads 8                                          \
@@ -30,8 +30,10 @@ python train_combiner.py \
   --validation_metrics _valid_zh_loss,valid_zh-en_mt_bleu \
   --stopping_criterion valid_zh-en_mt_bleu,10 \
   --splitter ROB \
-  --debug_train False \
-  --eval_only True \
-  --re_encode_rate 0.3
+  --debug_train True \
+  --eval_only False \
+  --re_encode_rate 0.3 \
+  --word_mask_keep_rand 1.0,0.0,0.0 \
+  --word_mass 0.5
 }
 train
