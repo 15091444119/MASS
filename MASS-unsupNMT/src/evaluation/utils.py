@@ -171,6 +171,7 @@ def get_mask(lengths, all_words, expand=None, ignore_first=False, batch_first=Fa
         mask = mask.cuda()
     return mask
 
+
 def word_token_mask(lengths, hidden_dim):
     bs, slen = lengths.size(0), lengths.max()
     mask = torch.BoolTensor(slen, bs).zero_()
@@ -180,6 +181,7 @@ def word_token_mask(lengths, hidden_dim):
     mask = mask.transpose(0, 1)
     mask = mask.cuda()
     return mask
+
 
 class Context2Sentence(nn.Module):
     def __init__(self, context_extractor):

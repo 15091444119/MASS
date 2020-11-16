@@ -363,7 +363,7 @@ class EncCombinerDecEvaluator(Evaluator):
 
     def eval_all(self, epoch):
 
-        scores = {"epoch":epoch}
+        scores = {"epoch": epoch}
 
         self.eval_loss(scores)
         self.eval_mt(scores)

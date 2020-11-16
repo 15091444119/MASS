@@ -121,6 +121,7 @@ class Trainer(object):
         self.n_sentences = 0
         self.stats = OrderedDict(
             [('processed_s', 0), ('processed_w', 0)] +
+            [('trained_combiner_words', 0)] +
             [('CLM-%s' % l, []) for l in params.langs] +
             [('CLM-%s-%s' % (l1, l2), []) for l1, l2 in data['para'].keys()] +
             [('CLM-%s-%s' % (l2, l1), []) for l1, l2 in data['para'].keys()] +
@@ -223,12 +224,14 @@ class Trainer(object):
         # processing speed
         new_time = time.time()
         diff = new_time - self.last_time
-        s_speed = "{:7.2f} sent/s - {:8.2f} words/s - ".format(
+        s_speed = "{:7.2f} sent/s - {:8.2f} words/s - {:8.2f} combiner_words/s".format(
             self.stats['processed_s'] * 1.0 / diff,
-            self.stats['processed_w'] * 1.0 / diff
+            self.stats['processed_w'] * 1.0 / diff,
+            self.stats['trained_combiner_words'] * 1.0 / diff
         )
         self.stats['processed_s'] = 0
         self.stats['processed_w'] = 0
+        self.stats['trained_combiner_words'] = 0
         self.last_time = new_time
 
         # log speed + stats + learning rate
@@ -1227,6 +1230,7 @@ class EncCombinerDecTrainer(Trainer):
         self.optimize(loss, ["encoder", "combiner", "decoder"])
 
         self.n_sentences += params.batch_size
+        self.stats["trained_combiner_words"] += statistics["trained_combiner_words"]
         self.stats["processed_s"] += statistics["processed_s"]
         self.stats["processed_w"] += statistics["processed_w"]
 

@@ -239,7 +239,7 @@ def get_parser():
     parser.add_argument("--reload_combiner_path", type=str, default="")
 
     parser.add_argument("--combiner_loss", type=str, default="MSE", choices=["MSE", "COS", "BNC"])
-    parser.add_argument("--eval_loss_sentences", type=int, default=10000)
+    parser.add_argument("--eval_loss_sentences", type=int, default=-1)
 
     parser.add_argument("--src_lang", type=str)
     parser.add_argument("--tgt_lang", type=str)
@@ -296,6 +296,11 @@ def main(params):
         encoder, decoder = build_model(params, data['dico']) # reload decoder
         combiner = reload_combiner(params, data['dico'])
         logger.info("{}\n{}".format(encoder, combiner))
+
+    if params.multi_gpu:
+        encoder = apex.parallel.DistributedDataParallel(encoder, delay_allreduce=True)
+        decoder = apex.parallel.DistributedDataParallel(decoder, delay_allreduce=True)
+        combiner = apex.parallel.DistributedDataParallel(combiner, delay_allreduce=True)
 
     # build trainer, reload potential checkpoints / build evaluator
     loss_function = get_loss_function(params)
