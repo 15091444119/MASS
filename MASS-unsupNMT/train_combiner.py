@@ -22,7 +22,7 @@ from src.data.loader import check_data_params, load_data
 from src.utils import bool_flag, initialize_exp, set_sampling_probs, shuf_order
 from src.model import check_model_params, build_model
 from src.trainer import SingleTrainer, EncCombinerDecTrainer
-from src.evaluation.evaluator import SingleEvaluator, EncDecEvaluator, CombinerEvaluator
+from src.evaluation.evaluator import SingleEvaluator, EncCombinerDecEvaluator
 from src.combiner.combiner import build_combiner
 from src.combiner.splitter import WholeWordSplitter
 from src.model.transformer import TransformerModel
@@ -300,11 +300,16 @@ def main(params):
     # build trainer, reload potential checkpoints / build evaluator
     loss_function = get_loss_function(params)
     trainer = EncCombinerDecTrainer(encoder, combiner, decoder, data, whole_word_splitter, loss_function, params)
-    evaluator = CombinerEvaluator(trainer, data, params, decoder)
+    evaluator = EncCombinerDecEvaluator(
+        trainer=trainer,
+        data=data,
+        params=params,
+        loss_function=loss_function
+    )
 
     # evaluation
     if params.eval_only:
-        scores = evaluator.run_all_evals(trainer.epoch)
+        scores = evaluator.eval_all(trainer.epoch)
         for k, v in scores.items():
             logger.info("%s -> %.6f" % (k, v))
         logger.info("__log__:%s" % json.dumps(scores))
@@ -335,8 +340,7 @@ def main(params):
             # evaluate loss
             if params.eval_loss_sentences != -1 and trainer.n_sentences - last_eval_loss_sentences >= params.eval_loss_sentences:
                 scores = {}
-                for dataset in ["valid", "test"]:
-                    evaluator.eval_loss(scores, dataset, params.src_lang)
+                evaluator.eval_loss(scores)
                 for k, v in scores.items():
                     logger.info("%s -> %.6f" % (k, v))
                 if params.is_master:
@@ -346,7 +350,7 @@ def main(params):
         logger.info("============ End of epoch %i ============" % trainer.epoch)
 
         # evaluate perplexity
-        scores = evaluator.run_all_evals(trainer.epoch)
+        scores = evaluator.eval_all(trainer.epoch)
 
         # print / JSON log
         for k, v in scores.items():

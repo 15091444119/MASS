@@ -345,6 +345,30 @@ class EncCombinerDecEvaluator(Evaluator):
         self.splitter = trainer.splitter
         self.loss_function = loss_function
 
+    def eval_loss(self, scores):
+        params = self.params
+
+        for dataset in ["valid", "test"]:
+            for lang in [params.src_lang, params.tgt_lang]:
+                self.evaluate_mass_with_explicit_split(scores, dataset, lang)
+                self.evaluate_mass(scores, dataset, lang)
+
+    def eval_mt(self, scores):
+        params = self.params
+
+        for dataset in ["valid", "test"]:
+            for lang1, lang2 in [(params.src_lang, params.tgt_lang), (params.tgt_lang, params.src_lang)]:
+                eval_bleu = params.eval_bleu and params.is_master
+                self.evaluate_mt(scores, dataset, lang1, lang2, eval_bleu)
+
+    def eval_all(self, epoch):
+
+        scores = {"epoch":epoch}
+
+        self.eval_loss(scores)
+        self.eval_mt(scores)
+
+        return scores
 
     def evaluate_mass_with_explicit_split(self, scores, data_set, lang):
         with torch.no_grad():
@@ -380,6 +404,7 @@ class EncCombinerDecEvaluator(Evaluator):
                     params=params,
                     dico=self.data["dico"],
                     combiner_loss_function=self.loss_function,
+                    splitter=self.splitter,
                     mode="eval")
 
                 # update stats
@@ -387,14 +412,14 @@ class EncCombinerDecEvaluator(Evaluator):
                 xe_loss += losses["mass_loss"].item() * len(y)
                 combiner_loss += losses["combiner_loss"].item() * statistics["trained_combiner_words"]
                 n_combiner_words += statistics["trained_combiner_words"]
-                n_valid += (word_scores.max(1)[1] == y).sum().item()
+                n_valid += (word_scores.max(1)[1] == y.cuda()).long().sum().item()
 
             # compute perplexity and prediction accuracy
-            scores['explicit_%s_%s-%s_mass_ppl' % (data_set, lang, lang)] = np.exp(xe_loss / n_words)
-            scores['explicit_%s_%s-%s_mass_acc' % (data_set, lang, lang)] = 100. * n_valid / n_words
+            scores['%s_%s-%s_explicit_mass_ppl' % (data_set, lang, lang)] = np.exp(xe_loss / n_words)
+            scores['%s_%s-%s_explicit_mass_acc' % (data_set, lang, lang)] = 100. * n_valid / n_words
 
             # compute combiner loss(distance)
-            scores['combiner_{}_loss'.format(lang)] = combiner_loss / n_combiner_words
+            scores['{}_{}_combiner_loss'.format(data_set, lang)] = combiner_loss / n_combiner_words
 
 
     def evaluate_mass(self, scores, data_set, lang):
@@ -427,7 +452,7 @@ class EncCombinerDecEvaluator(Evaluator):
                 # update stats
                 n_words += y.size(0)
                 xe_loss += losses["mass_loss"].item() * len(y)
-                n_valid += (word_scores.max(1)[1] == y).sum().item()
+                n_valid += (word_scores.max(1)[1] == y.cuda()).long().sum().item()
 
             # compute perplexity and prediction accuracy
             scores['%s_%s-%s_mass_ppl' % (data_set, lang, lang)] = np.exp(xe_loss / n_words)
@@ -445,13 +470,7 @@ class EncCombinerDecEvaluator(Evaluator):
                 return rng.randint(1, end)
 
         def mask_word(w):
-            p = rng.rand()
-            if p >= 0.2:
-                return self.params.mask_index
-            elif p >= 0.05:
-                return rng.randint(self.params.n_words)
-            else:
-                return w
+            return self.params.mask_index
 
         dico = self.data["dico"]
         positions, inputs, targets, outputs, len2 = [], [], [], [], []
@@ -574,7 +593,7 @@ class EncCombinerDecEvaluator(Evaluator):
                 # update stats
                 n_words += y.size(0)
                 xe_loss += loss.item() * len(y)
-                n_valid += (word_scores.max(1)[1] == y).sum().item()
+                n_valid += (word_scores.max(1)[1] == y).long().sum().item()
 
                 # generate translation - translate / convert to text
                 if eval_bleu:
@@ -653,63 +672,3 @@ def eval_moses_bleu(ref, hyp):
         logger.warning('Impossible to parse BLEU score! "%s"' % result)
         return -1
 
-
-def combine(combiner, encoded, x1, len1, dico):
-    """
-    combine subword representation to a whole word representation using the combiner
-    Params:
-        combiner:
-
-        encoded: torch.FloatTensor, shape:[batch_size, max_len, dim]
-            encoded representation
-
-        x1: torch.LongTensor, shape: [len, batch_size]
-
-        len1: torch.LongTensor, shape: [batch_size]
-
-        dico: dictionary
-
-    Returns:
-        new_encoded: torch.FloatTensor
-        new_len: new_length after combine
-    """
-
-    x1 = x1.transpose(0, 1)  # [batch_size, seq_len]
-    bs, seq_len = x1.size()
-    combine_labels = torch.LongTensor(bs, seq_len).fill_(NOT_USED_TOKEN)
-    need_combine = False  # no subword in the whole batch
-
-    for sentence_id, sentence in enumerate(x1):
-        subword_finished = True
-        cur_labels = []
-        for idx in range(len1[sentence_id]):
-            cur_token = dico.id2word[sentence[idx].item()]
-            if not cur_token.endswith("@@"):
-                if subword_finished:
-                    cur_labels.append(SKIPPED_TOKEN)
-                else:
-                    cur_labels.append(SUBWORD_END)
-                    need_combine = True
-                    subword_finished = True
-            else:
-                subword_finished = False
-                cur_labels.append(SUBWORD_FRONT)
-
-        assert subword_finished
-        combine_labels[sentence_id][:len(cur_labels)] = torch.LongTensor(cur_labels)
-
-    combine_labels = combine_labels.cuda()
-
-    """
-    print([dico.id2word[idx.item()] for idx in x1[0, :]])
-    print(len1[0])
-    print(combine_labels[0])
-    """
-
-    if need_combine:
-        new_encoded, new_lens = combiner.encode(encoded, len1, combine_labels)
-    else:
-        new_encoded = x1
-        new_lens = len1
-
-    return new_encoded, new_lens

@@ -793,7 +793,7 @@ def combiner_mass(models, data:MassBatch, params, dico, mode):
     all_combine_labels = get_combine_labels(x1, dico)
 
 
-    x1, len1, x2, len2, y, pred_mask, positions, batch_langs1, langs2, all_combine_labels = \
+    x1, len1, x2, len2, y, pred_mask, positions, langs1, langs2, all_combine_labels = \
     to_cuda(x1, len1, x2, len2, y, pred_mask, positions, langs1, langs2, all_combine_labels)
 
     if mode == eval:
@@ -1172,7 +1172,14 @@ class EncCombinerDecTrainer(Trainer):
         (x1, len1, x2, len2, y, pred_mask, positions) = self.restricted_mask_sent(x_, len_, int(params.lambda_span))
         mass_batch = MassBatch(x1=x1, len1=len1, x2=x2, len2=len2, y=y, pred_mask=pred_mask, positions=positions, lang=lang)
         models = {"encoder": self.encoder, "combiner": self.combiner, "decoder": self.decoder}
-        _, losses, statistics = combiner_mass(models, mass_batch, params, self.data["dico"])
+        _, losses, statistics = combiner_mass(
+            models=models,
+            data=mass_batch,
+            params=params,
+            dico=self.data["dico"],
+            mode="train"
+        )
+
 
         loss = losses["mass_loss"]
         self.stats[("mass_with_combiner-{}".format(lang))].append(loss.item())
@@ -1200,7 +1207,8 @@ class EncCombinerDecTrainer(Trainer):
                                                     params=params,
                                                     dico=self.data["dico"],
                                                     splitter=self.splitter,
-                                                    combiner_loss_function=self.loss_function)
+                                                    combiner_loss_function=self.loss_function,
+                                                    mode="train")
 
         if losses["combiner_loss"] is not None:
             loss = losses["combiner_loss"] + losses["mass_loss"]
