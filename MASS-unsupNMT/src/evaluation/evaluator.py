@@ -20,6 +20,8 @@ from src.combiner.combiner import MultiLingualNoneParaCombiner
 from .bli import BLI
 from .eval_context_bli import eval_whole_separated_bli, read_retokenize_words, generate_context_word_representation, encode_whole_word_separated_word, generate_and_eval
 from src.combiner.constant import SKIPPED_TOKEN, SUBWORD_FRONT, SUBWORD_END, NOT_USED_TOKEN
+from src.trainer import MassBatch, combiner_mass, combiner_mass_with_explict_split
+from src.combiner.splitter import get_combine_labels
 
 
 BLEU_SCRIPT_PATH = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'multi-bleu.perl')
@@ -330,30 +332,181 @@ class SingleEvaluator(Evaluator):
         self.model = trainer.model
 
 
-class CombinerEvaluator(Evaluator):
-    """ This is an evaluator for word level combiner (not sentence) """
+class EncCombinerDecEvaluator(Evaluator):
 
-    def __init__(self, trainer, data, params, decoder):
-
+    def __init__(self, trainer, data, params, loss_function):
+        """
+        Build encoder / decoder evaluator.
+        """
         super().__init__(trainer, data, params)
         self.encoder = trainer.encoder
+        self.decoder = trainer.decoder
         self.combiner = trainer.combiner
         self.splitter = trainer.splitter
-        self.loss_function = trainer.loss_function
+        self.loss_function = loss_function
 
-        # decoder ( for evaluate word translate)
-        self.decoder = decoder
 
-    def run_all_evals(self, epoch):
-        scores = OrderedDict({'epoch': epoch})
-        params = self.params
-        for data_set in ['valid', 'test']:
-            self.evaluate_mt(scores, data_set, params.src_lang, params.tgt_lang, eval_bleu=True)
-        for data_set in ['valid', 'test']:
-            self.eval_loss(scores, data_set, params.src_lang)
+    def evaluate_mass_with_explicit_split(self, scores, data_set, lang):
+        with torch.no_grad():
+            params = self.params
+            assert data_set in ['valid', 'test']
+            assert lang in params.langs
 
-        return scores
+            encoder = self.encoder.module if params.multi_gpu else self.encoder
+            decoder = self.decoder.module if params.multi_gpu else self.decoder
+            combiner = self.combiner.module if params.multi_gpu else self.combiner
 
+            rng = np.random.RandomState(0)
+
+            params = params
+
+            n_words = 0
+            xe_loss = 0
+            n_valid = 0
+            combiner_loss = 0
+            n_combiner_words = 0
+
+            for (x1, len1) in self.get_iterator(data_set, lang):
+                (x1, len1, x2, len2, y, pred_mask, positions) = self.mask_sent(x1, len1, rng)
+
+                data = MassBatch(x1=x1, len1=len1, x2=x2, len2=len2, y=y, pred_mask=pred_mask, positions=positions, lang=lang)
+
+                models = {"encoder": encoder, "decoder": decoder, "combiner": combiner}
+
+                # loss
+                word_scores, losses, statistics = combiner_mass_with_explict_split(
+                    models=models,
+                    data=data,
+                    params=params,
+                    dico=self.data["dico"],
+                    combiner_loss_function=self.loss_function,
+                    mode="eval")
+
+                # update stats
+                n_words += y.size(0)
+                xe_loss += losses["mass_loss"].item() * len(y)
+                combiner_loss += losses["combiner_loss"].item() * statistics["trained_combiner_words"]
+                n_combiner_words += statistics["trained_combiner_words"]
+                n_valid += (word_scores.max(1)[1] == y).sum().item()
+
+            # compute perplexity and prediction accuracy
+            scores['explicit_%s_%s-%s_mass_ppl' % (data_set, lang, lang)] = np.exp(xe_loss / n_words)
+            scores['explicit_%s_%s-%s_mass_acc' % (data_set, lang, lang)] = 100. * n_valid / n_words
+
+            # compute combiner loss(distance)
+            scores['combiner_{}_loss'.format(lang)] = combiner_loss / n_combiner_words
+
+
+    def evaluate_mass(self, scores, data_set, lang):
+        with torch.no_grad():
+            params = self.params
+            assert data_set in ['valid', 'test']
+            assert lang in params.langs
+
+            encoder = self.encoder.module if params.multi_gpu else self.encoder
+            decoder = self.decoder.module if params.multi_gpu else self.decoder
+            combiner = self.combiner.module if params.multi_gpu else self.combiner
+
+            rng = np.random.RandomState(0)
+
+            params = params
+
+            n_words = 0
+            xe_loss = 0
+            n_valid = 0
+            for (x1, len1) in self.get_iterator(data_set, lang):
+                (x1, len1, x2, len2, y, pred_mask, positions) = self.mask_sent(x1, len1, rng)
+
+                data = MassBatch(x1=x1, len1=len1, x2=x2, len2=len2, y=y, pred_mask=pred_mask, positions=positions, lang=lang)
+
+                models = {"encoder": encoder, "decoder": decoder, "combiner": combiner}
+
+                # loss
+                word_scores, losses, statistics = combiner_mass(models, data, params, self.data["dico"], "eval")
+
+                # update stats
+                n_words += y.size(0)
+                xe_loss += losses["mass_loss"].item() * len(y)
+                n_valid += (word_scores.max(1)[1] == y).sum().item()
+
+            # compute perplexity and prediction accuracy
+            scores['%s_%s-%s_mass_ppl' % (data_set, lang, lang)] = np.exp(xe_loss / n_words)
+            scores['%s_%s-%s_mass_acc' % (data_set, lang, lang)] = 100. * n_valid / n_words
+
+    def mask_sent(self, x, lengths, rng):
+        
+        def random_start(end):
+            p = rng.rand()
+            if p >= 0.8:
+                return 1
+            elif p >= 0.6:
+                return end - 1
+            else:
+                return rng.randint(1, end)
+
+        def mask_word(w):
+            p = rng.rand()
+            if p >= 0.2:
+                return self.params.mask_index
+            elif p >= 0.05:
+                return rng.randint(self.params.n_words)
+            else:
+                return w
+
+        dico = self.data["dico"]
+        positions, inputs, targets, outputs, len2 = [], [], [], [], []
+        for i in range(lengths.size(0)):
+            words = x[:lengths[i], i].tolist()
+            l = len(words)
+            # Prevent some short sentences will be whole masked
+            mask_len = max(1, round(l * self.params.word_mass) - 1)
+            start = random_start(l - mask_len + 1)
+
+            # whole word mask
+            while(start - 1 >= 0 and "@@" in dico.id2word[x[start - 1, i].item()]):
+                start -= 1
+
+            end = start + mask_len - 1
+
+            while(end + 1 < lengths[i].item() and "@@" in dico.id2word[x[end, i].item()]):
+                end += 1
+
+            len2.append(end - start + 1)
+
+
+            pos_i, target_i, output_i, input_i = [], [], [], []
+            prev_w = None
+            for j, w in enumerate(words):
+                if j >= start and j <= end:
+                    output_i.append(w)
+                    target_i.append(prev_w)
+                    pos_i.append(j - 1)
+                    input_i.append(mask_word(w))
+                else:
+                    input_i.append(w)
+                prev_w = w
+
+            inputs.append(input_i)
+            targets.append(target_i)
+            outputs.append(output_i)
+            positions.append(pos_i)
+
+        l1 = lengths.clone()
+        l2 = torch.LongTensor(len2)
+        x1 = torch.LongTensor(max(l1) , l1.size(0)).fill_(self.params.pad_index)
+        x2 = torch.LongTensor(max(len2), l1.size(0)).fill_(self.params.pad_index)
+        y  = torch.LongTensor(max(len2), l1.size(0)).fill_(self.params.pad_index)
+        pos = torch.LongTensor(max(len2), l1.size(0)).fill_(self.params.pad_index)
+        
+        for i in range(l1.size(0)):
+            x1[:l1[i], i].copy_(torch.LongTensor(inputs[i]))
+            x2[:l2[i], i].copy_(torch.LongTensor(targets[i]))
+            y[:l2[i], i].copy_(torch.LongTensor(outputs[i]))
+            pos[:l2[i], i].copy_(torch.LongTensor(positions[i]))
+        pred_mask = y != self.params.pad_index
+        y = y.masked_select(pred_mask)
+
+        return x1, l1, x2, l2, y, pred_mask, pos
 
     def evaluate_mt(self, scores, data_set, lang1, lang2, eval_bleu):
         """
@@ -400,15 +553,20 @@ class CombinerEvaluator(Evaluator):
                 # cuda
                 x1, len1, langs1, x2, len2, langs2, y = to_cuda(x1, len1, langs1, x2, len2, langs2, y)
 
+                all_combine_labels = get_combine_labels(x1, self.data["dico"]).cuda()
+
                 # encode source sentence
                 enc1 = encoder('fwd', x=x1, lengths=len1, langs=langs1, causal=False)
-                enc1 = enc1.transpose(0, 1) # [bs, len, dim]
+                enc1 = enc1.transpose(0, 1)
+                final_encoded, final_lens, final_mask_mask, _ = combiner("encode", enc1, len1,
+                                                                         all_combine_labels,
+                                                                         lang1,
+                                                                         )  # [combine_word_num, dim]
 
-                # combine subword into whole word representation
-                combined_enc, combined_len = combine(combiner, enc1, x1, len1, self.dico)
+                enc_mask = ~final_mask_mask
 
                 # decode target sentence
-                dec2 = decoder('fwd', x=x2, lengths=len2, langs=langs2, causal=True, src_enc=combined_enc, src_len=combined_len)
+                dec2 = decoder('fwd', x=x2, lengths=len2, langs=langs2, causal=True, src_enc=final_encoded, src_len=final_lens, enc_mask=enc_mask)
 
                 # loss
                 word_scores, loss = decoder('predict', tensor=dec2, pred_mask=pred_mask, y=y, get_scores=True)
@@ -422,10 +580,10 @@ class CombinerEvaluator(Evaluator):
                 if eval_bleu:
                     max_len = int(1.5 * len1.max().item() + 10)
                     if params.beam_size == 1:
-                        generated, lengths = decoder.generate(combined_enc, combined_len, lang2_id, max_len=max_len)
+                        generated, lengths = decoder.generate(enc1, len1, lang2_id, max_len=max_len)
                     else:
                         generated, lengths = decoder.generate_beam(
-                            combined_enc, combined_len, lang2_id, beam_size=params.beam_size,
+                            enc1, len1, lang2_id, beam_size=params.beam_size,
                             length_penalty=params.length_penalty,
                             early_stopping=params.early_stopping,
                             max_len=max_len
@@ -438,6 +596,7 @@ class CombinerEvaluator(Evaluator):
 
             # compute BLEU
             if eval_bleu:
+
                 # hypothesis / reference paths
                 hyp_name = 'hyp{0}.{1}-{2}.{3}.txt'.format(scores['epoch'], lang1, lang2, data_set)
                 hyp_path = os.path.join(params.hyp_path, hyp_name)
@@ -452,254 +611,6 @@ class CombinerEvaluator(Evaluator):
                 bleu = eval_moses_bleu(ref_path, hyp_path)
                 logger.info("BLEU %s %s : %f" % (hyp_path, ref_path, bleu))
                 scores['%s_%s-%s_mt_bleu' % (data_set, lang1, lang2)] = bleu
-
-
-    def eval_loss(self, scores, data_set, lang):
-        """
-        evaluate combiner valid loss
-
-        """
-        with torch.no_grad():
-            params = self.params
-            lang_id = params.lang2id[lang]
-            n_words = 0
-            all_loss = 0
-            for batch, lengths in self.get_iterator(data_set, lang):
-                loss, trained_words = combiner_loss(
-                    encoder=self.encoder,
-                    combiner=self.combiner,
-                    batch=batch,
-                    lengths=lengths,
-                    lang_id=lang_id,
-                    splitter=self.whole_word_splitter,
-                    re_encode_rate=params.re_encode_rate,
-                    dico=self.data["dico"],
-                    loss_function=self.loss_function,
-                    is_train=False
-                )
-                n_words += trained_words
-                all_loss += loss.item() * trained_words
-
-            scores["{}_{}_loss".format(data_set, lang)] = all_loss / n_words
-
-
-
-
-
-class EncDecEvaluator(Evaluator):
-
-    def __init__(self, trainer, data, params):
-        """
-        Build encoder / decoder evaluator.
-        """
-        super().__init__(trainer, data, params)
-        self.encoder = trainer.encoder
-        self.decoder = trainer.decoder
-
-    def evaluate_mass(self, scores, data_set, lang):
-        params = self.params
-        assert data_set in ['valid', 'test']
-        assert lang in params.langs
-
-        self.encoder.eval()
-        self.decoder.eval()
-        encoder = self.encoder.module if params.multi_gpu else self.encoder
-        decoder = self.decoder.module if params.multi_gpu else self.decoder
-
-        rng = np.random.RandomState(0)
-
-        params = params
-        lang_id = params.lang2id[lang]
-
-        n_words = 0
-        xe_loss = 0
-        n_valid = 0
-        for (x1, len1) in self.get_iterator(data_set, lang):
-            (x1, len1, x2, len2, y, pred_mask, positions) = self.mask_sent(x1, len1, rng)
-
-            langs1 = x1.clone().fill_(lang_id)
-            langs2 = x2.clone().fill_(lang_id)
-
-            # cuda
-            x1, len1, langs1, x2, len2, langs2, y, positions = to_cuda(x1, len1, langs1, x2, len2, langs2, y, positions)
-
-            # encode source sentence
-            enc1 = encoder('fwd', x=x1, lengths=len1, langs=langs1, causal=False)
-            enc1 = enc1.transpose(0, 1)
-
-            enc_mask = x1.ne(params.mask_index)
-            enc_mask = enc_mask.transpose(0, 1)
-            # decode target sentence
-            dec2 = decoder('fwd', x=x2, lengths=len2, 
-                           langs=langs2, causal=True, 
-                           src_enc=enc1, src_len=len1, positions=positions, enc_mask=enc_mask)
-            # loss
-            word_scores, loss = decoder('predict', tensor=dec2, pred_mask=pred_mask, y=y, get_scores=True)
-            
-            # update stats
-            n_words += y.size(0)
-            xe_loss += loss.item() * len(y)
-            n_valid += (word_scores.max(1)[1] == y).sum().item()
-            
-        # compute perplexity and prediction accuracy
-        scores['%s_%s-%s_mass_ppl' % (data_set, lang, lang)] = np.exp(xe_loss / n_words)
-        scores['%s_%s-%s_mass_acc' % (data_set, lang, lang)] = 100. * n_valid / n_words
-
-    def mask_sent(self, x, lengths, rng):
-        
-        def random_start(end):
-            p = rng.rand()
-            if p >= 0.8:
-                return 1
-            elif p >= 0.6:
-                return end - 1
-            else:
-                return rng.randint(1, end)
-
-        def mask_word(w):
-            p = rng.rand()
-            if p >= 0.2:
-                return self.params.mask_index
-            elif p >= 0.05:
-                return rng.randint(self.params.n_words)
-            else:
-                return w
-
-        positions, inputs, targets, outputs, len2 = [], [], [], [], [] 
-        for i in range(lengths.size(0)):
-            words = x[:lengths[i], i].tolist()
-            l = len(words)
-            # Prevent some short sentences will be whole masked
-            mask_len = max(1, round(l * self.params.word_mass) - 1)
-            start = random_start(l - mask_len + 1)
-            len2.append(mask_len)
-
-            pos_i, target_i, output_i, input_i = [], [], [], []
-            prev_w = None
-            for j, w in enumerate(words):
-                if j >= start and j < start + mask_len:
-                    output_i.append(w)
-                    target_i.append(prev_w)
-                    pos_i.append(j - 1)
-                    input_i.append(mask_word(w))
-                else:
-                    input_i.append(w)
-                prev_w = w
-
-            inputs.append(input_i)
-            targets.append(target_i)
-            outputs.append(output_i)
-            positions.append(pos_i)
-
-        l1 = lengths.clone()
-        l2 = torch.LongTensor(len2)
-        x1 = torch.LongTensor(max(l1) , l1.size(0)).fill_(self.params.pad_index)
-        x2 = torch.LongTensor(max(len2), l1.size(0)).fill_(self.params.pad_index)
-        y  = torch.LongTensor(max(len2), l1.size(0)).fill_(self.params.pad_index)
-        pos = torch.LongTensor(max(len2), l1.size(0)).fill_(self.params.pad_index)
-        
-        for i in range(l1.size(0)):
-            x1[:l1[i], i].copy_(torch.LongTensor(inputs[i]))
-            x2[:l2[i], i].copy_(torch.LongTensor(targets[i]))
-            y[:l2[i], i].copy_(torch.LongTensor(outputs[i]))
-            pos[:l2[i], i].copy_(torch.LongTensor(positions[i]))
-        pred_mask = y != self.params.pad_index
-        y = y.masked_select(pred_mask)
-
-        return x1, l1, x2, l2, y, pred_mask, pos
-
-    def evaluate_mt(self, scores, data_set, lang1, lang2, eval_bleu):
-        """
-        Evaluate perplexity and next word prediction accuracy.
-        """
-        params = self.params
-        assert data_set in ['valid', 'test']
-        assert lang1 in params.langs
-        assert lang2 in params.langs
-
-        self.encoder.eval()
-        self.decoder.eval()
-        encoder = self.encoder.module if params.multi_gpu else self.encoder
-        decoder = self.decoder.module if params.multi_gpu else self.decoder
-
-        params = params
-        lang1_id = params.lang2id[lang1]
-        lang2_id = params.lang2id[lang2]
-
-        n_words = 0
-        xe_loss = 0
-        n_valid = 0
-
-        # store hypothesis to compute BLEU score
-        if eval_bleu:
-            hypothesis = []
-
-        for batch in self.get_iterator(data_set, lang1, lang2):
-
-            # generate batch
-            (x1, len1), (x2, len2) = batch
-            langs1 = x1.clone().fill_(lang1_id)
-            langs2 = x2.clone().fill_(lang2_id)
-
-            # target words to predict
-            alen = torch.arange(len2.max(), dtype=torch.long, device=len2.device)
-            pred_mask = alen[:, None] < len2[None] - 1  # do not predict anything given the last target word
-            y = x2[1:].masked_select(pred_mask[:-1])
-            assert len(y) == (len2 - 1).sum().item()
-
-            # cuda
-            x1, len1, langs1, x2, len2, langs2, y = to_cuda(x1, len1, langs1, x2, len2, langs2, y)
-
-            # encode source sentence
-            enc1 = encoder('fwd', x=x1, lengths=len1, langs=langs1, causal=False)
-            enc1 = enc1.transpose(0, 1)
-
-            # decode target sentence
-            dec2 = decoder('fwd', x=x2, lengths=len2, langs=langs2, causal=True, src_enc=enc1, src_len=len1)
-
-            # loss
-            word_scores, loss = decoder('predict', tensor=dec2, pred_mask=pred_mask, y=y, get_scores=True)
-
-            # update stats
-            n_words += y.size(0)
-            xe_loss += loss.item() * len(y)
-            n_valid += (word_scores.max(1)[1] == y).sum().item()
-
-            # generate translation - translate / convert to text
-            if eval_bleu:
-                max_len = int(1.5 * len1.max().item() + 10)
-                if params.beam_size == 1:
-                    generated, lengths = decoder.generate(enc1, len1, lang2_id, max_len=max_len)
-                else:
-                    generated, lengths = decoder.generate_beam(
-                        enc1, len1, lang2_id, beam_size=params.beam_size,
-                        length_penalty=params.length_penalty,
-                        early_stopping=params.early_stopping,
-                        max_len=max_len
-                    )
-                hypothesis.extend(convert_to_text(generated, lengths, self.dico, params))
-
-        # compute perplexity and prediction accuracy
-        scores['%s_%s-%s_mt_ppl' % (data_set, lang1, lang2)] = np.exp(xe_loss / n_words)
-        scores['%s_%s-%s_mt_acc' % (data_set, lang1, lang2)] = 100. * n_valid / n_words
-
-        # compute BLEU
-        if eval_bleu:
-
-            # hypothesis / reference paths
-            hyp_name = 'hyp{0}.{1}-{2}.{3}.txt'.format(scores['epoch'], lang1, lang2, data_set)
-            hyp_path = os.path.join(params.hyp_path, hyp_name)
-            ref_path = params.ref_paths[(lang1, lang2, data_set)]
-
-            # export sentences to hypothesis file / restore BPE segmentation
-            with open(hyp_path, 'w', encoding='utf-8') as f:
-                f.write('\n'.join(hypothesis) + '\n')
-            restore_segmentation(hyp_path)
-
-            # evaluate BLEU score
-            bleu = eval_moses_bleu(ref_path, hyp_path)
-            logger.info("BLEU %s %s : %f" % (hyp_path, ref_path, bleu))
-            scores['%s_%s-%s_mt_bleu' % (data_set, lang1, lang2)] = bleu
 
 
 def convert_to_text(batch, lengths, dico, params):
