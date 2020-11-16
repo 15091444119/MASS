@@ -832,6 +832,14 @@ def combiner_mass(models, data:MassBatch, params, dico, mode):
 
 def combiner_mass_with_explict_split(models, data:MassBatch, params, dico, splitter, combiner_loss_function, mode):
     """
+
+    For monolingual data, we split whole word and get the encoder representation, and don't split whole word for another time,
+    we let the whole word encoding representation to be similar to the combined whole word.
+
+    Final loss have two parts:
+        1. combiner loss (with combiner loss function like cos)
+        2. mass loss (use the splitted input but not the whole word input)
+
     params:
         models: dict
             {"encoder":encoder,  "combiner":combiner, decoder:"decoder"}
@@ -840,7 +848,6 @@ def combiner_mass_with_explict_split(models, data:MassBatch, params, dico, split
         params: mass params
         dico: dictionary
         splitter: splitter
-        mask_function: function to mask input for mass pretraining
         combiner_loss_function: loss for the combiner learning
         mode:
     """

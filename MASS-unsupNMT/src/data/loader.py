@@ -371,10 +371,7 @@ def check_data_params(params):
         ) for (src, tgt) in params.bmt_steps        
     }
 
-    # check that we can evaluate on BLEU
-    assert params.eval_bleu is False or len(params.mt_steps + params.bt_steps + mass_steps) > 0
-    
-  
+
 def load_data(params):
     """
     Load monolingual data.

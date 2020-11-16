@@ -20,8 +20,8 @@ python train_combiner.py \
 	--gelu_activation true                               \
 	--batch_size 64 \
 	--optimizer adam,lr=0.0001 \
-	--epoch_size 50000                                  \
-	--max_epoch 1000                                      \
+	--epoch_size 2000                                  \
+	--max_epoch 1                                      \
 	--src_lang "zh" \
 	--tgt_lang "en" \
 	--codes_path /home/data_ti5_d/zhouzh/low-resource-mt/XLM_MASS_preprocessed_data/pretrain/cn-split-sen-zh-en-pretrain/codes \
@@ -32,6 +32,7 @@ python train_combiner.py \
   --eval_only True \
   --re_encode_rate 0.3 \
   --word_mask_keep_rand 1.0,0.0,0.0 \
-  --word_mass 0.5
+  --word_mass 0.5 \
+  --eval_bleu True
 }
 train
