@@ -25,6 +25,7 @@ from .utils import get_optimizer, to_cuda, concat_batches
 from .utils import parse_lambda_config, update_lambdas
 from src.evaluation.utils import Context2Sentence
 from src.combiner.splitter import get_combine_labels
+from src.combiner.constant import SUBWORD_FRONT, SUBWORD_END, MASKED_TOKEN, SKIPPED_TOKEN, NOT_USED_TOKEN
 
 logger = getLogger()
 
@@ -771,8 +772,96 @@ class MassBatch(object):
         self.lang = lang
 
 
+def mass(models, data: MassBatch, params, dico, mode):
 
-def combiner_mass(models, data:MassBatch, params, dico, mode):
+
+
+
+
+def explicit_splitted_cheated_output_mass(models, data: MassBatch, params, dico, splitter, mode):
+    """
+    1. Encode two times:
+        1. original input
+        2. split whole words
+    2. Use the whole words representation in 1 to substitute representation in 2.
+    3. Decode based on representation in 2
+    """
+    encoder = models["encoder"]
+    decoder = models["decoder"]
+
+    # get inputs
+
+    x1, len1, x2, len2, y, pred_mask, positions, lang = data.x1, data.len1, data.x2, data.len2, data.y, data.pred_mask, data.positions, data.lang
+    lang_id = params.lang2id[lang]
+    langs1 = x1.clone().fill_(lang_id)
+    langs2 = x2.clone().fill_(lang_id)
+    x1, len1, x2, len2, y, pred_mask, positions, langs1, langs2  = \
+        to_cuda(x1, len1, x2, len2, y, pred_mask, positions, langs1, langs2)
+
+    # split whole words to train combiner
+    x3, len3, trained_whole_word_mask, trained_subword_labels = splitter.re_encode_batch_sentences(x1, len1, dico, params.re_encode_rate)
+    langs3 = x3.clone().fill_(lang_id)
+    all_combine_labels = get_combine_labels(x3, dico)
+    x3, len3, trained_whole_word_mask, langs3, trained_subword_labels, all_combine_labels = to_cuda(x3, len3, trained_whole_word_mask, langs3, trained_subword_labels, all_combine_labels)
+
+    if mode == "train":
+        encoder.train()
+        decoder.train()
+    elif mode == "eval":
+        encoder.eval()
+        decoder.eval()
+    else:
+        raise ValueError
+
+    # get original representation
+
+    origin_word_rep = encoder("fwd", x=x1, lengths=len1, langs=langs1, causal=False)  # [len, bs, dim]
+    origin_word_rep = origin_word_rep.transpose(0, 1)  # [bs, len, dim]
+    output_dim = origin_word_rep.size(-1)
+    whole_word_rep = origin_word_rep.masked_select(trained_whole_word_mask.unsqueeze(-1)).view(-1,
+                                                                                               output_dim)  # [combine_word_num, dim]
+    # get splited representation
+    splitted_rep = encoder("fwd", x=x3, lengths=len3, langs=langs3, causal=False)  # [len, bs, dim]
+    splitted_rep = splitted_rep.transpose(0, 1)  # [bs, len, dim]
+
+    # combine them together
+    final_lens = get_length_after_combine(trained_subword_labels)
+    enc_mask = get_enc_mask_after_combine_for_cheated_output(trained_subword_labels, all_combine_labels)
+
+    final_encoded = combine_splitted_whole_representation(splitted_rep, whole_word_rep, trained_subword_labels)
+    enc_mask = get_enc_mask(all_combine_labels)
+
+    # decode
+    dec2 = decoder('fwd',
+                   x=x2, lengths=len2, langs=langs2, causal=True,
+                   src_enc=final_encoded, src_len=final_lens, positions=positions, enc_mask=enc_mask)
+
+    word_scores, mass_loss = decoder('predict', tensor=dec2, pred_mask=pred_mask, y=y, get_scores=(mode == "eval"))
+    losses = {"mass_loss": mass_loss}
+    statistics = {"processed_s": len2.size(0), "processed_w": (len2 - 1).sum().item()}
+
+    return losses, statistics
+
+
+def get_enc_mask(all_combine_labels):
+    """
+    masked positions after combining will be set to False
+    params:
+        all_combine_labels: [bs, len_before_combine]
+    return:
+        enc_mask: [bs, len_after_combine]
+    """
+    bs, len_before_combine = all_combine_labels.size()
+    for i in range(bs):
+        for label in all_combine_labels[i]:
+            if label ==
+
+
+
+
+
+
+def combiner_mass(models, data: MassBatch, params, dico, mode):
     """
        params:
            models: dict
@@ -799,14 +888,16 @@ def combiner_mass(models, data:MassBatch, params, dico, mode):
     x1, len1, x2, len2, y, pred_mask, positions, langs1, langs2, all_combine_labels = \
     to_cuda(x1, len1, x2, len2, y, pred_mask, positions, langs1, langs2, all_combine_labels)
 
-    if mode == eval:
+    if mode == "eval":
         encoder.eval()
         decoder.eval()
         combiner.eval()
-    else:
+    elif mode == "train":
         encoder.train()
         decoder.train()
         combiner.train()
+    else:
+        raise ValueError
 
 
     # combiner whole word representation
@@ -826,7 +917,6 @@ def combiner_mass(models, data:MassBatch, params, dico, mode):
                    src_enc=final_encoded, src_len=final_lens, positions=positions, enc_mask=enc_mask)
 
     word_scores, mass_loss = decoder('predict', tensor=dec2, pred_mask=pred_mask, y=y, get_scores=(mode == "eval"))
-
     losses = {"mass_loss": mass_loss}
     statistics = {"processed_s": len2.size(0), "processed_w": (len2 - 1).sum().item()}
 
@@ -879,6 +969,8 @@ def combiner_mass_with_explict_split(models, data:MassBatch, params, dico, split
         encoder.eval()
         combiner.eval()
         decoder.eval()
+    else:
+        raise ValueError
 
     # combiner whole word representation
     new_rep = encoder("fwd", x=x3, lengths=len3, langs=langs3, causal=False)  # [len, bs, dim]
