@@ -24,67 +24,13 @@ class Combiner(nn.Module):
         """
         if method == "combine":
             return self.combine(*args, **kwargs)
-        elif method == "encode":
-            return self.encode(*args, **kwargs)
+        elif method == "maybe_explicit_train_combiner":
+            return self.maybe_explicit_train_combiner(*args, **kwargs)
         else:
             raise NotImplementedError
 
     def combine(self, *args, **kwargs):
         raise NotImplementedError
-
-    def encode(self, encoded, lengths, combine_labels, lang, trained_combine_labels=None):
-        """
-        combine subwords
-        Params:
-            encoded: [bs, len, dim]
-            lengths: [bs]
-            combine_labels: [bs, len]
-            lang: language
-            trained_combine_labels: combine labels for self-training
-        combine, and get the new representation
-        if combine label is skipped, use the original representation
-        else we use the combine function to generate a whole word representation
-
-        masked tokens are also counted as tokens, but a mask_mask will be returned
-
-        Returns:
-            new_encoded [bs, new_len, dim], new_lens [bs, new_len, dim]
-        """
-        representation, trained_representation = self.combine(encoded, lengths, combine_labels, lang, trained_combine_labels) # [split word number, dim]
-
-        # get length
-        new_lens = []
-        for sentence_labels in combine_labels:
-            cur_len = 0
-            for label in sentence_labels:
-                label = label.item()
-                if label == SKIPPED_TOKEN or label == SUBWORD_END or label == MASKED_TOKEN:
-                    cur_len += 1
-            assert cur_len == (sentence_labels.eq(SKIPPED_TOKEN).sum() + sentence_labels.eq(SUBWORD_END).sum() + sentence_labels.eq(MASKED_TOKEN).sum())
-            new_lens.append(cur_len)
-
-        cur_rep = 0
-        bs, _, dim = encoded.size()
-        new_encoded = torch.FloatTensor(bs, max(new_lens), dim).fill_(0.0).cuda()
-        mask_mask = torch.BoolTensor(bs, max(new_lens)).fill_(False).cuda()  # masked tokens will be set to True
-        for sentence_idx, sentence_labels in enumerate(combine_labels):
-            cur_pos = 0
-            for token_idx, label in enumerate(sentence_labels):
-                label = label.item()
-                if label == SKIPPED_TOKEN or label == MASKED_TOKEN:
-                    new_encoded[sentence_idx][cur_pos] = encoded[sentence_idx][token_idx]
-                    if label == MASKED_TOKEN:
-                        mask_mask[sentence_idx][cur_pos] = True
-                    cur_pos += 1
-                elif label == SUBWORD_END:
-                    new_encoded[sentence_idx][cur_pos] = representation[cur_rep]
-                    cur_pos += 1
-                    cur_rep += 1
-
-        new_lens = torch.LongTensor(new_lens).cuda()
-        assert cur_rep == len(representation)  # all representations are used
-
-        return new_encoded, new_lens, mask_mask, trained_representation
 
 
 class LastTokenCombiner(Combiner):
