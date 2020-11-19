@@ -12,14 +12,14 @@ class CombineTool(object):
         self.combine_labels = get_combine_labels(batch, dico)
         self.final_length = get_length_after_combine(self.combine_labels)
         self.final_rep_using_splitted_rep_mask, self.final_rep_using_combined_rep_mask, self.splitted_rep_for_final_rep_mask = \
-            get_masks_for_combine_reps(combine_labels=self.combine_labels, length_after_combine=self.final_length)
+            get_masks_for_combine_reps(combine_labels=self.combine_labels, final_length=self.final_length)
         self.mask_for_decoder = get_mask_for_decoder(splitted_batch=batch, combine_labels=self.combine_labels, final_length=self.final_length, mask_index=mask_index)
 
     def gather(self, splitted_rep, combined_rep):
         return gather_splitted_combine_representation(
             splitted_rep=splitted_rep,
             combined_rep=combined_rep,
-            length_after_combine=self.final_length,
+            final_length=self.final_length,
             final_rep_using_splitted_rep_mask=self.final_rep_using_splitted_rep_mask,
             final_rep_using_combined_rep_mask=self.final_rep_using_combined_rep_mask,
             splitted_rep_for_final_rep_mask=self.splitted_rep_for_final_rep_mask
@@ -36,7 +36,7 @@ class ExplicitSplitCombineTool(object):
 
         self.final_length = get_length_after_combine(self.combine_labels)
         self.final_rep_using_splitted_rep_mask, self.final_rep_using_combined_rep_mask, self.splitted_rep_for_final_rep_mask = \
-            get_masks_for_combine_reps(combine_labels=self.combine_labels, length_after_combine=self.final_length)
+            get_masks_for_combine_reps(combine_labels=self.combine_labels, final_length=self.final_length)
 
         self.splitted_original_word_mask = get_splitted_words_mask(mappers, length_before_split)
         self.new_generated_subwords_labels = get_new_splitted_combine_labels(mappers=mappers, length_before_split=length_before_split, length_after_split=length_after_split)
@@ -49,7 +49,7 @@ class ExplicitSplitCombineTool(object):
         return gather_splitted_combine_representation(
             splitted_rep=splitted_rep,
             combined_rep=combined_rep,
-            length_after_combine=self.final_length,
+            final_length=self.final_length,
             final_rep_using_splitted_rep_mask=self.final_rep_using_splitted_rep_mask,
             final_rep_using_combined_rep_mask=self.final_rep_using_combined_rep_mask,
             splitted_rep_for_final_rep_mask=self.splitted_rep_for_final_rep_mask
@@ -199,13 +199,13 @@ def get_new_splitted_combine_labels(mappers, length_before_split, length_after_s
     return combine_labels
 
 
-def gather_splitted_combine_representation(splitted_rep, combined_rep, length_after_combine, final_rep_using_splitted_rep_mask, final_rep_using_combined_rep_mask, splitted_rep_for_final_rep_mask):
+def gather_splitted_combine_representation(splitted_rep, combined_rep, final_length, final_rep_using_splitted_rep_mask, final_rep_using_combined_rep_mask, splitted_rep_for_final_rep_mask):
     """
 
     Args:
         splitted_rep: [bs, splitted_len, dim]
-        combined_rep: [bs, len_after_combine, dim]
-        length_after_combine:  [bs]
+        combined_rep: [combined_words, dim]
+        final_length:  [bs]
         final_rep_using_splitted_rep_mask: [bs, final_len]
         final_rep_using_combined_rep_mask: [bs, final_len]
         splitted_rep_for_final_rep_mask: [bs, splitted_len]
@@ -217,18 +217,19 @@ def gather_splitted_combine_representation(splitted_rep, combined_rep, length_af
     if combined_rep is None:
         return splitted_rep
 
-    bs, max_len_after_combine = length_after_combine.size()
+    bs = final_length.size(0)
+    max_len_after_combine = max(final_length).item()
     dim = splitted_rep.size(-1)
-    final_rep = torch.FloatTensor(bs, max_len_after_combine, dim).cuda()
+    final_rep = torch.FloatTensor(bs, max_len_after_combine, dim).fill_(0).to(splitted_rep.device)
 
     final_rep[final_rep_using_splitted_rep_mask.unsqueeze(-1)] = splitted_rep[splitted_rep_for_final_rep_mask.unsqueeze(-1)]
 
-    final_rep[final_rep_using_combined_rep_mask.unsqueeze(-1)] = combined_rep
+    final_rep[final_rep_using_combined_rep_mask.unsqueeze(-1)] = combined_rep.view(-1)
 
     return final_rep
 
 
-def get_masks_for_combine_reps(combine_labels, length_after_combine):
+def get_masks_for_combine_reps(combine_labels, final_length):
     """
     params:
         combine_labels:  [bs, len]
@@ -238,26 +239,28 @@ def get_masks_for_combine_reps(combine_labels, length_after_combine):
     """
 
     bs = combine_labels.size(0)
-    final_rep_using_original_rep_mask = torch.BoolTensor(length_after_combine.size()).fill_(False)
-    final_rep_using_combined_rep_mask = torch.BoolTensor(length_after_combine.size()).fill_(False)
+    max_final_length = max(final_length)
+
+    final_rep_using_splitted_rep_mask = torch.BoolTensor(bs, max_final_length).fill_(False)
+    final_rep_using_combined_rep_mask = torch.BoolTensor(bs, max_final_length).fill_(False)
 
     splitted_rep_for_final_rep_mask = torch.eq(combine_labels, NOT_COMBINE)
 
     for sentence_id in range(bs):
         word_id_in_final_rep = 0
-        for word_id_in_splitted_rep, label in enumerate(combine_labels[0]):
+        for word_id_in_splitted_rep, label in enumerate(combine_labels[sentence_id]):
             if label == PAD:
                 break
             elif label == COMBINE_END:
                 final_rep_using_combined_rep_mask[sentence_id][word_id_in_final_rep] = True
                 word_id_in_final_rep += 1
             elif label == NOT_COMBINE:
-                final_rep_using_original_rep_mask[sentence_id][word_id_in_final_rep] = True
+                final_rep_using_splitted_rep_mask[sentence_id][word_id_in_final_rep] = True
                 word_id_in_final_rep += 1
             elif label == COMBINE_FRONT:
                 continue
             else:
                 raise ValueError
 
-    return final_rep_using_original_rep_mask, final_rep_using_combined_rep_mask, splitted_rep_for_final_rep_mask
+    return final_rep_using_splitted_rep_mask, final_rep_using_combined_rep_mask, splitted_rep_for_final_rep_mask
 

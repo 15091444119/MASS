@@ -15,6 +15,10 @@ import time
 import random
 from logging import getLogger
 from collections import OrderedDict
+from src.combiner.forward_function.mass import MassBatch
+from src.combiner.forward_function.cheat_combine import cheat
+from src.combiner.forward_function.explicit_split import combiner_mass_with_explict_split
+from src.combiner.forward_function.common_combine import combiner_mass
 import numpy as np
 import torch
 from torch.nn import functional as F
@@ -23,9 +27,6 @@ from apex.fp16_utils import FP16_Optimizer
 
 from .utils import get_optimizer, to_cuda, concat_batches
 from .utils import parse_lambda_config, update_lambdas
-from src.evaluation.utils import Context2Sentence
-from src.combiner.splitter import get_combine_labels
-from src.combiner.constant import SUBWORD_FRONT, SUBWORD_END, MASKED_TOKEN, SKIPPED_TOKEN, NOT_USED_TOKEN
 
 logger = getLogger()
 
@@ -1018,32 +1019,45 @@ class EncCombinerDecTrainer(Trainer):
         self.stats['processed_s'] += len1.size(0)
         self.stats['processed_w'] += (len1 - 1).sum().item()
 
+    def get_mass_batch(self, step_name, lang):
+        """
+        get a mass batch
+        Args:
+            step_name:
+            lang:
+
+        Returns:
+
+        """
+        params = self.params
+        x_, len_ = self.get_batch(step_name, lang)
+        (x1, len1, x2, len2, y, pred_mask, positions) = self.restricted_mask_sent(x_, len_, int(params.lambda_span))
+        (x1, len1, x2, len2, y, pred_mask, positions) = to_cuda(x1, len1, x2, len2, y, pred_mask, positions)
+        mass_batch = MassBatch(x1=x1, len1=len1, x2=x2, len2=len2, y=y, pred_mask=pred_mask, positions=positions, lang=lang)
+        return mass_batch
+
     def mass_step_with_combiner(self, lang, lambda_coeff):
         assert lambda_coeff >= 0
         if lambda_coeff == 0:
             return
         params = self.params
-        x_, len_ = self.get_batch('mass_with_combiner', lang)
-        (x1, len1, x2, len2, y, pred_mask, positions) = self.restricted_mask_sent(x_, len_, int(params.lambda_span))
-        mass_batch = MassBatch(x1=x1, len1=len1, x2=x2, len2=len2, y=y, pred_mask=pred_mask, positions=positions, lang=lang)
+        mass_batch = self.get_mass_batch("mass_with_combiner", lang)
         models = {"encoder": self.encoder, "combiner": self.combiner, "decoder": self.decoder}
         _, losses, statistics = combiner_mass(
             models=models,
-            data=mass_batch,
+            mass_batch=mass_batch,
             params=params,
             dico=self.data["dico"],
             mode="train"
         )
-
-
-        loss = losses["mass_loss"]
+        loss = losses.decoding_loss
         self.stats[("mass_with_combiner-{}".format(lang))].append(loss.item())
 
         self.optimize(loss, ["encoder", "combiner", "decoder"])
 
         self.n_sentences += params.batch_size
-        self.stats["processed_s"] += statistics["processed_s"]
-        self.stats["processed_w"] += statistics["processed_w"]
+        self.stats["processed_s"] += statistics.processed_s
+        self.stats["processed_w"] += statistics.processed_w
 
     def mass_step_with_explicit_split(self, lang, lambda_coeff):
         assert lambda_coeff >= 0
@@ -1051,33 +1065,32 @@ class EncCombinerDecTrainer(Trainer):
             return
         params = self.params
 
-        x_, len_ = self.get_batch('mass_explicit_split', lang)
-
-        (x1, len1, x2, len2, y, pred_mask, positions) = self.restricted_mask_sent(x_, len_, int(params.lambda_span))
-        mass_batch = MassBatch(x1=x1, len1=len1, x2=x2, len2=len2, y=y, pred_mask=pred_mask, positions=positions, lang=lang)
+        mass_batch = self.get_mass_batch("expicit_mass", lang)
 
         models = {"encoder": self.encoder, "combiner": self.combiner, "decoder": self.decoder}
-        _, losses, statistics = combiner_mass_with_explict_split(models=models,
-                                                    data=mass_batch,
-                                                    params=params,
-                                                    dico=self.data["dico"],
-                                                    splitter=self.splitter,
-                                                    combiner_loss_function=self.loss_function,
-                                                    mode="train")
+        _, losses, statistics = combiner_mass_with_explict_split(
+            models=models,
+            mass_batch=mass_batch,
+            params=params,
+            dico=self.data["dico"],
+            splitter=self.splitter,
+            combine_loss_fn=self.loss_function,
+            mode="train"
+        )
 
-        if losses["combiner_loss"] is not None:
-            loss = losses["combiner_loss"] + losses["mass_loss"]
-            self.stats[("mass_with_combiner_with_explicit_split-{}".format(lang))].append(losses["mass_loss"].item())
-            self.stats[("combiner-{}".format(lang))].append(losses["combiner_loss"].item())
+        if losses.combine_loss is not None:
+            loss = losses.combine_loss + losses.decoding_loss
+            self.stats[("mass_with_combiner_with_explicit_split-{}".format(lang))].append(losses.decoding_loss.item())
+            self.stats[("combiner-{}".format(lang))].append(losses.combine_loss.item())
         else:
-            loss = losses["mass_loss"]
+            loss = losses.decoding_loss
 
         self.optimize(loss, ["encoder", "combiner", "decoder"])
 
         self.n_sentences += params.batch_size
-        self.stats["trained_combiner_words"] += statistics["trained_combiner_words"]
-        self.stats["processed_s"] += statistics["processed_s"]
-        self.stats["processed_w"] += statistics["processed_w"]
+        self.stats["trained_combiner_words"] += statistics.trained_combiner_words
+        self.stats["processed_s"] += statistics.processed_s
+        self.stats["processed_w"] += statistics.processed_w
 
 
     def bmt_step(self, lang1, lang2, lambda_coeff):

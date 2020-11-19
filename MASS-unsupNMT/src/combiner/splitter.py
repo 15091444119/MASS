@@ -302,10 +302,9 @@ class WholeWordSplitter(object):
         for i in range(batch_size):
             new_batch[:new_lengths[i], i].copy_(torch.from_numpy(new_idxs[i]))
 
-        new_lengths = torch.tensor(new_lengths)
+        new_lengths = torch.tensor(new_lengths).to(batch.device)
 
-
-        return new_batch, new_lengths, trained_words_mask, trained_subwords_labels
+        return new_batch, new_lengths, mappers
 
 
 

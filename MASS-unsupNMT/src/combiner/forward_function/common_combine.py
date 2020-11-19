@@ -50,7 +50,8 @@ def combiner_mass(models, mass_batch, params, dico, mode):
     combine_tool = CombineTool(
         batch=batch.x1,
         length=batch.len1,
-        dico=dico,mask_index=params.mask_index
+        dico=dico,
+        mask_index=params.mask_index
     )
 
     # combine and maybe train combiner

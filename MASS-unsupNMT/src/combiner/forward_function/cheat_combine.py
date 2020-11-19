@@ -4,7 +4,6 @@ cheat means we use original whole word representation as combined results
 
 
 from .mass import set_model_mode, DecodingBatch
-from ..combine_utils import ExplicitSplitCombineTool
 from src.combiner.forward_function.mass import MassBatch
 from .explicit_split import ExplicitSplitCombineTool, ExplicitSplitBatch
 
@@ -30,7 +29,8 @@ class CheatLosses(object):
 
 
 
-def combiner_mass_with_explict_split(models, mass_batch:MassBatch, params, dico, splitter, mode):
+def cheat(models, mass_batch:MassBatch, params, dico, splitter, mode):
+
     set_model_mode(mode=mode, models=[models.encoder, models.combiner, models.decoder])
 
     batch = ExplicitSplitBatch(mass_batch=mass_batch, params=params, dico=dico, splitter=splitter)
