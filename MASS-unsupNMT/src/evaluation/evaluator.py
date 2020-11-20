@@ -19,9 +19,7 @@ from .utils import SenteceEmbedder, WordEmbedderWithCombiner
 from src.combiner.combiner import MultiLingualNoneParaCombiner
 from .bli import BLI
 from .eval_context_bli import eval_whole_separated_bli, read_retokenize_words, generate_context_word_representation, encode_whole_word_separated_word, generate_and_eval
-from src.combiner.constant import SKIPPED_TOKEN, SUBWORD_FRONT, SUBWORD_END, NOT_USED_TOKEN
 from src.trainer import MassBatch, combiner_mass, combiner_mass_with_explict_split
-from src.combiner.splitter import get_combine_labels
 
 
 BLEU_SCRIPT_PATH = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'multi-bleu.perl')

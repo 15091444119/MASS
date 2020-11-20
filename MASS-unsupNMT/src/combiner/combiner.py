@@ -24,8 +24,6 @@ class Combiner(nn.Module):
         """
         if method == "combine":
             return self.combine(*args, **kwargs)
-        elif method == "maybe_explicit_train_combiner":
-            return self.maybe_explicit_train_combiner(*args, **kwargs)
         else:
             raise NotImplementedError
 
@@ -40,12 +38,12 @@ class LastTokenCombiner(Combiner):
         transformer_layer = nn.TransformerEncoderLayer(d_model=params.emb_dim, nhead=params.n_heads,
                                                        dim_feedforward=params.emb_dim * 4)
 
-        self.encoder = torch.nn.ModuleDict(
-            {lang: nn.TransformerEncoder(transformer_layer, num_layers=params.n_combiner_layers) for lang in params.lang2id}
+        self.encoder = torch.nn.ModuleList(
+            [nn.TransformerEncoder(transformer_layer, num_layers=params.n_combiner_layers) for _ in params.lang2id.keys()]
         )
         self.output_dim = params.emb_dim
 
-    def combine(self, encoded, lengths, combine_labels, lang, trained_combine_labels=None):
+    def combine(self, encoded, lengths, combine_labels, lang_id):
         """
         Args:
             encoded: [bs, len, dim]
@@ -53,14 +51,13 @@ class LastTokenCombiner(Combiner):
             combine_labels: [bs, len]
             lang_id: int
                 language index
-            trained_combine_labels: another label
 
         Returns:
             representation: [splitted word number, dim]
             trained_representation
 
         """
-        transformer_encoder = self.encoder[lang]
+        transformer_encoder = self.encoder[lang_id]
         encoded = encoded.transpose(0, 1)
         assert encoded.size(1) == lengths.size(0)
         max_length = encoded.size(0)

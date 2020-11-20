@@ -29,7 +29,7 @@ def combiner_mass_with_explict_split(models, mass_batch:MassBatch, params, dico,
     batch = ExplicitSplitBatch(mass_batch=mass_batch, params=params, dico=dico, splitter=splitter)
 
     combine_tool = ExplicitSplitCombineTool(splitted_batch=batch.x3, length_before_split=batch.len1,
-                                            length_after_split=batch.len3, dico=dico, mappers=batch.mappers)
+                                            length_after_split=batch.len3, dico=dico, mappers=batch.mappers, mask_index=params.mask_index)
 
     # combine and maybe train combiner
     combine_loss, final_encoded = encode_and_maybe_explicit_train_combiner(explicit_splitted_batch=batch, combiner=models.combiner, encoder=models.encoder, combine_tool=combine_tool, combine_loss_fn=combine_loss_fn)
@@ -60,13 +60,14 @@ def encode_and_maybe_explicit_train_combiner(explicit_splitted_batch, combiner, 
         x=explicit_splitted_batch.x3,
         lengths=explicit_splitted_batch.len3,
         langs=explicit_splitted_batch.langs3,
-        casual=False
+        causal=False
     )
 
     combined_rep = combiner.combine(
         encoded=encoded,
+        final_len=combine_tool.final_length,
         combine_labels=combine_tool.combine_labels,
-        final_len=combine_tool.final_length
+        lang_id=explicit_splitted_batch.lang_id
     )
 
     combine_loss = calculate_combine_loss(
@@ -137,15 +138,14 @@ class ExplicitSplitBatch(object):
         self.y = mass_batch.y
         self.pred_mask = mass_batch.pred_mask
         self.positions = mass_batch.positions
-
-        lang_id = params.lang2id[mass_batch.lang]
+        self.lang_id = mass_batch.lang_id
 
         self.langs1 = mass_batch.langs1
         self.langs2 = mass_batch.langs2
 
         # split whole words to train combiner
         x3, len3, mappers = splitter.re_encode_batch_sentences(batch=self.x1, lengths=self.len1, dico=dico, re_encode_rate=params.re_encode_rate)
-        langs3 = x3.clone().fill_(lang_id)
+        langs3 = x3.clone().fill_(self.lang_id)
 
         self.x3 = x3
         self.len3 = len3

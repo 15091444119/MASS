@@ -1,7 +1,7 @@
 import unittest
 import torch
 from src.combiner.constant import PAD, COMBINE_END, COMBINE_FRONT, NOT_COMBINE
-from src.combiner.combine_utils import get_combine_labels, get_length_after_combine, get_masks_for_combine_reps, gather_splitted_combine_representation, get_mask_for_select_combined_rep
+from src.combiner.combine_utils import get_combine_labels, get_length_after_combine, get_masks_for_combine_reps, gather_splitted_combine_representation, get_mask_for_select_combined_rep, get_mask_for_decoder
 
 
 class test_dico(object):
@@ -32,7 +32,7 @@ class Test(unittest.TestCase):
         ]
         self.batch = torch.tensor([
             [self.dico.word2id[word] for word in sentence] for sentence in self.sentences
-        ]).long().transpose(0, 1)
+        ]).long().transpose(0, 1)   # [len, bs]
 
         combine_labels = [
             [NOT_COMBINE, COMBINE_FRONT, COMBINE_END, NOT_COMBINE, NOT_COMBINE, COMBINE_FRONT, COMBINE_END, NOT_COMBINE, NOT_COMBINE, PAD, PAD],
@@ -40,6 +40,11 @@ class Test(unittest.TestCase):
         ]
         self.combine_labels = torch.tensor(combine_labels).long()
         self.final_length = torch.tensor([7, 10]).long()
+
+        self.mask_for_decoder = torch.tensor([
+            [True, True, False, False, True, True, True, True, True, True],
+            [True, False, False, False, False, False, True, True, True, True]
+        ])
         self.final_rep_using_combined_rep_mask = torch.tensor([
             [False, True, False, False, True, False, False, False, False, False],
             [False, False, False, False, False, False, False, True, False, False]
@@ -84,9 +89,9 @@ class Test(unittest.TestCase):
         self.assertTrue(torch.eq(self.combine_labels, hyp).all())
 
     def test_get_mask_for_decoder(self):
-        hyp = get_length_after_combine(self.combine_labels)
+        hyp = get_mask_for_decoder(splitted_batch=self.batch, combine_labels=self.combine_labels, final_length=self.final_length, mask_index=self.dico.word2id['<MASK>'])
 
-        self.assertTrue(torch.eq(self.final_length, hyp).all())
+        self.assertTrue(torch.eq(self.mask_for_decoder, hyp).all())
 
     def test_get_masks_for_combine_reps(self):
         hyp_final_rep_using_splitted_rep_mask, hyp_final_rep_using_combined_rep_mask, hyp_splitted_rep_for_final_rep_mask = get_masks_for_combine_reps(

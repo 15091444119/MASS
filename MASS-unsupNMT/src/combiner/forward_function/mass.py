@@ -1,7 +1,7 @@
 
 class MassBatch(object):
 
-    def __init__(self, x1, len1, x2, len2, y, pred_mask, positions, lang):
+    def __init__(self, x1, len1, x2, len2, y, pred_mask, positions, lang_id):
         self.x1 = x1
         self.len1 = len1
         self.x2 = x2
@@ -9,7 +9,9 @@ class MassBatch(object):
         self.y = y
         self.pred_mask = pred_mask
         self.positions = positions
-        self.lang = lang
+        self.langs1 = x1.clone().fill_(lang_id)
+        self.langs2 = x2.clone().fill_(lang_id)
+        self.lang_id = lang_id
 
 
 class DecodingBatch(object):

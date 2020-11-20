@@ -6,7 +6,6 @@ import pdb
 SEPARATOR = "@@"
 WORD_END = "</w>"
 
-from src.combiner.constant import NOT_USED_TOKEN, SKIPPED_TOKEN, SUBWORD_END, SUBWORD_FRONT, MASKED_TOKEN
 from src.data.dictionary import MASK_WORD
 
 

@@ -34,9 +34,7 @@ class CommonCombineBatch(object):
         self.y = mass_batch.y
         self.pred_mask = mass_batch.pred_mask
         self.positions = mass_batch.positions
-
-        lang_id = params.lang2id[mass_batch.lang]
-
+        self.lang_id = mass_batch.lang_id
         self.langs1 = mass_batch.langs1
         self.langs2 = mass_batch.langs2
 
@@ -89,13 +87,14 @@ def encode(common_combine_batch, combiner, encoder, combine_tool):
         x=common_combine_batch.x1,
         lengths=common_combine_batch.len1,
         langs=common_combine_batch.langs1,
-        casual=False
+        causal=False
     )
 
     combined_rep = combiner.combine(
         encoded=encoded,
+        length=combine_tool.final_length,
         combine_labels=combine_tool.combine_labels,
-        final_len=combine_tool.final_length
+        lang_id=common_combine_batch.lang_id
     )
 
     final_encoded = combine_tool.gather(splitted_rep=encoded, combined_rep=combined_rep)

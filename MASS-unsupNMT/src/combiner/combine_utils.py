@@ -1,4 +1,5 @@
 import torch
+import pdb
 from src.combiner.constant import COMBINE_END, COMBINE_FRONT, NOT_COMBINE, PAD
 
 
@@ -104,7 +105,7 @@ def get_mask_for_decoder(splitted_batch, combine_labels, final_length, mask_inde
     """
     Get encoder mask for decoding, only masked token will be set to False, pad index is not considered
     Args:
-        splitted_batch: [bs, length_after_split]
+        splitted_batch: [length_after_split, bs]
         combine_labels: [bs, length_after_split]
         final_length: [bs]
         mask_index:
@@ -112,6 +113,7 @@ def get_mask_for_decoder(splitted_batch, combine_labels, final_length, mask_inde
     Returns:
         mask: [bs, final_length]
     """
+    splitted_batch = splitted_batch.transpose(0, 1)  # [bs, length_after_combine]
     bs, max_length_after_split = splitted_batch.size()
     max_final_length = max(final_length).item()
     mask = torch.BoolTensor(bs, max_final_length).fill_(True)
@@ -128,7 +130,10 @@ def get_mask_for_decoder(splitted_batch, combine_labels, final_length, mask_inde
 
             # set mask to false
             if token_idx.item() == mask_index:
-                assert combine_labels[i][idx] == NOT_COMBINE
+                try:
+                    assert combine_labels[i][idx] == NOT_COMBINE
+                except:
+                    pdb.set_trace()
                 mask[i][index_in_final_encoded] = False
 
     return mask
@@ -153,7 +158,6 @@ def get_combine_labels(batch, dico):
     returns:
         combine_labels: [bs, len]
     """
-
     seq_len, bs = batch.size()
     combine_labels = torch.LongTensor(bs, seq_len).fill_(PAD)
 

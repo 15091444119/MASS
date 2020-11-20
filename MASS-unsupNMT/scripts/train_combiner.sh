@@ -7,15 +7,15 @@ train(){
 #export NGPU=2
 #export CUDA_VISIBLE_DEVICES="1,3"
 #python -m torch.distributed.launch --nproc_per_node=$NGPU train_combiner.py \
-export CUDA_VISIBLE_DEVICES="0"
+export CUDA_VISIBLE_DEVICES="1"
 python train_combiner.py \
 	--exp_name tmp_all                             \
 	--data_path /home/data_ti5_d/zhouzh/low-resource-mt/XLM_MASS_preprocessed_data/pretrain/cn-split-sen-zh-en-pretrain \
 	--lgs 'zh-en'                                        \
 	--encoder_only False                                 \
-	--reload_model "$MODEL,$MODEL" \
+	--reload_model "" \
 	--emb_dim 1024                                       \
-	--n_layers 6                                         \
+	--n_layers 1                                         \
 	--n_heads 8                                          \
 	--dropout 0.1                                        \
 	--attention_dropout 0.1                              \
@@ -30,7 +30,7 @@ python train_combiner.py \
 	--combiner_loss "COS" \
   --n_combiner_layers 2 \
   --splitter ROB \
-  --debug_train False \
+  --debug_train True \
   --eval_only False \
   --re_encode_rate 0.3 \
   --word_mask_keep_rand 1.0,0.0,0.0 \

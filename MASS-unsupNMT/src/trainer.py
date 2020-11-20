@@ -17,8 +17,8 @@ from logging import getLogger
 from collections import OrderedDict
 from src.combiner.forward_function.mass import MassBatch
 from src.combiner.forward_function.cheat_combine import cheat
-from src.combiner.forward_function.explicit_split import combiner_mass_with_explict_split
-from src.combiner.forward_function.common_combine import combiner_mass
+from src.combiner.forward_function.explicit_split import combiner_mass_with_explict_split, ExplicitSplitModel
+from src.combiner.forward_function.common_combine import combiner_mass, CommonCombineModel
 import numpy as np
 import torch
 from torch.nn import functional as F
@@ -1033,7 +1033,7 @@ class EncCombinerDecTrainer(Trainer):
         x_, len_ = self.get_batch(step_name, lang)
         (x1, len1, x2, len2, y, pred_mask, positions) = self.restricted_mask_sent(x_, len_, int(params.lambda_span))
         (x1, len1, x2, len2, y, pred_mask, positions) = to_cuda(x1, len1, x2, len2, y, pred_mask, positions)
-        mass_batch = MassBatch(x1=x1, len1=len1, x2=x2, len2=len2, y=y, pred_mask=pred_mask, positions=positions, lang=lang)
+        mass_batch = MassBatch(x1=x1, len1=len1, x2=x2, len2=len2, y=y, pred_mask=pred_mask, positions=positions, lang_id=params.lang2id[lang])
         return mass_batch
 
     def mass_step_with_combiner(self, lang, lambda_coeff):
@@ -1042,7 +1042,8 @@ class EncCombinerDecTrainer(Trainer):
             return
         params = self.params
         mass_batch = self.get_mass_batch("mass_with_combiner", lang)
-        models = {"encoder": self.encoder, "combiner": self.combiner, "decoder": self.decoder}
+
+        models = CommonCombineModel(encoder=self.encoder, decoder=self.decoder, combiner=self.combiner)
         _, losses, statistics = combiner_mass(
             models=models,
             mass_batch=mass_batch,
@@ -1067,7 +1068,7 @@ class EncCombinerDecTrainer(Trainer):
 
         mass_batch = self.get_mass_batch("expicit_mass", lang)
 
-        models = {"encoder": self.encoder, "combiner": self.combiner, "decoder": self.decoder}
+        models = ExplicitSplitModel(encoder=self.encoder, decoder=self.decoder, combiner=self.combiner)
         _, losses, statistics = combiner_mass_with_explict_split(
             models=models,
             mass_batch=mass_batch,
