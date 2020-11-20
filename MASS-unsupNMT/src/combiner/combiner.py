@@ -57,8 +57,9 @@ class LastTokenCombiner(Combiner):
             trained_representation
 
         """
+        pdb.set_trace()
         transformer_encoder = self.encoder[lang_id]
-        encoded = encoded.transpose(0, 1)
+        encoded = encoded.transpose(0, 1)  #[len, bs, dim]
         assert encoded.size(1) == lengths.size(0)
         max_length = encoded.size(0)
 
@@ -66,7 +67,7 @@ class LastTokenCombiner(Combiner):
 
         # nothing to combine
         if subword_last_token_mask.to(torch.long).sum() == 0:
-            return [], None
+            return None
 
         # src_key_padding_mask set padding with false
         padding_mask = (~(get_masks(slen=max_length, lengths=lengths, causal=False)[0])).to(

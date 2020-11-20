@@ -46,7 +46,7 @@ class ExplicitSplitCombineTool(object):
 
         self.trained_combiner_words = self.splitted_original_word_mask.long().sum()
 
-        self.select_rep_from_combined_rep = get_mask_for_select_combined_rep(combine_labels=self.combine_labels, new_generated_subwords_labels=self.new_generated_subwords_labels)
+        self.select_trained_rep_from_combined_rep = get_mask_for_select_combined_rep(combine_labels=self.combine_labels, new_generated_subwords_labels=self.new_generated_subwords_labels)
 
     def gather(self, splitted_rep, combined_rep):
         return gather_splitted_combine_representation(
@@ -136,12 +136,12 @@ def get_mask_for_decoder(splitted_batch, combine_labels, final_length, mask_inde
                     pdb.set_trace()
                 mask[i][index_in_final_encoded] = False
 
-    return mask
+    return mask.to(splitted_batch.device)
 
 
 def get_length_after_combine(combine_labels):
     length = combine_labels.eq(NOT_COMBINE).sum(dim=-1) + combine_labels.eq(COMBINE_END).sum(dim=-1)
-    return length
+    return length.to(combine_labels.device)
 
 
 def get_combine_labels(batch, dico):
@@ -184,7 +184,7 @@ def get_combine_labels(batch, dico):
             combine_labels[i][j] = label
 
         assert word_finished
-    return combine_labels
+    return combine_labels.to(batch.device)
 
 
 def get_splitted_words_mask(mappers, length_before_split):
@@ -202,7 +202,7 @@ def get_splitted_words_mask(mappers, length_before_split):
         for idx in range(length_before_split[sentence_id].item()):
             if mapper[idx][1] - mapper[idx][0] > 1:  # is a word be separated
                 mask[sentence_id][idx] = True
-    return mask
+    return mask.to(length_before_split.device)
 
 
 def get_new_splitted_combine_labels(mappers, length_before_split, length_after_split):
@@ -227,7 +227,7 @@ def get_new_splitted_combine_labels(mappers, length_before_split, length_after_s
             else:
                 combine_labels[sentence_id][mapper[idx][0]].fill_(NOT_COMBINE)
 
-    return combine_labels
+    return combine_labels.to(length_before_split.device)
 
 
 def gather_splitted_combine_representation(splitted_rep, combined_rep, final_length, final_rep_using_splitted_rep_mask, final_rep_using_combined_rep_mask, splitted_rep_for_final_rep_mask):
@@ -253,9 +253,9 @@ def gather_splitted_combine_representation(splitted_rep, combined_rep, final_len
     dim = splitted_rep.size(-1)
     final_rep = torch.FloatTensor(bs, max_len_after_combine, dim).fill_(0).to(splitted_rep.device)
 
-    final_rep[final_rep_using_splitted_rep_mask.unsqueeze(-1)] = splitted_rep[splitted_rep_for_final_rep_mask.unsqueeze(-1)]
+    final_rep[final_rep_using_splitted_rep_mask.unsqueeze(-1).expand_as(final_rep)] = splitted_rep[splitted_rep_for_final_rep_mask.unsqueeze(-1).expand_as(splitted_rep)]
 
-    final_rep[final_rep_using_combined_rep_mask.unsqueeze(-1)] = combined_rep.view(-1)
+    final_rep[final_rep_using_combined_rep_mask.unsqueeze(-1).expand_as(final_rep)] = combined_rep.view(-1)
 
     return final_rep
 
@@ -272,10 +272,10 @@ def get_masks_for_combine_reps(combine_labels, final_length):
     bs = combine_labels.size(0)
     max_final_length = max(final_length)
 
-    final_rep_using_splitted_rep_mask = torch.BoolTensor(bs, max_final_length).fill_(False)
-    final_rep_using_combined_rep_mask = torch.BoolTensor(bs, max_final_length).fill_(False)
+    final_rep_using_splitted_rep_mask = torch.BoolTensor(bs, max_final_length).fill_(False).to(combine_labels.device)
+    final_rep_using_combined_rep_mask = torch.BoolTensor(bs, max_final_length).fill_(False).to(combine_labels.device)
 
-    splitted_rep_for_final_rep_mask = torch.eq(combine_labels, NOT_COMBINE)
+    splitted_rep_for_final_rep_mask = torch.eq(combine_labels, NOT_COMBINE).to(combine_labels.device)
 
     for sentence_id in range(bs):
         word_id_in_final_rep = 0

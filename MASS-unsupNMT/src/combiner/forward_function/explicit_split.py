@@ -61,14 +61,14 @@ def encode_and_maybe_explicit_train_combiner(explicit_splitted_batch, combiner, 
         lengths=explicit_splitted_batch.len3,
         langs=explicit_splitted_batch.langs3,
         causal=False
-    )
+    ).transpose(0, 1)  # [bs, len, dim]
 
     combined_rep = combiner.combine(
         encoded=encoded,
-        final_len=combine_tool.final_length,
+        lengths=combine_tool.final_length,
         combine_labels=combine_tool.combine_labels,
         lang_id=explicit_splitted_batch.lang_id
-    )
+    )  # None or [n_combined_words, dim]
 
     combine_loss = calculate_combine_loss(
         encoder=encoder,
@@ -88,20 +88,21 @@ def calculate_combine_loss(encoder, explicit_splitted_batch, combined_rep, combi
     if combine_tool.trained_combiner_words != 0:
         original_rep = encoder("fwd",
                                x=explicit_splitted_batch.x1,
-                               length=explicit_splitted_batch.len1,
+                               lengths=explicit_splitted_batch.len1,
                                langs=explicit_splitted_batch.langs1,
-                               casual=False
-                               )
+                               causal=False
+                               ).transpose(0, 1)
         dim = original_rep.size(-1)
 
-        trained_original_words_rep = original_rep.masked_select(combine_tool.splitted_original_word_mask).view(-1, dim)
+        trained_original_words_rep = original_rep.masked_select(combine_tool.splitted_original_word_mask.unsqueeze(-1)).view(-1, dim)
 
-        trained_combined_words_rep = combined_rep.masked_select(combine_tool.select_trained_rep_from_combined_rep).view(-1, dim)
+        trained_combined_words_rep = combined_rep.index_select(dim=0, index=combine_tool.select_trained_rep_from_combined_rep).view(-1, dim)
 
         combine_loss = loss_fn(trained_original_words_rep, trained_combined_words_rep)
         return combine_loss
 
     else:
+        assert combined_rep is None
         return None
 
 

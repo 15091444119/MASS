@@ -88,11 +88,11 @@ def encode(common_combine_batch, combiner, encoder, combine_tool):
         lengths=common_combine_batch.len1,
         langs=common_combine_batch.langs1,
         causal=False
-    )
+    ).transpose(0, 1)
 
     combined_rep = combiner.combine(
         encoded=encoded,
-        length=combine_tool.final_length,
+        lengths=combine_tool.final_length,
         combine_labels=combine_tool.combine_labels,
         lang_id=common_combine_batch.lang_id
     )
