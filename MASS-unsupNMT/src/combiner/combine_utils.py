@@ -45,6 +45,8 @@ class ExplicitSplitCombineTool(object):
 
         self.trained_combiner_words = self.splitted_original_word_mask.long().sum()
 
+        self.select_rep_from_combined_rep = get_mask_for_select_combined_rep(combine_labels=self.combine_labels, new_generated_subwords_labels=self.new_generated_subwords_labels)
+
     def gather(self, splitted_rep, combined_rep):
         return gather_splitted_combine_representation(
             splitted_rep=splitted_rep,
@@ -71,6 +73,31 @@ class ExplicitSplitCombineTool(object):
         output_dim = rep_before_split.size(-1)
 
         return rep_before_split.masked_select(self.splitted_original_word_mask.unsqueeze(-1)).view(-1, output_dim)
+
+
+def get_mask_for_select_combined_rep(combine_labels, new_generated_subwords_labels):
+    """
+    We need to select trained representation from combined representation, so a mask is needed
+    Args:
+        combine_labels: [bs, length_after_split]
+        new_generated_subwords_labels: [bs, length_after_split]
+    Returns:
+        selecting_tensor: shape:[n_trained_whole_words]
+    """
+
+    assert combine_labels.size() == new_generated_subwords_labels.size()
+    bs, len = combine_labels.size()
+
+    position_in_combined_rep = 0
+    positions = []
+    for sentence_id in range(bs):
+        for token_id, token_label in enumerate(combine_labels[sentence_id]):
+            if token_label == COMBINE_END:
+                if new_generated_subwords_labels[sentence_id][token_id] == COMBINE_END:
+                    positions.append(position_in_combined_rep)
+                position_in_combined_rep += 1
+
+    return torch.tensor(positions).to(combine_labels.device)
 
 
 def get_mask_for_decoder(splitted_batch, combine_labels, final_length, mask_index):

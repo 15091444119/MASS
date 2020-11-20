@@ -84,8 +84,7 @@ def encode_and_maybe_explicit_train_combiner(explicit_splitted_batch, combiner, 
 
 def calculate_combine_loss(encoder, explicit_splitted_batch, combined_rep, combine_tool, loss_fn):
 
-    if combined_rep is not None:
-        assert combine_tool.trained_combiner_words != 0
+    if combine_tool.trained_combiner_words != 0:
         original_rep = encoder("fwd",
                                x=explicit_splitted_batch.x1,
                                length=explicit_splitted_batch.len1,
@@ -93,9 +92,14 @@ def calculate_combine_loss(encoder, explicit_splitted_batch, combined_rep, combi
                                casual=False
                                )
         dim = original_rep.size(-1)
+
         trained_original_words_rep = original_rep.masked_select(combine_tool.splitted_original_word_mask).view(-1, dim)
-        combine_loss = loss_fn(trained_original_words_rep, combined_rep)
+
+        trained_combined_words_rep = combined_rep.masked_select(combine_tool.select_trained_rep_from_combined_rep).view(-1, dim)
+
+        combine_loss = loss_fn(trained_original_words_rep, trained_combined_words_rep)
         return combine_loss
+
     else:
         return None
 

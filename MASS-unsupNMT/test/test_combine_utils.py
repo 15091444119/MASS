@@ -1,7 +1,7 @@
 import unittest
 import torch
 from src.combiner.constant import PAD, COMBINE_END, COMBINE_FRONT, NOT_COMBINE
-from src.combiner.combine_utils import get_combine_labels, get_length_after_combine, get_masks_for_combine_reps, gather_splitted_combine_representation
+from src.combiner.combine_utils import get_combine_labels, get_length_after_combine, get_masks_for_combine_reps, gather_splitted_combine_representation, get_mask_for_select_combined_rep
 
 
 class test_dico(object):
@@ -64,6 +64,15 @@ class Test(unittest.TestCase):
             [1, 1, 1, 1, 1, 1, 1, 2, 1, 1]
         ]).unsqueeze(-1).float()
 
+        self.new_generated_subwords_labels = torch.tensor([
+            [NOT_COMBINE, COMBINE_FRONT, COMBINE_END, NOT_COMBINE, NOT_COMBINE, NOT_COMBINE, NOT_COMBINE, NOT_COMBINE,
+             NOT_COMBINE, PAD, PAD],
+            [NOT_COMBINE, NOT_COMBINE, NOT_COMBINE, NOT_COMBINE, NOT_COMBINE, NOT_COMBINE, NOT_COMBINE, COMBINE_FRONT,
+             COMBINE_END, NOT_COMBINE, NOT_COMBINE]
+        ])
+
+        self.selecting_mask = torch.tensor([0, 2])
+
     def test_get_length_after_combine(self):
         hyp = get_length_after_combine(self.combine_labels)
 
@@ -98,3 +107,9 @@ class Test(unittest.TestCase):
             splitted_rep_for_final_rep_mask=self.splitted_rep_for_final_rep_mask
         )
         self.assertTrue(torch.eq(final_rep, self.final_rep).all())
+
+    def test_select_from_combined(self):
+
+        mask = get_mask_for_select_combined_rep(self.combine_labels, self.new_generated_subwords_labels)
+
+        self.assertTrue(torch.eq(self.selecting_mask, mask).all())

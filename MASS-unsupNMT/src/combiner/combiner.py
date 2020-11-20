@@ -6,7 +6,7 @@ from src.evaluation.utils import Context2Sentence
 
 from src.utils import AttrDict
 from src.evaluation.utils import package_module
-from .constant import SKIPPED_TOKEN, SUBWORD_END, SUBWORD_FRONT, NOT_USED_TOKEN, MASKED_TOKEN
+from src.combiner.constant import COMBINE_END
 
 
 class Combiner(nn.Module):
@@ -79,16 +79,11 @@ class LastTokenCombiner(Combiner):
 
         representation = outputs.masked_select(subword_last_token_mask).view(-1, self.output_dim)
 
-        if trained_combine_labels is not None:
-            trained_subword_last_token_mask = self.word_end_mask(trained_combine_labels).unsqueeze(-1) # [bs, len, 1]
-            trained_representation = outputs.masked_select(trained_subword_last_token_mask).view(-1, self.output_dim)
-            return representation, trained_representation
-        else:
-            return representation, None
+        return representation
 
     @classmethod
     def word_end_mask(cls, combine_labels):
-        mask = combine_labels.eq(SUBWORD_END)
+        mask = combine_labels.eq(COMBINE_END)
         return mask
 
 
