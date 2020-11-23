@@ -13,9 +13,8 @@ import subprocess
 from collections import OrderedDict
 import numpy as np
 import torch
-from src.combiner.forward_function.common_combine import CombinerEncoderDecoder
-from src.combiner.forward_function.none_combiner import NoneCombinerEncoder, EncoderInputs
-from src.combiner.forward_function.cheat_combine import CheatCombinerEncoder
+from src.combiner.forward_function.common_combine import CommonEncoder, CommonSeq2Seq, EncoderInputs
+from src.combiner.forward_function.cheat_combine import CheatEncoder, CheatCombineSeq2Seq
 
 from ..utils import to_cuda, restore_segmentation, concat_batches
 from .utils import SenteceEmbedder, WordEmbedderWithCombiner
@@ -551,8 +550,8 @@ class EncCombinerDecEvaluator(Evaluator):
             decoder = self.decoder.module if params.multi_gpu else self.decoder
             combiner = self.combiner.module if params.multi_gpu else self.combiner
 
-            combiner_encoder = CheatCombinerEncoder(encoder, combiner, params, self.data["dico"], self.splitter)
-            seq2seq = CombinerEncoderDecoder(combiner_encoder, decoder)
+            encoder = CheatEncoder(encoder=encoder, params=params, dico=self.data["dico"], splitter=self.splitter)
+            seq2seq = CheatCombineSeq2Seq(encoder=encoder, decoder=decoder)
             params = params
             lang1_id = params.lang2id[lang1]
             lang2_id = params.lang2id[lang2]

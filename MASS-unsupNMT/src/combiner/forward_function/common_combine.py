@@ -1,8 +1,17 @@
-from .mass import set_model_mode, DecodingBatch
-from ..combine_utils import CombineTool
+from .mass import set_model_mode
+from ..combine_utils import CombineTool, ExplicitSplitCombineTool
+from .explicit_split import ExplicitSplitEncoderBatch
 import torch
 
 
+
+class EncoderInputs(object):
+
+    def __init__(self, x1, len1, lang_id, langs1):
+        self.x1 = x1
+        self.len1 = len1
+        self.lang_id = lang_id
+        self.langs1 = langs1
 
 class CommonCombineModel(object):
 
@@ -25,22 +34,16 @@ class CommonCombineLosses(object):
         self.decoding_loss = decoding_loss
 
 
-class CommonCombineBatch(object):
+class BaseEncoder(torch.nn.Module):
 
-    def __init__(self, mass_batch, params):
-        self.x1 = mass_batch.x1
-        self.len1 = mass_batch.len1
-        self.x2 = mass_batch.x2
-        self.len2 = mass_batch.len2
-        self.y = mass_batch.y
-        self.pred_mask = mass_batch.pred_mask
-        self.positions = mass_batch.positions
-        self.lang_id = mass_batch.lang_id
-        self.langs1 = mass_batch.langs1
-        self.langs2 = mass_batch.langs2
+    def __init__(self, *args, **kwargs):
+        super().__init__()
+
+    def encode(self, *args, **kwargs):
+        raise NotImplementedError
 
 
-class BaseCombinerEncoder(torch.nn.Module):
+class BaseCombinerEncoder(BaseEncoder):
 
     def __init__(self, encoder, combiner, params):
         super().__init__()
@@ -55,41 +58,35 @@ class BaseCombinerEncoder(torch.nn.Module):
         raise NotImplementedError
 
     def train_combiner(self):
-        raise  NotImplementedError
+        raise NotImplementedError
 
 
-class GenerateDecodeBatch(object):
+class BaseSeq2Seq(torch.nn.Module):
 
-    def __init__(self, src_enc, src_len, tgt_lang_id, max_len, enc_mask):
-        self.src_enc = src_enc
-        self.src_len = src_len
-        self.tgt_lang_id = tgt_lang_id
-        self.max_len = max_len
-        self.enc_mask = enc_mask
-
-
-class CombinerEncoderDecoder(torch.nn.Module):
-
-    def __init__(self, combiner_encoder: BaseCombinerEncoder, decoder):
+    def __init__(self, encoder, decoder):
         super().__init__()
-        self.combiner_encoder = combiner_encoder
+        self.encoder = encoder
         self.decoder = decoder
 
     def train(self, encoding_batch):
         pass
 
-    def mass_loss(self, encoder_inputs, decoder_inputs):
-        batch, combine_tools = self.combiner_encoder.convert_data(encoder_inputs)
-        encoded = self.combiner_encoder.encode(batch, combine_tools)
-        decoding_batch = self.get_loss_decoding_batch(encoded, decoder_inputs, combine_tools)
-        scores, losses = self.decode(decoding_batch)
+    def get_loss_decoding_batch(self, encoded_info, decoder_inputs):
+        raise NotImplementedError
 
+    def get_generate_batch(self, encoded_info, tgt_lang_id):
+        raise NotImplementedError
+
+    def run_seq2seq_loss(self, encoder_inputs, decoder_inputs):
+        encoded_info = self.encoder.encode(encoder_inputs)
+        decoding_batch = self.get_loss_decoding_batch(encoded_info=encoded_info, decoder_inputs=decoder_inputs)
+        scores, losses = self.run_decode_loss(decoding_batch)
         return scores, losses
 
-    def loss_decode(self, decoding_batch, get_scores=False):
+    def run_decode_loss(self, decoding_batch, get_scores=False):
         dec = self.decoder('fwd',
            x=decoding_batch.x,
-           lengths=decoding_batch.length,
+           lengths=decoding_batch.lengths,
            langs=decoding_batch.langs,
            causal=True,
            src_enc=decoding_batch.src_enc,
@@ -102,22 +99,10 @@ class CombinerEncoderDecoder(torch.nn.Module):
 
         return word_scores, loss
 
-    def get_generate_decode_batch(self, encoded, tgt_lang_id, combine_tools):
-        max_len =int(1.5 * combine_tools.original_length.max().item() + 10)
-        generate_decode_batch = GenerateDecodeBatch(
-            src_enc=encoded,
-            src_len=combine_tools.final_length,
-            tgt_lang_id=tgt_lang_id,
-            max_len=max_len,
-            enc_mask=combine_tools.enc_mask
-        )
-        return generate_decode_batch
-
     def generate(self, encoder_inputs, tgt_lang_id, decoding_params):
-        batch, combine_tools = self.combiner_encoder.convert_data(encoder_inputs)
-        encoded = self.combiner_encoder.encode(batch, combine_tools)
-        generate_decode_batch = self.get_generate_decode_batch(encoded, tgt_lang_id, combine_tools)
-        generated, lengths = self.generate_decode(generate_decode_batch=generate_decode_batch, decoding_params=decoding_params)
+        encoded_info = self.encoder.encode(encoder_inputs)
+        generate_batch = self.get_generate_batch(encoded_info=encoded_info, tgt_lang_id=tgt_lang_id)
+        generated, lengths = self.generate_decode(generate_decode_batch=generate_batch, decoding_params=decoding_params)
         return generated, lengths
 
     def generate_decode(self, generate_decode_batch, decoding_params):
@@ -141,67 +126,235 @@ class CombinerEncoderDecoder(torch.nn.Module):
         return generated, lengths
 
 
+class GenerateDecodeBatch(object):
 
-def combiner_mass(models, mass_batch, params, dico, mode):
-    # prepare
-    set_model_mode(mode=mode, models=[models.encoder, models.combiner, models.decoder])
-
-    batch = CommonCombineBatch(mass_batch=mass_batch, params=params)
-
-    combine_tool = CombineTool(
-        batch=batch.x1,
-        length=batch.len1,
-        dico=dico,
-        mask_index=params.mask_index
-    )
-
-    # combine and maybe train combiner
-    final_encoded = encode(common_combine_batch=batch,
-                           combiner=models.combiner,
-                           encoder=models.encoder,
-                           combine_tool=combine_tool
-    )
-
-    # decoding
-    decoding_batch = DecodingBatch(
-        x=batch.x2,
-        length=batch.len2,
-        langs=batch.langs2,
-        src_enc=final_encoded,
-        src_len=combine_tool.final_length,
-        src_mask=combine_tool.mask_for_decoder,
-        positions=batch.positions,
-        pred_mask=batch.pred_mask,
-        y=batch.y,
-        lang_id=batch.lang_id
-    )
-
-    scores, decoding_loss = decoding_batch.decode(decoder=models.decoder, get_scores=(mode == "eval"))
-
-    losses = CommonCombineLosses(decoding_loss=decoding_loss)
-
-    statistics = CommonCombineStat(batch=batch)
-
-    return scores, losses, statistics
+    def __init__(self, src_enc, src_len, tgt_lang_id, max_len, enc_mask):
+        self.src_enc = src_enc
+        self.src_len = src_len
+        self.tgt_lang_id = tgt_lang_id
+        self.max_len = max_len
+        self.enc_mask = enc_mask
 
 
-def encode(common_combine_batch, combiner, encoder, combine_tool):
-    encoded = encoder(
-        "fwd",
-        x=common_combine_batch.x1,
-        lengths=common_combine_batch.len1,
-        langs=common_combine_batch.langs1,
-        causal=False
-    ).transpose(0, 1)
+class CommonEncoder(BaseEncoder):
 
-    combined_rep = combiner.combine(
-        encoded=encoded,
-        lengths=combine_tool.final_length,
-        combine_labels=combine_tool.combine_labels,
-        lang_id=common_combine_batch.lang_id
-    )
+    def __init__(self, model):
+        super().__init__()
+        self.model = model
 
-    final_encoded = combine_tool.gather(splitted_rep=encoded, combined_rep=combined_rep)
+    def encode(self, encoder_inputs):
+        encoded = self.model(
+            "fwd",
+            x=encoder_inputs.x1,
+            lengths=encoder_inputs.len1,
+            langs=encoder_inputs.langs1,
+            causal=False
+        ).transpose(0, 1)  # [bs, len, dim]
+        return CommonEncodedInfo(encoded=encoded, enc_len=encoder_inputs.len1)
 
-    return final_encoded
+
+class CommonEncodedInfo(object):
+
+    def __init__(self, encoded, enc_len):
+        assert encoded.size(0) == enc_len.size(0)
+        assert encoded.size(1) == max(enc_len)
+        self.encoded = encoded
+        self.enc_len = enc_len
+
+
+class DecodeInputBatch(object):
+
+    def __init__(self, x2, len2, y, pred_mask, positions, lang_id):
+        self.x2 = x2
+        self.len2 = len2
+        self.y = y
+        self.pred_mask = pred_mask
+        self.positions = positions
+        self.langs2 = x2.clone().fill_(lang_id)
+        self.lang_id = lang_id
+
+
+class LossDecodingBatch(object):
+
+    def __init__(self, x, lengths, langs, src_enc, src_len, src_mask, positions, pred_mask, y, lang_id):
+        self.x = x
+        self.lengths = lengths
+        self.langs = langs
+        self.src_enc = src_enc
+        self.src_len = src_len
+        self.src_mask = src_mask
+        self.positions = positions
+        self.pred_mask = pred_mask
+        self.y = y
+        self.lang_id = lang_id
+
+
+class CommonSeq2Seq(BaseSeq2Seq):
+
+    def __init__(self, encoder, decoder):
+        super().__init__(encoder=encoder, decoder=decoder)
+
+    def get_loss_decoding_batch(self, encoded_info: CommonEncodedInfo, decoder_inputs: DecodeInputBatch):
+        loss_decoding_batch = LossDecodingBatch(
+            x=decoder_inputs.x2,
+            lengths=decoder_inputs.len2,
+            langs=decoder_inputs.langs2,
+            src_enc=encoded_info.encoded,
+            src_len=encoded_info.enc_len,
+            src_mask=None,
+            positions=decoder_inputs.positions,
+            pred_mask=decoder_inputs.pred_mask,
+            y=decoder_inputs.y,
+            lang_id=decoder_inputs.lang_id
+        )
+        return loss_decoding_batch
+
+    def get_generate_batch(self, encoded_info: CommonEncodedInfo, tgt_lang_id):
+        generate_batch = GenerateDecodeBatch(
+            src_enc=encoded_info.encoded,
+            src_len=encoded_info.enc_len,
+            tgt_lang_id=tgt_lang_id,
+            max_len=int(1.5 * encoded_info.enc_len.max().item() + 10),
+            enc_mask=None
+        )
+        return generate_batch
+
+
+class CombinerEncoder(BaseEncoder):
+
+    def __init__(self, encoder, combiner, params, dico, splitter, loss_fn):
+        super().__init__()
+        self.encoder = encoder
+        self.combiner = combiner
+        self.params = params
+        self.dico = dico
+        self.splitter = splitter
+        self.loss_fn = loss_fn
+
+    def get_combine_tool(self, encode_inputs):
+        combine_tool = CombineTool(encode_inputs.x1, length=encode_inputs.len1, dico=self.dico, mask_index=self.params.mask_index)
+        return combine_tool
+
+    def explicit_encode_combiner_loss(self, encode_inputs):
+
+        explicit_batch = ExplicitSplitEncoderBatch(encode_inputs, self.params, self.dico, self.splitter)
+        combine_tool = ExplicitSplitCombineTool(
+            splitted_batch=explicit_batch.x3,
+            length_before_split=explicit_batch.len1,
+            length_after_split=explicit_batch.len3,
+            dico=self.dico,
+            mappers=explicit_batch.mappers,
+            mask_index=self.params.mask_index
+        )
+
+        # combine encode
+        encoded = self.encoder(
+            "fwd",
+            x=explicit_batch.x3,
+            lengths=explicit_batch.len3,
+            langs=explicit_batch.langs3,
+            causal=False
+        ).transpose(0, 1)
+
+        combined_rep = self.combiner.combine(
+            encoded=encoded,
+            lengths=combine_tool.final_length,
+            combine_labels=combine_tool.combine_labels,
+            lang_id=encode_inputs.lang_id
+        )
+
+        final_encoded = combine_tool.gather(splitted_rep=encoded, combined_rep=combined_rep)
+
+        # teacher
+        if combine_tool.trained_combiner_words != 0:
+            original_rep = self.encoder(
+                "fwd",
+                x=explicit_batch.x1,
+                lengths=explicit_batch.len1,
+                langs=explicit_batch.langs1,
+                causal=False
+            ).transpose(0, 1)
+
+            dim = final_encoded.size(-1)
+
+            trained_original_words_rep = original_rep.masked_select(
+                combine_tool.splitted_original_word_mask.unsqueeze(-1)).view(-1, dim)
+
+            trained_combined_words_rep = combined_rep.index_select(dim=0,
+                                                                   index=combine_tool.select_trained_rep_from_combined_rep).view(-1, dim)
+
+            combine_loss = self.loss_fn(trained_original_words_rep, trained_combined_words_rep)
+        else:
+            combine_loss = None
+
+        return CombinerEncodedInfo(encoded=final_encoded, combine_tool=combine_tool), combine_loss
+
+    def encode(self, encode_inputs: EncoderInputs):
+        combine_tool = self.get_combine_tool(encode_inputs)
+
+        encoded = self.encoder(
+            "fwd",
+            x=encode_inputs.x1,
+            lengths=encode_inputs.len1,
+            langs=encode_inputs.langs1,
+            causal=False
+        ).transpose(0, 1)
+
+        combined_rep = self.combiner.combine(
+            encoded=encoded,
+            lengths=combine_tool.final_length,
+            combine_labels=combine_tool.combine_labels,
+            lang_id=encode_inputs.lang_id
+        )
+        final_encoded = combine_tool.gather(splitted_rep=encoded, combined_rep=combined_rep)
+
+        return CombinerEncodedInfo(encoded=final_encoded, combine_tool=combine_tool)
+
+
+class CombinerEncodedInfo(object):
+
+    def __init__(self, encoded, combine_tool):
+        assert encoded.size(0) == combine_tool.final_length.size(0)
+        assert encoded.size(1) == combine_tool.final_length.max().item()
+        self.encoded = encoded
+        self.enc_len = combine_tool.final_length
+        self.enc_mask = combine_tool.mask_for_decoder
+        self.original_len = combine_tool.original_length
+
+
+class CombineSeq2Seq(BaseSeq2Seq):
+
+    def __init__(self, encoder:CombinerEncoder, decoder):
+        super().__init__(encoder=encoder, decoder=decoder)
+
+    def explicit_loss(self, encode_inputs, decoder_inputs, get_scores=False):
+        encoded_info, combiner_loss = self.encoder.explicit_encode_combiner_loss(encode_inputs=encode_inputs)
+        decoding_batch = self.get_loss_decoding_batch(encoded_info=encoded_info, decoder_inputs=decoder_inputs)
+        scores, losses = self.run_decode_loss(decoding_batch=decoding_batch, get_scores=get_scores)
+        return scores, losses
+
+    def get_loss_decoding_batch(self, encoded_info: CombinerEncodedInfo, decoder_inputs):
+        loss_decoding_batch = LossDecodingBatch(
+            x=decoder_inputs.x2,
+            lengths=decoder_inputs.len2,
+            langs=decoder_inputs.langs2,
+            src_enc=encoded_info.encoded,
+            src_len=encoded_info.enc_len,
+            src_mask=encoded_info.enc_mask,
+            positions=decoder_inputs.positions,
+            pred_mask=decoder_inputs.pred_mask,
+            y=decoder_inputs.y,
+            lang_id=decoder_inputs.lang_id
+        )
+        return loss_decoding_batch
+
+    def get_generate_batch(self, encoded_info: CombinerEncodedInfo, tgt_lang_id):
+        generate_batch = GenerateDecodeBatch(
+            src_enc=encoded_info.encoded,
+            src_len=encoded_info.enc_len,
+            tgt_lang_id=tgt_lang_id,
+            max_len=int(1.5 * encoded_info.original_len.max().item() + 10),
+            enc_mask=None
+        )
+        return generate_batch
 
