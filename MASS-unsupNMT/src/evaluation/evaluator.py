@@ -13,13 +13,16 @@ import subprocess
 from collections import OrderedDict
 import numpy as np
 import torch
+from src.combiner.forward_function.common_combine import CombinerEncoderDecoder
+from src.combiner.forward_function.none_combiner import NoneCombinerEncoder, EncoderInputs
+from src.combiner.forward_function.cheat_combine import CheatCombinerEncoder
 
 from ..utils import to_cuda, restore_segmentation, concat_batches
 from .utils import SenteceEmbedder, WordEmbedderWithCombiner
 from src.combiner.combiner import MultiLingualNoneParaCombiner
 from .bli import BLI
 from .eval_context_bli import eval_whole_separated_bli, read_retokenize_words, generate_context_word_representation, encode_whole_word_separated_word, generate_and_eval
-from src.trainer import MassBatch, combiner_mass, combiner_mass_with_explict_split
+from src.trainer import combiner_mass, combiner_mass_with_explict_split
 
 
 BLEU_SCRIPT_PATH = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'multi-bleu.perl')
@@ -332,15 +335,15 @@ class SingleEvaluator(Evaluator):
 
 class EncCombinerDecEvaluator(Evaluator):
 
-    def __init__(self, trainer, data, params, loss_function):
+    def __init__(self, trainer, data, params, loss_function, encoder, decoder, combiner, splitter):
         """
         Build encoder / decoder evaluator.
         """
         super().__init__(trainer, data, params)
-        self.encoder = trainer.encoder
-        self.decoder = trainer.decoder
-        self.combiner = trainer.combiner
-        self.splitter = trainer.splitter
+        self.encoder = encoder
+        self.decoder = decoder
+        self.combiner = combiner
+        self.splitter = splitter
         self.loss_function = loss_function
 
     def eval_loss(self, scores):
@@ -349,7 +352,7 @@ class EncCombinerDecEvaluator(Evaluator):
         for dataset in ["valid", "test"]:
             for lang in [params.src_lang, params.tgt_lang]:
                 self.evaluate_mass_with_explicit_split(scores, dataset, lang)
-                self.evaluate_mass(scores, dataset, lang)
+                self.evaluate_combiner_mass(scores, dataset, lang)
 
     def eval_mt(self, scores):
         params = self.params
@@ -391,25 +394,26 @@ class EncCombinerDecEvaluator(Evaluator):
             for (x1, len1) in self.get_iterator(data_set, lang):
                 (x1, len1, x2, len2, y, pred_mask, positions) = self.mask_sent(x1, len1, rng)
 
-                data = MassBatch(x1=x1, len1=len1, x2=x2, len2=len2, y=y, pred_mask=pred_mask, positions=positions, lang=lang)
+                batch = MassBatch(x1=x1, len1=len1, x2=x2, len2=len2, y=y, pred_mask=pred_mask, positions=positions, lang_id=params.lang2id[lang])
 
                 models = {"encoder": encoder, "decoder": decoder, "combiner": combiner}
 
                 # loss
                 word_scores, losses, statistics = combiner_mass_with_explict_split(
                     models=models,
-                    data=data,
+                    mass_batch=batch,
                     params=params,
                     dico=self.data["dico"],
-                    combiner_loss_function=self.loss_function,
                     splitter=self.splitter,
-                    mode="eval")
+                    mode="eval",
+                    combine_loss_fn=self.loss_function
+                )
 
                 # update stats
                 n_words += y.size(0)
-                xe_loss += losses["mass_loss"].item() * len(y)
-                combiner_loss += losses["combiner_loss"].item() * statistics["trained_combiner_words"]
-                n_combiner_words += statistics["trained_combiner_words"]
+                xe_loss += losses.decoding_loss.item() * len(y)
+                combiner_loss += losses.combine_loss.item() * statistics.trained_combiner_words
+                n_combiner_words += statistics.trained_combiner_words
                 n_valid += (word_scores.max(1)[1] == y.cuda()).long().sum().item()
 
             # compute perplexity and prediction accuracy
@@ -420,7 +424,7 @@ class EncCombinerDecEvaluator(Evaluator):
             scores['{}_{}_combiner_loss'.format(data_set, lang)] = combiner_loss / n_combiner_words
 
 
-    def evaluate_mass(self, scores, data_set, lang):
+    def evaluate_combiner_mass(self, scores, data_set, lang):
         with torch.no_grad():
             params = self.params
             assert data_set in ['valid', 'test']
@@ -440,16 +444,21 @@ class EncCombinerDecEvaluator(Evaluator):
             for (x1, len1) in self.get_iterator(data_set, lang):
                 (x1, len1, x2, len2, y, pred_mask, positions) = self.mask_sent(x1, len1, rng)
 
-                data = MassBatch(x1=x1, len1=len1, x2=x2, len2=len2, y=y, pred_mask=pred_mask, positions=positions, lang=lang)
+                batch = MassBatch(x1=x1, len1=len1, x2=x2, len2=len2, y=y, pred_mask=pred_mask, positions=positions, lang=params.lang2id[lang])
 
                 models = {"encoder": encoder, "decoder": decoder, "combiner": combiner}
 
                 # loss
-                word_scores, losses, statistics = combiner_mass(models, data, params, self.data["dico"], "eval")
+                word_scores, losses, statistics = combiner_mass(
+                    models=models,
+                    mass_batch=batch,
+                    params=params,
+                    dico=self.data["dico"],
+                    mode="eval")
 
                 # update stats
                 n_words += y.size(0)
-                xe_loss += losses["mass_loss"].item() * len(y)
+                xe_loss += losses.decoding_loss.item() * len(y)
                 n_valid += (word_scores.max(1)[1] == y.cuda()).long().sum().item()
 
             # compute perplexity and prediction accuracy
@@ -537,97 +546,55 @@ class EncCombinerDecEvaluator(Evaluator):
 
             self.encoder.eval()
             self.decoder.eval()
-            self.combiner.eval()
+            #self.combiner.eval()
             encoder = self.encoder.module if params.multi_gpu else self.encoder
             decoder = self.decoder.module if params.multi_gpu else self.decoder
             combiner = self.combiner.module if params.multi_gpu else self.combiner
 
+            combiner_encoder = CheatCombinerEncoder(encoder, combiner, params, self.data["dico"], self.splitter)
+            seq2seq = CombinerEncoderDecoder(combiner_encoder, decoder)
             params = params
             lang1_id = params.lang2id[lang1]
             lang2_id = params.lang2id[lang2]
-
-            n_words = 0
-            xe_loss = 0
-            n_valid = 0
 
             # store hypothesis to compute BLEU score
             if eval_bleu:
                 hypothesis = []
 
-            for batch in self.get_iterator(data_set, lang1, lang2):
-
+            for idx, batch in enumerate(self.get_iterator(data_set, lang1, lang2)):
+                logger.info("{}".format(idx))
                 # generate batch
                 (x1, len1), (x2, len2) = batch
+                # cuda
+
                 langs1 = x1.clone().fill_(lang1_id)
                 langs2 = x2.clone().fill_(lang2_id)
 
-                # target words to predict
-                alen = torch.arange(len2.max(), dtype=torch.long, device=len2.device)
-                pred_mask = alen[:, None] < len2[None] - 1  # do not predict anything given the last target word
-                y = x2[1:].masked_select(pred_mask[:-1])
-                assert len(y) == (len2 - 1).sum().item()
+                x1, len1, langs1, x2, len2, langs2 = to_cuda(x1, len1, langs1, x2, len2, langs2)
 
-                # cuda
-                x1, len1, langs1, x2, len2, langs2, y = to_cuda(x1, len1, langs1, x2, len2, langs2, y)
+                encoder_inputs = EncoderInputs(x1=x1,
+                                               len1=len1,
+                                               lang_id=lang1_id,
+                                               langs1=langs1)
 
-                all_combine_labels = get_combine_labels(x1, self.data["dico"]).cuda()
+                generated, lengths = seq2seq.generate(encoder_inputs=encoder_inputs, tgt_lang_id=lang2_id, decoding_params=params)
 
-                # encode source sentence
-                enc1 = encoder('fwd', x=x1, lengths=len1, langs=langs1, causal=False)
-                enc1 = enc1.transpose(0, 1)
-                final_encoded, final_lens, final_mask_mask, _ = combiner("encode", enc1, len1,
-                                                                         all_combine_labels,
-                                                                         lang1,
-                                                                         )  # [combine_word_num, dim]
+                hypothesis.extend(convert_to_text(generated, lengths, self.dico, params))
 
-                enc_mask = ~final_mask_mask
+            # hypothesis / reference paths
+            hyp_name = 'hyp{0}.{1}-{2}.{3}.txt'.format(scores['epoch'], lang1, lang2, data_set)
+            hyp_path = os.path.join(params.hyp_path, hyp_name)
+            ref_path = params.ref_paths[(lang1, lang2, data_set)]
 
-                # decode target sentence
-                dec2 = decoder('fwd', x=x2, lengths=len2, langs=langs2, causal=True, src_enc=final_encoded, src_len=final_lens, enc_mask=enc_mask)
+            # export sentences to hypothesis file / restore BPE segmentation
+            with open(hyp_path, 'w', encoding='utf-8') as f:
+                f.write('\n'.join(hypothesis) + '\n')
+            restore_segmentation(hyp_path)
 
-                # loss
-                word_scores, loss = decoder('predict', tensor=dec2, pred_mask=pred_mask, y=y, get_scores=True)
-
-                # update stats
-                n_words += y.size(0)
-                xe_loss += loss.item() * len(y)
-                n_valid += (word_scores.max(1)[1] == y).long().sum().item()
-
-                # generate translation - translate / convert to text
-                if eval_bleu:
-                    max_len = int(1.5 * len1.max().item() + 10)
-                    if params.beam_size == 1:
-                        generated, lengths = decoder.generate(enc1, len1, lang2_id, max_len=max_len)
-                    else:
-                        generated, lengths = decoder.generate_beam(
-                            enc1, len1, lang2_id, beam_size=params.beam_size,
-                            length_penalty=params.length_penalty,
-                            early_stopping=params.early_stopping,
-                            max_len=max_len
-                        )
-                    hypothesis.extend(convert_to_text(generated, lengths, self.dico, params))
-
-            # compute perplexity and prediction accuracy
-            scores['%s_%s-%s_mt_ppl' % (data_set, lang1, lang2)] = np.exp(xe_loss / n_words)
-            scores['%s_%s-%s_mt_acc' % (data_set, lang1, lang2)] = 100. * n_valid / n_words
-
-            # compute BLEU
-            if eval_bleu:
-
-                # hypothesis / reference paths
-                hyp_name = 'hyp{0}.{1}-{2}.{3}.txt'.format(scores['epoch'], lang1, lang2, data_set)
-                hyp_path = os.path.join(params.hyp_path, hyp_name)
-                ref_path = params.ref_paths[(lang1, lang2, data_set)]
-
-                # export sentences to hypothesis file / restore BPE segmentation
-                with open(hyp_path, 'w', encoding='utf-8') as f:
-                    f.write('\n'.join(hypothesis) + '\n')
-                restore_segmentation(hyp_path)
-
-                # evaluate BLEU score
-                bleu = eval_moses_bleu(ref_path, hyp_path)
-                logger.info("BLEU %s %s : %f" % (hyp_path, ref_path, bleu))
-                scores['%s_%s-%s_mt_bleu' % (data_set, lang1, lang2)] = bleu
+            # evaluate BLEU score
+            bleu = eval_moses_bleu(ref_path, hyp_path)
+            logger.info("BLEU %s %s : %f" % (hyp_path, ref_path, bleu))
+            scores['%s_%s-%s_mt_bleu' % (data_set, lang1, lang2)] = bleu
 
 
 def convert_to_text(batch, lengths, dico, params):

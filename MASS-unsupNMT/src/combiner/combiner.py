@@ -57,7 +57,6 @@ class LastTokenCombiner(Combiner):
             trained_representation
 
         """
-        pdb.set_trace()
         transformer_encoder = self.encoder[lang_id]
         encoded = encoded.transpose(0, 1)  #[len, bs, dim]
         assert encoded.size(1) == lengths.size(0)
@@ -194,7 +193,10 @@ class LinearCombiner(nn.Module):
 
 
 def build_combiner(params):
-    return LastTokenCombiner(params)
+
+    #return LastTokenCombiner(params)
+    return None
+
 
 
 class BiLingualCombiner(nn.Module):

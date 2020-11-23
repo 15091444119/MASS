@@ -15,7 +15,6 @@ import time
 import random
 from logging import getLogger
 from collections import OrderedDict
-from src.combiner.forward_function.mass import MassBatch
 from src.combiner.forward_function.cheat_combine import cheat
 from src.combiner.forward_function.explicit_split import combiner_mass_with_explict_split, ExplicitSplitModel
 from src.combiner.forward_function.common_combine import combiner_mass, CommonCombineModel
@@ -1084,6 +1083,7 @@ class EncCombinerDecTrainer(Trainer):
             self.stats[("mass_with_combiner_with_explicit_split-{}".format(lang))].append(losses.decoding_loss.item())
             self.stats[("combiner-{}".format(lang))].append(losses.combine_loss.item())
         else:
+            print("NO")
             loss = losses.decoding_loss
 
         self.optimize(loss, ["encoder", "combiner", "decoder"])

@@ -1,22 +1,28 @@
 
-class MassBatch(object):
+class DecodeInputBatch(object):
 
-    def __init__(self, x1, len1, x2, len2, y, pred_mask, positions, lang_id):
-        self.x1 = x1
-        self.len1 = len1
+    def __init__(self, x2, len2, y, pred_mask, positions, lang_id):
         self.x2 = x2
         self.len2 = len2
         self.y = y
         self.pred_mask = pred_mask
         self.positions = positions
-        self.langs1 = x1.clone().fill_(lang_id)
         self.langs2 = x2.clone().fill_(lang_id)
         self.lang_id = lang_id
 
 
+class EncoderInputs(object):
+
+    def __init__(self, x1, len1, lang_id, langs1):
+        self.x1 = x1
+        self.len1 = len1
+        self.lang_id = lang_id
+        self.langs1 = langs1
+
+
 class DecodingBatch(object):
 
-    def __init__(self, x, length, langs, src_enc, src_len, src_mask, positions, pred_mask, y):
+    def __init__(self, x, length, langs, src_enc, src_len, src_mask, positions, pred_mask, y, lang_id):
         self.x = x
         self.length = length
         self.langs = langs
@@ -26,22 +32,7 @@ class DecodingBatch(object):
         self.positions = positions
         self.pred_mask = pred_mask
         self.y = y
-
-    def decode(self, decoder, get_scores):
-        dec2 = decoder('fwd',
-                       x=self.x,
-                       lengths=self.length,
-                       langs=self.langs,
-                       causal=True,
-                       src_enc=self.src_enc,
-                       src_len=self.src_len,
-                       positions=self.positions,
-                       enc_mask=self.src_mask
-                       )
-
-        word_scores, loss = decoder('predict', tensor=dec2, pred_mask=self.pred_mask, y=self.y, get_scores=get_scores)
-
-        return word_scores, loss
+        self.lang_id = lang_id
 
 
 def set_model_mode(mode, models):

@@ -1,8 +1,7 @@
-from .mass import MassBatch, set_model_mode, DecodingBatch
 from ..combine_utils import ExplicitSplitCombineTool
 
 
-def combiner_mass_with_explict_split(models, mass_batch:MassBatch, params, dico, splitter, mode, combine_loss_fn):
+def combiner_mass_with_explict_split(models, mass_batch,params, dico, splitter, mode, combine_loss_fn):
     """
 
     For monolingual data, we split whole word and get the encoder representation, and don't split whole word for another time,
@@ -43,7 +42,8 @@ def combiner_mass_with_explict_split(models, mass_batch:MassBatch, params, dico,
                                    src_mask=combine_tool.mask_for_decoder,
                                    positions=batch.positions,
                                    pred_mask=batch.pred_mask,
-                                   y=batch.y
+                                   y=batch.y,
+                                   lang_id=batch.lang_id
                                    )
     scores, decoding_loss = decoding_batch.decode(decoder=models.decoder, get_scores=(mode == "eval"))
 
@@ -129,26 +129,20 @@ class ExplicitSplitLosses(object):
         self.decoding_loss = decoding_loss
 
 
-class ExplicitSplitBatch(object):
+class ExplicitSplitEncoderBatch(object):
 
-    def __init__(self, mass_batch, params, dico, splitter):
-        self.x1 = mass_batch.x1
-        self.len1 = mass_batch.len1
-        self.x2 = mass_batch.x2
-        self.len2 = mass_batch.len2
-        self.y = mass_batch.y
-        self.pred_mask = mass_batch.pred_mask
-        self.positions = mass_batch.positions
-        self.lang_id = mass_batch.lang_id
-
-        self.langs1 = mass_batch.langs1
-        self.langs2 = mass_batch.langs2
+    def __init__(self, encoder_inputs, params, dico, splitter):
+        self.x1 = encoder_inputs.x1
+        self.len1 = encoder_inputs.len1
+        self.lang_id = encoder_inputs.lang_id
+        self.langs1 = encoder_inputs.langs1
 
         # split whole words to train combiner
         x3, len3, mappers = splitter.re_encode_batch_sentences(batch=self.x1, lengths=self.len1, dico=dico, re_encode_rate=params.re_encode_rate)
         langs3 = x3.clone().fill_(self.lang_id)
-
         self.x3 = x3
         self.len3 = len3
         self.langs3 = langs3
         self.mappers = mappers
+
+

@@ -423,7 +423,7 @@ class TransformerModel(nn.Module):
         scores, loss = self.pred_layer(masked_tensor, y, get_scores)
         return scores, loss
 
-    def generate(self, src_enc, src_len, tgt_lang_id, max_len=200, sample_temperature=None, language_mask=None):
+    def generate(self, src_enc, src_len, tgt_lang_id, max_len=200, enc_mask=None, sample_temperature=None, language_mask=None):
         """
         Decode a sentence given initial start.
         `x`:
@@ -482,7 +482,8 @@ class TransformerModel(nn.Module):
                 causal=True,
                 src_enc=src_enc,
                 src_len=src_len,
-                cache=cache
+                cache=cache,
+                enc_mask=enc_mask
             )
             assert tensor.size() == (1, bs, self.dim)
             tensor = tensor.data[-1, :, :]               # (bs, dim)
@@ -517,7 +518,7 @@ class TransformerModel(nn.Module):
 
         return generated[:cur_len], gen_len
 
-    def generate_beam(self, src_enc, src_len, tgt_lang_id, beam_size, length_penalty, early_stopping, max_len=200):
+    def generate_beam(self, src_enc, src_len, tgt_lang_id, beam_size, length_penalty, early_stopping, enc_mask, max_len=200):
         """
         Decode a sentence given initial start.
         `x`:
@@ -587,7 +588,8 @@ class TransformerModel(nn.Module):
                 causal=True,
                 src_enc=src_enc,
                 src_len=src_len,
-                cache=cache
+                cache=cache,
+                enc_mask=enc_mask
             )
             assert tensor.size() == (1, bs * beam_size, self.dim)
             tensor = tensor.data[-1, :, :]               # (bs * beam_size, dim)

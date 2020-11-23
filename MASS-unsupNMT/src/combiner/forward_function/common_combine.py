@@ -1,5 +1,6 @@
 from .mass import set_model_mode, DecodingBatch
 from ..combine_utils import CombineTool
+import torch
 
 
 
@@ -39,6 +40,108 @@ class CommonCombineBatch(object):
         self.langs2 = mass_batch.langs2
 
 
+class BaseCombinerEncoder(torch.nn.Module):
+
+    def __init__(self, encoder, combiner, params):
+        super().__init__()
+        self.encoder = encoder
+        self.combiner = combiner
+        self.params = params
+
+    def convert_data(self, encoder_inputs):
+        raise NotImplementedError
+
+    def encode(self, *args, **kwargs):
+        raise NotImplementedError
+
+    def train_combiner(self):
+        raise  NotImplementedError
+
+
+class GenerateDecodeBatch(object):
+
+    def __init__(self, src_enc, src_len, tgt_lang_id, max_len, enc_mask):
+        self.src_enc = src_enc
+        self.src_len = src_len
+        self.tgt_lang_id = tgt_lang_id
+        self.max_len = max_len
+        self.enc_mask = enc_mask
+
+
+class CombinerEncoderDecoder(torch.nn.Module):
+
+    def __init__(self, combiner_encoder: BaseCombinerEncoder, decoder):
+        super().__init__()
+        self.combiner_encoder = combiner_encoder
+        self.decoder = decoder
+
+    def train(self, encoding_batch):
+        pass
+
+    def mass_loss(self, encoder_inputs, decoder_inputs):
+        batch, combine_tools = self.combiner_encoder.convert_data(encoder_inputs)
+        encoded = self.combiner_encoder.encode(batch, combine_tools)
+        decoding_batch = self.get_loss_decoding_batch(encoded, decoder_inputs, combine_tools)
+        scores, losses = self.decode(decoding_batch)
+
+        return scores, losses
+
+    def loss_decode(self, decoding_batch, get_scores=False):
+        dec = self.decoder('fwd',
+           x=decoding_batch.x,
+           lengths=decoding_batch.length,
+           langs=decoding_batch.langs,
+           causal=True,
+           src_enc=decoding_batch.src_enc,
+           src_len=decoding_batch.src_len,
+           positions=decoding_batch.positions,
+           enc_mask=decoding_batch.src_mask
+           )
+
+        word_scores, loss = self.decoder('predict', tensor=dec, pred_mask=decoding_batch.pred_mask, y=decoding_batch.y, get_scores=get_scores)
+
+        return word_scores, loss
+
+    def get_generate_decode_batch(self, encoded, tgt_lang_id, combine_tools):
+        max_len =int(1.5 * combine_tools.original_length.max().item() + 10)
+        generate_decode_batch = GenerateDecodeBatch(
+            src_enc=encoded,
+            src_len=combine_tools.final_length,
+            tgt_lang_id=tgt_lang_id,
+            max_len=max_len,
+            enc_mask=combine_tools.enc_mask
+        )
+        return generate_decode_batch
+
+    def generate(self, encoder_inputs, tgt_lang_id, decoding_params):
+        batch, combine_tools = self.combiner_encoder.convert_data(encoder_inputs)
+        encoded = self.combiner_encoder.encode(batch, combine_tools)
+        generate_decode_batch = self.get_generate_decode_batch(encoded, tgt_lang_id, combine_tools)
+        generated, lengths = self.generate_decode(generate_decode_batch=generate_decode_batch, decoding_params=decoding_params)
+        return generated, lengths
+
+    def generate_decode(self, generate_decode_batch, decoding_params):
+        if decoding_params.beam_size == 1:
+            generated, lengths = self.decoder.generate(
+                src_enc=generate_decode_batch.src_enc,
+                src_len=generate_decode_batch.src_len,
+                tgt_lang_id=generate_decode_batch.tgt_lang_id,
+                max_len=generate_decode_batch.max_len,
+                enc_mask=generate_decode_batch.enc_mask
+            )
+        else:
+            generated, lengths = self.decoder.generate_beam(
+                src_enc=generate_decode_batch.src_enc,
+                src_len=generate_decode_batch.src_len,
+                tgt_lang_id=generate_decode_batch.tgt_lang_id,
+                beam_size=decoding_params.beam_size,
+                length_penalty=decoding_params.length_penalty,
+                early_stopping=decoding_params.early_stopping
+            )
+        return generated, lengths
+
+
+
 def combiner_mass(models, mass_batch, params, dico, mode):
     # prepare
     set_model_mode(mode=mode, models=[models.encoder, models.combiner, models.decoder])
@@ -69,7 +172,8 @@ def combiner_mass(models, mass_batch, params, dico, mode):
         src_mask=combine_tool.mask_for_decoder,
         positions=batch.positions,
         pred_mask=batch.pred_mask,
-        y=batch.y
+        y=batch.y,
+        lang_id=batch.lang_id
     )
 
     scores, decoding_loss = decoding_batch.decode(decoder=models.decoder, get_scores=(mode == "eval"))

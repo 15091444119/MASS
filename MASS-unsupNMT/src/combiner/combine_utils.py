@@ -26,12 +26,46 @@ class CombineTool(object):
             splitted_rep_for_final_rep_mask=self.splitted_rep_for_final_rep_mask
         )
 
+class CheatCombineTool(object):
+
+    def __init__(self, splitted_batch, length_before_split, length_after_split, dico, mappers, mask_index):
+        self.length_before_split = length_before_split
+        self.length_after_split = length_after_split
+        self.original_length = self.length_before_split
+
+        self.new_generated_subwords_labels = get_new_splitted_combine_labels(mappers=mappers, length_before_split=length_before_split, length_after_split=length_after_split)
+        self.splitted_original_word_mask = get_splitted_words_mask(mappers, length_before_split)
+        self.combine_labels = self.new_generated_subwords_labels
+
+        self.final_length = get_length_after_combine(self.combine_labels)
+        self.final_rep_using_splitted_rep_mask, self.final_rep_using_combined_rep_mask, self.splitted_rep_for_final_rep_mask = \
+            get_masks_for_combine_reps(combine_labels=self.combine_labels, final_length=self.final_length)
+
+
+        self.mask_for_decoder = get_mask_for_decoder(splitted_batch=splitted_batch, combine_labels=self.combine_labels, final_length=self.final_length, mask_index=mask_index)
+
+        self.trained_combiner_words = self.splitted_original_word_mask.long().sum()
+
+        self.select_trained_rep_from_combined_rep = get_mask_for_select_combined_rep(combine_labels=self.combine_labels, new_generated_subwords_labels=self.new_generated_subwords_labels)
+        self.enc_mask = self.mask_for_decoder
+
+    def gather(self, splitted_rep, combined_rep):
+        return gather_splitted_combine_representation(
+            splitted_rep=splitted_rep,
+            combined_rep=combined_rep,
+            final_length=self.final_length,
+            final_rep_using_splitted_rep_mask=self.final_rep_using_splitted_rep_mask,
+            final_rep_using_combined_rep_mask=self.final_rep_using_combined_rep_mask,
+            splitted_rep_for_final_rep_mask=self.splitted_rep_for_final_rep_mask
+        )
+
 
 class ExplicitSplitCombineTool(object):
 
     def __init__(self, splitted_batch, length_before_split, length_after_split, dico, mappers, mask_index):
         self.length_before_split = length_before_split
         self.length_after_split = length_after_split
+        self.original_length = self.length_before_split
 
         self.combine_labels = get_combine_labels(splitted_batch, dico)
 

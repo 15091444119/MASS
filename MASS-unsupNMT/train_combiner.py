@@ -289,7 +289,7 @@ def main(params):
     if params.reload_combiner_path == "":
         # only reload model or don't reload anything
         encoder, decoder = build_model(params, data['dico']) # reload or build encoder
-        combiner = build_combiner(params).cuda()
+        combiner = build_combiner(params)
         logger.info("{}".format(combiner))
     else:
         # reload model and combiner from a checkpoint
@@ -304,13 +304,23 @@ def main(params):
 
     # build trainer, reload potential checkpoints / build evaluator
     loss_function = get_loss_function(params)
-    trainer = EncCombinerDecTrainer(encoder, combiner, decoder, data, whole_word_splitter, loss_function, params)
+    #trainer = EncCombinerDecTrainer(encoder, combiner, decoder, data, whole_word_splitter, loss_function, params)
     evaluator = EncCombinerDecEvaluator(
-        trainer=trainer,
+        trainer=None,
         data=data,
         params=params,
-        loss_function=loss_function
+        loss_function=loss_function,
+        encoder=encoder,
+        decoder=decoder,
+        combiner=combiner,
+        splitter=whole_word_splitter
     )
+
+    scores = {}
+    scores["epoch"] = -1
+    evaluator.eval_mt(scores)
+    print(scores)
+    exit()
 
     # evaluation
     if params.eval_only:
