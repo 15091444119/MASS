@@ -13,15 +13,14 @@ import subprocess
 from collections import OrderedDict
 import numpy as np
 import torch
-from src.combiner.forward_function.common_combine import CommonEncoder, CommonSeq2Seq, EncoderInputs
-from src.combiner.forward_function.cheat_combine import CheatEncoder, CheatCombineSeq2Seq
 
 from ..utils import to_cuda, restore_segmentation, concat_batches
 from .utils import SenteceEmbedder, WordEmbedderWithCombiner
 from src.combiner.combiner import MultiLingualNoneParaCombiner
 from .bli import BLI
 from .eval_context_bli import eval_whole_separated_bli, read_retokenize_words, generate_context_word_representation, encode_whole_word_separated_word, generate_and_eval
-from src.trainer import combiner_mass, combiner_mass_with_explict_split
+from src.model.encoder import EncoderInputs
+from src.model.seq2seq import DecoderInputs
 
 
 BLEU_SCRIPT_PATH = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'multi-bleu.perl')
@@ -139,236 +138,23 @@ class Evaluator(object):
                 restore_segmentation(lang1_path)
                 restore_segmentation(lang2_path)
 
-    def mask_out(self, x, lengths, rng):
-        """
-        Decide of random words to mask out.
-        We specify the random generator to ensure that the test is the same at each epoch.
-        """
-        params = self.params
-        slen, bs = x.size()
 
-        # words to predict - be sure there is at least one word per sentence
-        to_predict = rng.rand(slen, bs) <= params.word_pred
-        to_predict[0] = 0
-        for i in range(bs):
-            to_predict[lengths[i] - 1:, i] = 0
-            if not np.any(to_predict[:lengths[i] - 1, i]):
-                v = rng.randint(1, lengths[i] - 1)
-                to_predict[v, i] = 1
-        pred_mask = torch.from_numpy(to_predict.astype(np.uint8))
-
-        # generate possible targets / update x input
-        _x_real = x[pred_mask]
-        _x_mask = _x_real.clone().fill_(params.mask_index)
-        x = x.masked_scatter(pred_mask, _x_mask)
-
-        assert 0 <= x.min() <= x.max() < params.n_words
-        assert x.size() == (slen, bs)
-        assert pred_mask.size() == (slen, bs)
-
-        return x, _x_real, pred_mask
-
-    def run_all_evals(self, trainer):
-        """
-        Run all evaluations.
-        """
-        params = self.params
-        scores = OrderedDict({'epoch': trainer.epoch})
-
-        with torch.no_grad():
-
-            for data_set in ['valid', 'test']:
-
-                # causal prediction task (evaluate perplexity and accuracy)
-                for lang1, lang2 in params.clm_steps:
-                    self.evaluate_clm(scores, data_set, lang1, lang2)
-
-                # prediction task (evaluate perplexity and accuracy)
-                for lang1, lang2 in params.mlm_steps:
-                    self.evaluate_mlm(scores, data_set, lang1, lang2)
-                
-                for lang in params.mass_steps:
-                    self.evaluate_mass(scores, data_set, lang)
-                
-                mass_steps = []
-                for lang1 in params.mass_steps:
-                    for lang2 in params.mass_steps:
-                        if lang1 != lang2:
-                            mass_steps.append((lang1, lang2))
-                # machine translation task (evaluate perplexity and accuracy)
-                for lang1, lang2 in set(params.mt_steps + [(l2, l3) for _, l2, l3 in params.bt_steps] + mass_steps):
-                    eval_bleu = params.eval_bleu and params.is_master
-                    self.evaluate_mt(scores, data_set, lang1, lang2, eval_bleu)
-
-                # report average metrics per language
-                _clm_mono = [l1 for (l1, l2) in params.clm_steps if l2 is None]
-                if len(_clm_mono) > 0:
-                    scores['%s_clm_ppl' % data_set] = np.mean([scores['%s_%s_clm_ppl' % (data_set, lang)] for lang in _clm_mono])
-                    scores['%s_clm_acc' % data_set] = np.mean([scores['%s_%s_clm_acc' % (data_set, lang)] for lang in _clm_mono])
-                _mlm_mono = [l1 for (l1, l2) in params.mlm_steps if l2 is None]
-                if len(_mlm_mono) > 0:
-                    scores['%s_mlm_ppl' % data_set] = np.mean([scores['%s_%s_mlm_ppl' % (data_set, lang)] for lang in _mlm_mono])
-                    scores['%s_mlm_acc' % data_set] = np.mean([scores['%s_%s_mlm_acc' % (data_set, lang)] for lang in _mlm_mono])
-
-        return scores
-
-    def evaluate_clm(self, scores, data_set, lang1, lang2):
-        """
-        Evaluate perplexity and next word prediction accuracy.
-        """
-        params = self.params
-        assert data_set in ['valid', 'test']
-        assert lang1 in params.langs
-        assert lang2 in params.langs or lang2 is None
-
-        model = self.model if params.encoder_only else self.decoder
-        model.eval()
-        model = model.module if params.multi_gpu else model
-
-        lang1_id = params.lang2id[lang1]
-        lang2_id = params.lang2id[lang2] if lang2 is not None else None
-
-        n_words = 0
-        xe_loss = 0
-        n_valid = 0
-
-        for batch in self.get_iterator(data_set, lang1, lang2, stream=(lang2 is None)):
-
-            # batch
-            if lang2 is None:
-                x, lengths = batch
-                positions = None
-                langs = x.clone().fill_(lang1_id) if params.n_langs > 1 else None
-            else:
-                (sent1, len1), (sent2, len2) = batch
-                x, lengths, positions, langs = concat_batches(sent1, len1, lang1_id, sent2, len2, lang2_id, params.pad_index, params.eos_index, reset_positions=True)
-
-            # words to predict
-            alen = torch.arange(lengths.max(), dtype=torch.long, device=lengths.device)
-            pred_mask = alen[:, None] < lengths[None] - 1
-            y = x[1:].masked_select(pred_mask[:-1])
-            assert pred_mask.sum().item() == y.size(0)
-
-            # cuda
-            x, lengths, positions, langs, pred_mask, y = to_cuda(x, lengths, positions, langs, pred_mask, y)
-
-            # forward / loss
-            tensor = model('fwd', x=x, lengths=lengths, positions=positions, langs=langs, causal=True)
-            word_scores, loss = model('predict', tensor=tensor, pred_mask=pred_mask, y=y, get_scores=True)
-
-            # update stats
-            n_words += y.size(0)
-            xe_loss += loss.item() * len(y)
-            n_valid += (word_scores.max(1)[1] == y).sum().item()
-
-        # compute perplexity and prediction accuracy
-        ppl_name = '%s_%s_clm_ppl' % (data_set, lang1) if lang2 is None else '%s_%s-%s_clm_ppl' % (data_set, lang1, lang2)
-        acc_name = '%s_%s_clm_acc' % (data_set, lang1) if lang2 is None else '%s_%s-%s_clm_acc' % (data_set, lang1, lang2)
-        scores[ppl_name] = np.exp(xe_loss / n_words)
-        scores[acc_name] = 100. * n_valid / n_words
-
-    def evaluate_mlm(self, scores, data_set, lang1, lang2):
-        """
-        Evaluate perplexity and next word prediction accuracy.
-        """
-        params = self.params
-        assert data_set in ['valid', 'test']
-        assert lang1 in params.langs
-        assert lang2 in params.langs or lang2 is None
-
-        model = self.model if params.encoder_only else self.encoder
-        model.eval()
-        model = model.module if params.multi_gpu else model
-
-        rng = np.random.RandomState(0)
-
-        lang1_id = params.lang2id[lang1]
-        lang2_id = params.lang2id[lang2] if lang2 is not None else None
-
-        n_words = 0
-        xe_loss = 0
-        n_valid = 0
-
-        for batch in self.get_iterator(data_set, lang1, lang2, stream=(lang2 is None)):
-
-            # batch
-            if lang2 is None:
-                x, lengths = batch
-                positions = None
-                langs = x.clone().fill_(lang1_id) if params.n_langs > 1 else None
-            else:
-                (sent1, len1), (sent2, len2) = batch
-                x, lengths, positions, langs = concat_batches(sent1, len1, lang1_id, sent2, len2, lang2_id, params.pad_index, params.eos_index, reset_positions=True)
-
-            # words to predict
-            x, y, pred_mask = self.mask_out(x, lengths, rng)
-
-            # cuda
-            x, y, pred_mask, lengths, positions, langs = to_cuda(x, y, pred_mask, lengths, positions, langs)
-
-            # forward / loss
-            tensor = model('fwd', x=x, lengths=lengths, positions=positions, langs=langs, causal=False)
-            word_scores, loss = model('predict', tensor=tensor, pred_mask=pred_mask, y=y, get_scores=True)
-
-            # update stats
-            n_words += len(y)
-            xe_loss += loss.item() * len(y)
-            n_valid += (word_scores.max(1)[1] == y).sum().item()
-
-        # compute perplexity and prediction accuracy
-        ppl_name = '%s_%s_mlm_ppl' % (data_set, lang1) if lang2 is None else '%s_%s-%s_mlm_ppl' % (data_set, lang1, lang2)
-        acc_name = '%s_%s_mlm_acc' % (data_set, lang1) if lang2 is None else '%s_%s-%s_mlm_acc' % (data_set, lang1, lang2)
-        scores[ppl_name] = np.exp(xe_loss / n_words) if n_words > 0 else 1e9
-        scores[acc_name] = 100. * n_valid / n_words if n_words > 0 else 0.
-
-
-class SingleEvaluator(Evaluator):
+class Seq2SeqEvaluator(Evaluator):
 
     def __init__(self, trainer, data, params):
-        """
-        Build language model evaluator.
-        """
-        super().__init__(trainer, data, params)
-        self.model = trainer.model
-
-
-class EncCombinerDecEvaluator(Evaluator):
-
-    def __init__(self, trainer, data, params, loss_function, encoder, decoder, combiner, splitter):
         """
         Build encoder / decoder evaluator.
         """
         super().__init__(trainer, data, params)
-        self.encoder = encoder
-        self.decoder = decoder
-        self.combiner = combiner
-        self.splitter = splitter
-        self.loss_function = loss_function
+        self.seq2seq_model = trainer.seq2seq_model
 
-    def eval_loss(self, scores):
-        params = self.params
+    def run_all_evals(self, epoch):
+        scores = {}
+        scores["epoch"] = epoch
 
-        for dataset in ["valid", "test"]:
-            for lang in [params.src_lang, params.tgt_lang]:
-                self.evaluate_mass_with_explicit_split(scores, dataset, lang)
-                self.evaluate_combiner_mass(scores, dataset, lang)
-
-    def eval_mt(self, scores):
-        params = self.params
-
-        for dataset in ["valid", "test"]:
-            for lang1, lang2 in [(params.src_lang, params.tgt_lang), (params.tgt_lang, params.src_lang)]:
-                eval_bleu = params.eval_bleu and params.is_master
-                self.evaluate_mt(scores, dataset, lang1, lang2, eval_bleu)
-
-    def eval_all(self, epoch):
-
-        scores = {"epoch": epoch}
-
-        self.eval_loss(scores)
-        self.eval_mt(scores)
-
-        return scores
+        for data in ["valid", "test"]:
+            for lang1, lang2 in self.params.mt_steps:
+                self.evaluate_mt(scores, data, lang1, lang2, self.params.eval_bleu)
 
     def evaluate_mass_with_explicit_split(self, scores, data_set, lang):
         with torch.no_grad():
@@ -423,41 +209,33 @@ class EncCombinerDecEvaluator(Evaluator):
             scores['{}_{}_combiner_loss'.format(data_set, lang)] = combiner_loss / n_combiner_words
 
 
-    def evaluate_combiner_mass(self, scores, data_set, lang):
+    def evaluate_mass(self, scores, data_set, lang):
         with torch.no_grad():
             params = self.params
             assert data_set in ['valid', 'test']
             assert lang in params.langs
 
-            encoder = self.encoder.module if params.multi_gpu else self.encoder
-            decoder = self.decoder.module if params.multi_gpu else self.decoder
-            combiner = self.combiner.module if params.multi_gpu else self.combiner
+            self.seq2seq_model.eval()
+            seq2seq_model = self.seq2seq_model.module if params.multi_gpu else self.seq2seq_model
 
             rng = np.random.RandomState(0)
-
-            params = params
 
             n_words = 0
             xe_loss = 0
             n_valid = 0
             for (x1, len1) in self.get_iterator(data_set, lang):
                 (x1, len1, x2, len2, y, pred_mask, positions) = self.mask_sent(x1, len1, rng)
+                (x1, len1, x2, len2, y, pred_mask, positions) = to_cuda(x1, len1, x2, len2, y, pred_mask, positions)
+                lang_id = self.params.lang2id[lang]
+                langs1 = x1.clone().fill_(lang_id)
+                langs2 = x2.clone().fill_(lang_id)
+                encoder_inputs = EncoderInputs(x1=x1, len1=len1, lang_id=lang_id, langs1=langs1)
+                decoder_inputs = DecoderInputs(x2=x2, len2=len2, langs2=langs2, y=y, pred_mask=pred_mask, positions=positions, lang_id=lang_id)
 
-                batch = MassBatch(x1=x1, len1=len1, x2=x2, len2=len2, y=y, pred_mask=pred_mask, positions=positions, lang=params.lang2id[lang])
-
-                models = {"encoder": encoder, "decoder": decoder, "combiner": combiner}
-
-                # loss
-                word_scores, losses, statistics = combiner_mass(
-                    models=models,
-                    mass_batch=batch,
-                    params=params,
-                    dico=self.data["dico"],
-                    mode="eval")
-
+                word_scores, loss = seq2seq_model.run_seq2seq_loss(encoder_inputs=encoder_inputs, decoder_inputs=decoder_inputs, get_scores=True)
                 # update stats
                 n_words += y.size(0)
-                xe_loss += losses.decoding_loss.item() * len(y)
+                xe_loss += loss.decoding_loss.item() * len(y)
                 n_valid += (word_scores.max(1)[1] == y.cuda()).long().sum().item()
 
             # compute perplexity and prediction accuracy
@@ -543,15 +321,10 @@ class EncCombinerDecEvaluator(Evaluator):
             assert lang1 in params.langs
             assert lang2 in params.langs
 
-            self.encoder.eval()
-            self.decoder.eval()
-            #self.combiner.eval()
-            encoder = self.encoder.module if params.multi_gpu else self.encoder
-            decoder = self.decoder.module if params.multi_gpu else self.decoder
-            combiner = self.combiner.module if params.multi_gpu else self.combiner
+            self.seq2seq_model.eval()
 
-            encoder = CheatEncoder(encoder=encoder, params=params, dico=self.data["dico"], splitter=self.splitter)
-            seq2seq = CheatCombineSeq2Seq(encoder=encoder, decoder=decoder)
+            seq2seq_model = self.seq2seq_model.module if params.multi_gpu else self.seq2seq_model
+
             params = params
             lang1_id = params.lang2id[lang1]
             lang2_id = params.lang2id[lang2]
@@ -559,27 +332,46 @@ class EncCombinerDecEvaluator(Evaluator):
             # store hypothesis to compute BLEU score
             if eval_bleu:
                 hypothesis = []
+            n_words = 0
+            xe_loss = 0
+            n_valid = 0
 
             for idx, batch in enumerate(self.get_iterator(data_set, lang1, lang2)):
                 logger.info("{}".format(idx))
+
                 # generate batch
                 (x1, len1), (x2, len2) = batch
-                # cuda
 
+                # cuda
                 langs1 = x1.clone().fill_(lang1_id)
                 langs2 = x2.clone().fill_(lang2_id)
 
-                x1, len1, langs1, x2, len2, langs2 = to_cuda(x1, len1, langs1, x2, len2, langs2)
+                # target words to predict
+                alen = torch.arange(len2.max(), dtype=torch.long, device=len2.device)
+                pred_mask = alen[:, None] < len2[None] - 1  # do not predict anything given the last target word
+                y = x2[1:].masked_select(pred_mask[:-1])
+                assert len(y) == (len2 - 1).sum().item()
 
-                encoder_inputs = EncoderInputs(x1=x1,
-                                               len1=len1,
-                                               lang_id=lang1_id,
-                                               langs1=langs1)
+                x1, len1, langs1, x2, len2, langs2, pred_mask = to_cuda(x1, len1, langs1, x2, len2, langs2, pred_mask)
 
-                generated, lengths = seq2seq.generate(encoder_inputs=encoder_inputs, tgt_lang_id=lang2_id, decoding_params=params)
+                encoder_inputs = EncoderInputs(x1=x1, len1=len1, lang_id=lang1_id, langs1=langs1)
+                decoder_inputs = DecoderInputs(x2=x2, len2=len2, langs2=langs2, y=y, pred_mask=pred_mask, positions=None, lang_id=lang2_id)
+
+                word_scores, loss, generated, lengths = seq2seq_model.generate_and_run_loss(
+                    encoder_inputs=encoder_inputs,
+                    decoder_inputs=decoder_inputs,
+                    tgt_lang_id=lang2_id,
+                    decoding_params=params
+                )
 
                 hypothesis.extend(convert_to_text(generated, lengths, self.dico, params))
+                n_words += y.size(0)
+                xe_loss += loss.item() * len(y)
+                n_valid += (word_scores.max(1)[1] == y).sum().item()
 
+
+
+        if eval_bleu:
             # hypothesis / reference paths
             hyp_name = 'hyp{0}.{1}-{2}.{3}.txt'.format(scores['epoch'], lang1, lang2, data_set)
             hyp_path = os.path.join(params.hyp_path, hyp_name)

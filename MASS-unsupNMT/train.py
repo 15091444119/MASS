@@ -18,8 +18,8 @@ from src.slurm import init_signal_handler, init_distributed_mode
 from src.data.loader import check_data_params, load_data
 from src.utils import bool_flag, initialize_exp, set_sampling_probs, shuf_order
 from src.model import check_model_params, build_model
-from src.trainer import SingleTrainer, EncDecTrainer
-from src.evaluation.evaluator import SingleEvaluator, EncDecEvaluator
+from src.trainer import Seq2SeqTrainer
+from src.evaluation.evaluator import Seq2SeqEvaluator
 
 import apex
 from src.fp16 import network_to_half
@@ -242,36 +242,15 @@ def main(params):
 
 
     # build model
-    if params.encoder_only:
-        model = build_model(params, data['dico'])
-    else:
-        encoder, decoder = build_model(params, data['dico'])
-
-    # float16
-    if params.fp16:
-        assert torch.backends.cudnn.enabled
-        if params.encoder_only:
-            model = network_to_half(model)
-        else:
-            encoder = network_to_half(encoder)
-            decoder = network_to_half(decoder)
+    seq2seq_model = build_model(params, data['dico'])
 
     # distributed
     if params.multi_gpu:
         logger.info("Using nn.parallel.DistributedDataParallel ...")
-        if params.encoder_only:
-            model = apex.parallel.DistributedDataParallel(model, delay_allreduce=True)
-        else:
-            encoder = apex.parallel.DistributedDataParallel(encoder, delay_allreduce=True)
-            decoder = apex.parallel.DistributedDataParallel(decoder, delay_allreduce=True)
+        seq2seq_model = apex.parallel.DistributedDataParallel(seq2seq_model, delay_allreduce=True)
 
-    # build trainer, reload potential checkpoints / build evaluator
-    if params.encoder_only:
-        trainer = SingleTrainer(model, data, params)
-        evaluator = SingleEvaluator(trainer, data, params)
-    else:
-        trainer = EncDecTrainer(encoder, decoder, data, params)
-        evaluator = EncDecEvaluator(trainer, data, params)
+    trainer = Seq2SeqTrainer(seq2seq_model, data, params)
+    evaluator = Seq2SeqEvaluator(trainer=trainer, data=data, params=params)
 
     # evaluation
     if params.eval_only:

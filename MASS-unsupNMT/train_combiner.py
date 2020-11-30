@@ -21,8 +21,8 @@ from src.slurm import init_signal_handler, init_distributed_mode
 from src.data.loader import check_data_params, load_data
 from src.utils import bool_flag, initialize_exp, set_sampling_probs, shuf_order
 from src.model import check_model_params, build_model
-from src.trainer import SingleTrainer, EncCombinerDecTrainer
-from src.evaluation.evaluator import SingleEvaluator, EncCombinerDecEvaluator
+from src.trainer import Seq2SeqTrainer
+from src.evaluation.evaluator import Seq2SeqEvaluator
 from src.combiner.combiner import build_combiner
 from src.combiner.splitter import WholeWordSplitter
 from src.model.transformer import TransformerModel
@@ -281,50 +281,20 @@ def main(params):
     # load data
     data = load_data(params)
 
-    # bpe helper for combiner
-    whole_word_splitter = WholeWordSplitter.build_splitter(params)
-
     # build model
-    assert not params.encoder_only
-    if params.reload_combiner_path == "":
-        # only reload model or don't reload anything
-        encoder, decoder = build_model(params, data['dico']) # reload or build encoder
-        combiner = build_combiner(params)
-        logger.info("{}".format(combiner))
-    else:
-        # reload model and combiner from a checkpoint
-        encoder, decoder = build_model(params, data['dico']) # reload decoder
-        combiner = reload_combiner(params, data['dico'])
-        logger.info("{}\n{}".format(encoder, combiner))
+    seq2seq_model = build_model(params, data['dico'])
 
+    # distributed
     if params.multi_gpu:
-        encoder = apex.parallel.DistributedDataParallel(encoder, delay_allreduce=True)
-        decoder = apex.parallel.DistributedDataParallel(decoder, delay_allreduce=True)
-        combiner = apex.parallel.DistributedDataParallel(combiner, delay_allreduce=True)
+        logger.info("Using nn.parallel.DistributedDataParallel ...")
+        seq2seq_model = apex.parallel.DistributedDataParallel(seq2seq_model, delay_allreduce=True)
 
-    # build trainer, reload potential checkpoints / build evaluator
-    loss_function = get_loss_function(params)
-    #trainer = EncCombinerDecTrainer(encoder, combiner, decoder, data, whole_word_splitter, loss_function, params)
-    evaluator = EncCombinerDecEvaluator(
-        trainer=None,
-        data=data,
-        params=params,
-        loss_function=loss_function,
-        encoder=encoder,
-        decoder=decoder,
-        combiner=combiner,
-        splitter=whole_word_splitter
-    )
-
-    scores = {}
-    scores["epoch"] = -1
-    evaluator.eval_mt(scores)
-    print(scores)
-    exit()
+    trainer = Seq2SeqTrainer(seq2seq_model, data, params)
+    evaluator = Seq2SeqEvaluator(trainer=trainer, data=data, params=params)
 
     # evaluation
     if params.eval_only:
-        scores = evaluator.eval_all(trainer.epoch)
+        scores = evaluator.run_all_evals(trainer.epoch)
         for k, v in scores.items():
             logger.info("%s -> %.6f" % (k, v))
         logger.info("__log__:%s" % json.dumps(scores))
@@ -344,11 +314,8 @@ def main(params):
         while trainer.n_sentences < trainer.epoch_size:
 
             # combiner step
-            for lang in params.langs:
-               trainer.mass_step_with_explicit_split(lang, params.lambda_mass_combine)
-
-            for lang in params.langs:
-                trainer.mass_step_with_combiner(lang, params.lambda_mass)
+            for lang1, lang2 in params.mt_steps:
+                trainer.mt_step(lang1, lang2, params.lambda_mt)
 
             trainer.iter()
 
@@ -362,10 +329,11 @@ def main(params):
                     logger.info("__log__:%s" % json.dumps(scores))
                 last_eval_loss_sentences = trainer.n_sentences
 
+
         logger.info("============ End of epoch %i ============" % trainer.epoch)
 
         # evaluate perplexity
-        scores = evaluator.eval_all(trainer.epoch)
+        scores = evaluator.run_all_evals(trainer.epoch)
 
         # print / JSON log
         for k, v in scores.items():

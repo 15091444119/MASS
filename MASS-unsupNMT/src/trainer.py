@@ -23,6 +23,8 @@ import torch
 from torch.nn import functional as F
 from torch.nn.utils import clip_grad_norm_
 from apex.fp16_utils import FP16_Optimizer
+from src.model.seq2seq import BaseSeq2Seq, DecoderInputs
+from src.model.encoder import EncoderInputs
 
 from .utils import get_optimizer, to_cuda, concat_batches
 from .utils import parse_lambda_config, update_lambdas
@@ -120,25 +122,7 @@ class Trainer(object):
         self.n_iter = 0
         self.n_total_iter = 0
         self.n_sentences = 0
-        self.stats = OrderedDict(
-            [('processed_s', 0), ('processed_w', 0)] +
-            [('trained_combiner_words', 0)] +
-            [('CLM-%s' % l, []) for l in params.langs] +
-            [('CLM-%s-%s' % (l1, l2), []) for l1, l2 in data['para'].keys()] +
-            [('CLM-%s-%s' % (l2, l1), []) for l1, l2 in data['para'].keys()] +
-            [('MLM-%s' % l, []) for l in params.langs] +
-            [('MLM-%s-%s' % (l1, l2), []) for l1, l2 in data['para'].keys()] +
-            [('MLM-%s-%s' % (l2, l1), []) for l1, l2 in data['para'].keys()] +
-            [('PC-%s-%s' % (l1, l2), []) for l1, l2 in params.pc_steps] +
-            [('AE-%s' % lang, []) for lang in params.ae_steps] +
-            [('MT-%s-%s' % (l1, l2), []) for l1, l2 in params.mt_steps] +
-            [('BMT-%s-%s' % (l1, l2), []) for l1, l2 in params.bmt_steps] +
-            [('MA-%s' % lang, []) for lang in params.mass_steps] +
-            [('BT-%s-%s-%s' % (l1, l2, l3), []) for l1, l2, l3 in params.bt_steps] +
-            [("combiner-{}".format(l), []) for l in params.langs] +
-            [("mass_with_combiner-{}".format(l), []) for l in params.langs] +
-            [("mass_with_combiner_with_explicit_split-{}".format(lang), []) for lang in params.langs]
-        )
+
         self.last_time = time.time()
 
         # reload potential checkpoints
@@ -288,146 +272,6 @@ class Trainer(object):
             x = next(iterator)
         return x if lang2 is None or lang1 < lang2 else x[::-1]
 
-    def word_shuffle(self, x, l):
-        """
-        Randomly shuffle input words.
-        """
-        if self.params.word_shuffle == 0:
-            return x, l
-
-        # define noise word scores
-        noise = np.random.uniform(0, self.params.word_shuffle, size=(x.size(0) - 1, x.size(1)))
-        noise[0] = -1  # do not move start sentence symbol
-
-        assert self.params.word_shuffle > 1
-        x2 = x.clone()
-        for i in range(l.size(0)):
-            # generate a random permutation
-            scores = np.arange(l[i] - 1) + noise[:l[i] - 1, i]
-            permutation = scores.argsort()
-            # shuffle words
-            x2[:l[i] - 1, i].copy_(x2[:l[i] - 1, i][torch.from_numpy(permutation)])
-        return x2, l
-
-    def word_dropout(self, x, l):
-        """
-        Randomly drop input words.
-        """
-        if self.params.word_dropout == 0:
-            return x, l
-        assert 0 < self.params.word_dropout < 1
-
-        # define words to drop
-        eos = self.params.eos_index
-        assert (x[0] == eos).sum() == l.size(0)
-        keep = np.random.rand(x.size(0) - 1, x.size(1)) >= self.params.word_dropout
-        keep[0] = 1  # do not drop the start sentence symbol
-
-        sentences = []
-        lengths = []
-        for i in range(l.size(0)):
-            assert x[l[i] - 1, i] == eos
-            words = x[:l[i] - 1, i].tolist()
-            # randomly drop words from the input
-            new_s = [w for j, w in enumerate(words) if keep[j, i]]
-            # we need to have at least one word in the sentence (more than the start / end sentence symbols)
-            if len(new_s) == 1:
-                new_s.append(words[np.random.randint(1, len(words))])
-            new_s.append(eos)
-            assert len(new_s) >= 3 and new_s[0] == eos and new_s[-1] == eos
-            sentences.append(new_s)
-            lengths.append(len(new_s))
-        # re-construct input
-        l2 = torch.LongTensor(lengths)
-        x2 = torch.LongTensor(l2.max(), l2.size(0)).fill_(self.params.pad_index)
-        for i in range(l2.size(0)):
-            x2[:l2[i], i].copy_(torch.LongTensor(sentences[i]))
-        return x2, l2
-
-    def word_blank(self, x, l):
-        """
-        Randomly blank input words.
-        """
-        if self.params.word_blank == 0:
-            return x, l
-        assert 0 < self.params.word_blank < 1
-
-        # define words to blank
-        eos = self.params.eos_index
-        assert (x[0] == eos).sum() == l.size(0)
-        keep = np.random.rand(x.size(0) - 1, x.size(1)) >= self.params.word_blank
-        keep[0] = 1  # do not blank the start sentence symbol
-
-        sentences = []
-        for i in range(l.size(0)):
-            assert x[l[i] - 1, i] == eos
-            words = x[:l[i] - 1, i].tolist()
-            # randomly blank words from the input
-            new_s = [w if keep[j, i] else self.params.mask_index for j, w in enumerate(words)]
-            new_s.append(eos)
-            assert len(new_s) == l[i] and new_s[0] == eos and new_s[-1] == eos
-            sentences.append(new_s)
-        # re-construct input
-        x2 = torch.LongTensor(l.max(), l.size(0)).fill_(self.params.pad_index)
-        for i in range(l.size(0)):
-            x2[:l[i], i].copy_(torch.LongTensor(sentences[i]))
-        return x2, l
-
-    def add_noise(self, words, lengths):
-        """
-        Add noise to the encoder input.
-        """
-        words, lengths = self.word_shuffle(words, lengths)
-        words, lengths = self.word_dropout(words, lengths)
-        words, lengths = self.word_blank(words, lengths)
-        return words, lengths
-
-    def mask_out(self, x, lengths):
-        """
-        Decide of random words to mask out, and what target they get assigned.
-        """
-        params = self.params
-        slen, bs = x.size()
-
-        # define target words to predict
-        if params.sample_alpha == 0:
-            pred_mask = np.random.rand(slen, bs) <= params.word_pred
-            pred_mask = torch.from_numpy(pred_mask.astype(np.uint8))
-        else:
-            x_prob = params.mask_scores[x.flatten()]
-            n_tgt = math.ceil(params.word_pred * slen * bs)
-            tgt_ids = np.random.choice(len(x_prob), n_tgt, replace=False, p=x_prob / x_prob.sum())
-            pred_mask = torch.zeros(slen * bs, dtype=torch.uint8)
-            pred_mask[tgt_ids] = 1
-            pred_mask = pred_mask.view(slen, bs)
-
-        # do not predict padding
-        pred_mask[x == params.pad_index] = 0
-        pred_mask[0] = 0  # TODO: remove
-
-        # mask a number of words == 0 [8] (faster with fp16)
-        if params.fp16:
-            pred_mask = pred_mask.view(-1)
-            n1 = pred_mask.sum().item()
-            n2 = max(n1 % 8, 8 * (n1 // 8))
-            if n2 != n1:
-                pred_mask[torch.nonzero(pred_mask).view(-1)[:n1 - n2]] = 0
-            pred_mask = pred_mask.view(slen, bs)
-            assert pred_mask.sum().item() % 8 == 0
-
-        # generate possible targets / update x input
-        _x_real = x[pred_mask]
-        _x_rand = _x_real.clone().random_(params.n_words)
-        _x_mask = _x_real.clone().fill_(params.mask_index)
-        probs = torch.multinomial(params.pred_probs, len(_x_real), replacement=True)
-        _x = _x_mask * (probs == 0).long() + _x_real * (probs == 1).long() + _x_rand * (probs == 2).long()
-        x = x.masked_scatter(pred_mask, _x)
-
-        assert 0 <= x.min() <= x.max() < params.n_words
-        assert x.size() == (slen, bs)
-        assert pred_mask.size() == (slen, bs)
-
-        return x, _x_real, pred_mask
 
     def generate_batch(self, lang1, lang2, name):
         """
@@ -571,218 +415,117 @@ class Trainer(object):
         self.save_checkpoint()
         self.epoch += 1
 
-    def round_batch(self, x, lengths, positions, langs):
-        """
-        For float16 only.
-        Sub-sample sentences in a batch, and add padding,
-        so that each dimension is a multiple of 8.
-        """
-        params = self.params
-        if not params.fp16 or len(lengths) < 8:
-            return x, lengths, positions, langs, None
 
-        # number of sentences == 0 [8]
-        bs1 = len(lengths)
-        bs2 = 8 * (bs1 // 8)
-        assert bs2 > 0 and bs2 % 8 == 0
-        if bs1 != bs2:
-            idx = torch.randperm(bs1)[:bs2]
-            lengths = lengths[idx]
-            slen = lengths.max().item()
-            x = x[:slen, idx]
-            positions = None if positions is None else positions[:slen, idx]
-            langs = None if langs is None else langs[:slen, idx]
-        else:
-            idx = None
+class Seq2SeqTrainer(Trainer):
 
-        # sequence length == 0 [8]
-        ml1 = x.size(0)
-        if ml1 % 8 != 0:
-            pad = 8 - (ml1 % 8)
-            ml2 = ml1 + pad
-            x = torch.cat([x, torch.LongTensor(pad, bs2).fill_(params.pad_index)], 0)
-            if positions is not None:
-                positions = torch.cat([positions, torch.arange(pad)[:, None] + positions[-1][None] + 1], 0)
-            if langs is not None:
-                langs = torch.cat([langs, langs[-1][None].expand(pad, bs2)], 0)
-            assert x.size() == (ml2, bs2)
+    def __init__(self, seq2seq_model: BaseSeq2Seq, data, params):
 
-        assert x.size(0) % 8 == 0
-        assert x.size(1) % 8 == 0
-        return x, lengths, positions, langs, idx
-
-    def clm_step(self, lang1, lang2, lambda_coeff):
-        """
-        Next word prediction step (causal prediction).
-        CLM objective.
-        """
-        assert lambda_coeff >= 0
-        if lambda_coeff == 0:
-            return
-        params = self.params
-        name = 'model' if params.encoder_only else 'decoder'
-        model = getattr(self, name)
-        model.train()
-
-        # generate batch / select words to predict
-        x, lengths, positions, langs, _ = self.generate_batch(lang1, lang2, 'causal')
-        x, lengths, positions, langs, _ = self.round_batch(x, lengths, positions, langs)
-        alen = torch.arange(lengths.max(), dtype=torch.long, device=lengths.device)
-        pred_mask = alen[:, None] < lengths[None] - 1
-        if params.context_size > 0:  # do not predict without context
-            pred_mask[:params.context_size] = 0
-        y = x[1:].masked_select(pred_mask[:-1])
-        assert pred_mask.sum().item() == y.size(0)
-
-        # cuda
-        x, lengths, langs, pred_mask, y = to_cuda(x, lengths, langs, pred_mask, y)
-
-        # forward / loss
-        tensor = model('fwd', x=x, lengths=lengths, langs=langs, causal=True)
-        _, loss = model('predict', tensor=tensor, pred_mask=pred_mask, y=y, get_scores=False)
-        self.stats[('CLM-%s' % lang1) if lang2 is None else ('CLM-%s-%s' % (lang1, lang2))].append(loss.item())
-        loss = lambda_coeff * loss
-
-        # optimize
-        self.optimize(loss, name)
-
-        # number of processed sentences / words
-        self.n_sentences += params.batch_size
-        self.stats['processed_s'] += lengths.size(0)
-        self.stats['processed_w'] += pred_mask.sum().item()
-
-    def mlm_step(self, lang1, lang2, lambda_coeff):
-        """
-        Masked word prediction step.
-        MLM objective is lang2 is None, TLM objective otherwise.
-        """
-        assert lambda_coeff >= 0
-        if lambda_coeff == 0:
-            return
-        params = self.params
-        name = 'model' if params.encoder_only else 'encoder'
-        model = getattr(self, name)
-        model.train()
-
-        # generate batch / select words to predict
-        x, lengths, positions, langs, _ = self.generate_batch(lang1, lang2, 'pred')
-        x, lengths, positions, langs, _ = self.round_batch(x, lengths, positions, langs)
-        x, y, pred_mask = self.mask_out(x, lengths)
-
-        # cuda
-        x, y, pred_mask, lengths, positions, langs = to_cuda(x, y, pred_mask, lengths, positions, langs)
-
-        # forward / loss
-        tensor = model('fwd', x=x, lengths=lengths, positions=positions, langs=langs, causal=False)
-        _, loss = model('predict', tensor=tensor, pred_mask=pred_mask, y=y, get_scores=False)
-        self.stats[('MLM-%s' % lang1) if lang2 is None else ('MLM-%s-%s' % (lang1, lang2))].append(loss.item())
-        loss = lambda_coeff * loss
-
-        # optimize
-        self.optimize(loss, name)
-
-        # number of processed sentences / words
-        self.n_sentences += params.batch_size
-        self.stats['processed_s'] += lengths.size(0)
-        self.stats['processed_w'] += pred_mask.sum().item()
-
-    def pc_step(self, lang1, lang2, lambda_coeff):
-        """
-        Parallel classification step. Predict if pairs of sentences are mutual translations of each other.
-        """
-        assert lambda_coeff >= 0
-        if lambda_coeff == 0:
-            return
-        params = self.params
-        name = 'model' if params.encoder_only else 'encoder'
-        model = getattr(self, name)
-        model.train()
-
-        lang1_id = params.lang2id[lang1]
-        lang2_id = params.lang2id[lang2]
-
-        # sample parallel sentences
-        (x1, len1), (x2, len2) = self.get_batch('align', lang1, lang2)
-        bs = len1.size(0)
-        if bs == 1:  # can happen (although very rarely), which makes the negative loss fail
-            self.n_sentences += params.batch_size
-            return
-
-        # associate lang1 sentences with their translations, and random lang2 sentences
-        y = torch.LongTensor(bs).random_(2)
-        idx_pos = torch.arange(bs)
-        idx_neg = ((idx_pos + torch.LongTensor(bs).random_(1, bs)) % bs)
-        idx = (y == 1).long() * idx_pos + (y == 0).long() * idx_neg
-        x2, len2 = x2[:, idx], len2[idx]
-
-        # generate batch / cuda
-        x, lengths, positions, langs = concat_batches(x1, len1, lang1_id, x2, len2, lang2_id, params.pad_index, params.eos_index, reset_positions=False)
-        x, lengths, positions, langs, new_idx = self.round_batch(x, lengths, positions, langs)
-        if new_idx is not None:
-            y = y[new_idx]
-        x, lengths, positions, langs = to_cuda(x, lengths, positions, langs)
-
-        # get sentence embeddings
-        h = model('fwd', x=x, lengths=lengths, positions=positions, langs=langs, causal=False)[0]
-
-        # parallel classification loss
-        CLF_ID1, CLF_ID2 = 8, 9  # very hacky, use embeddings to make weights for the classifier
-        emb = (model.module if params.multi_gpu else model).embeddings.weight
-        pred = F.linear(h, emb[CLF_ID1].unsqueeze(0), emb[CLF_ID2, 0])
-        loss = F.binary_cross_entropy_with_logits(pred.view(-1), y.to(pred.device).type_as(pred))
-        self.stats['PC-%s-%s' % (lang1, lang2)].append(loss.item())
-        loss = lambda_coeff * loss
-
-        # optimize
-        self.optimize(loss, name)
-
-        # number of processed sentences / words
-        self.n_sentences += params.batch_size
-        self.stats['processed_s'] += bs
-        self.stats['processed_w'] += lengths.sum().item()
-
-
-class SingleTrainer(Trainer):
-
-    def __init__(self, model, data, params):
-
-        self.MODEL_NAMES = ['model']
+        self.MODEL_NAMES = ['seq2seq_model']
 
         # model / data / params
-        self.model = model
+        self.seq2seq_model = seq2seq_model
         self.data = data
-        self.params = params
-
-        # optimizers
-        self.optimizers = {'model': self.get_optimizer_fp('model')}
-
-        super().__init__(data, params)
-
-
-
-class EncCombinerDecTrainer(Trainer):
-
-    def __init__(self, encoder, combiner, decoder, data, splitter, loss_function, params):
-
-        self.MODEL_NAMES = ['encoder', 'decoder', 'combiner']
-
-        # model / data / params
-        self.encoder = encoder
-        self.combiner = combiner
-        self.decoder = decoder
-        self.data = data
-        self.splitter = splitter
-        self.loss_function = loss_function
         self.params = params
 
         # optimizers
         self.optimizers = {
-            'encoder': self.get_optimizer_fp('encoder'),
-            'decoder': self.get_optimizer_fp('decoder'),
-            'combiner': self.get_optimizer_fp('combiner'),
+            self.get_optimizer_fp('seq2seq_model'),
         }
 
         super().__init__(data, params)
+        self.init_stats()
+
+    def init_stats(self):
+        params = self.params
+        self.stats = OrderedDict(
+            [('processed_s', 0), ('processed_w', 0)] +
+            [('MT-%s-%s' % (l1, l2), []) for l1, l2 in params.mt_steps]
+        )
+
+    def mt_step(self, lang1, lang2, lambda_coeff):
+        """
+        Machine translation step.
+        Can also be used for denoising auto-encoding.
+        """
+        assert lambda_coeff >= 0
+        if lambda_coeff == 0:
+            return
+        params = self.params
+        self.seq2seq_model.train()
+
+        lang1_id = params.lang2id[lang1]
+        lang2_id = params.lang2id[lang2]
+
+        # generate batch
+        if lang1 == lang2:
+            (x1, len1) = self.get_batch('ae', lang1)
+            (x2, len2) = (x1, len1)
+            (x1, len1) = self.add_noise(x1, len1)
+        else:
+            (x1, len1), (x2, len2) = self.get_batch('mt', lang1, lang2)
+        langs1 = x1.clone().fill_(lang1_id)
+        langs2 = x2.clone().fill_(lang2_id)
+
+        # target words to predict
+        alen = torch.arange(len2.max(), dtype=torch.long, device=len2.device)
+        pred_mask = alen[:, None] < len2[None] - 1  # do not predict anything given the last target word
+        y = x2[1:].masked_select(pred_mask[:-1])
+        assert len(y) == (len2 - 1).sum().item()
+
+        # cuda
+        x1, len1, langs1, x2, len2, langs2, y = to_cuda(x1, len1, langs1, x2, len2, langs2, y)
+
+        encoder_inputs = EncoderInputs(x1=x1, len1=len1, lang_id=lang1_id, langs1=langs1)
+        decoder_inputs = DecoderInputs(x2=x2, len2=len2, y=y, pred_mask=pred_mask, positions=None)
+
+        _, loss = self.seq2seq_model.forward("seq2seq_loss", encoder_inputs=encoder_inputs, decoder_inputs=decoder_inputs)
+
+        self.stats[('AE-%s' % lang1) if lang1 == lang2 else ('MT-%s-%s' % (lang1, lang2))].append(loss.item())
+        loss = lambda_coeff * loss
+
+        # optimize
+        self.optimize(loss, ['seq2seq_model'])
+
+        # number of processed sentences / words
+        self.n_sentences += params.batch_size
+        self.stats['processed_s'] += len2.size(0)
+        self.stats['processed_w'] += (len2 - 1).sum().item()
+
+
+class MassTrainer(Seq2SeqTrainer):
+
+    def __init__(self, seq2seq_model: BaseSeq2Seq, data, params):
+        super().__init__(seq2seq_model, data, params)
+        self.init_stats()
+
+    def init_stats(self):
+        params = self.params
+        self.stats = OrderedDict(
+            [('processed_s', 0), ('processed_w', 0)] +
+            [('MT-%s-%s' % (l1, l2), []) for l1, l2 in params.mt_steps] +
+            [('MASS-%s' % (l1), []) for l1 in params.mass_steps]
+        )
+
+    def mass_step(self, lang, lambda_coeff):
+        assert lambda_coeff >= 0
+        if lambda_coeff == 0:
+            return
+        params = self.params
+
+        self.seq2seq_model.train()
+
+        encoder_inputs, decoder_inputs = self.get_mass_batch("mass", lang)
+
+        _, loss = self.seq2seq_model("seq2seq_loss", encoder_inputs=encoder_inputs, decoder_inputs=decoder_inputs)
+
+        self.stats[('MA-%s' % lang)].append(loss.item())
+
+        self.optimize(loss, ['encoder', 'decoder'])
+
+        # number of processed sentences / words
+        self.n_sentences += params.batch_size
+        self.stats['processed_s'] += decoder_inputs.len2.size(0)
+        self.stats['processed_w'] += (decoder_inputs.len2 - 1).sum().item()
 
     def mask_word(self, w):
         _w_real = w
@@ -897,126 +640,7 @@ class EncCombinerDecTrainer(Trainer):
         pred_mask = y != self.params.pad_index
         y = y.masked_select(pred_mask)
         return x1, l1, x2, l2, y, pred_mask, pos
-    
-    def mt_step(self, lang1, lang2, lambda_coeff):
-        """
-        Machine translation step.
-        Can also be used for denoising auto-encoding.
-        """
-        assert lambda_coeff >= 0
-        if lambda_coeff == 0:
-            return
-        params = self.params
-        self.encoder.train()
-        self.decoder.train()
 
-        lang1_id = params.lang2id[lang1]
-        lang2_id = params.lang2id[lang2]
-
-        # generate batch
-        if lang1 == lang2:
-            (x1, len1) = self.get_batch('ae', lang1)
-            (x2, len2) = (x1, len1)
-            (x1, len1) = self.add_noise(x1, len1)
-        else:
-            (x1, len1), (x2, len2) = self.get_batch('mt', lang1, lang2)
-        langs1 = x1.clone().fill_(lang1_id)
-        langs2 = x2.clone().fill_(lang2_id)
-
-        # target words to predict
-        alen = torch.arange(len2.max(), dtype=torch.long, device=len2.device)
-        pred_mask = alen[:, None] < len2[None] - 1  # do not predict anything given the last target word
-        y = x2[1:].masked_select(pred_mask[:-1])
-        assert len(y) == (len2 - 1).sum().item()
-
-        # cuda
-        x1, len1, langs1, x2, len2, langs2, y = to_cuda(x1, len1, langs1, x2, len2, langs2, y)
-
-        # encode source sentence
-        enc1 = self.encoder('fwd', x=x1, lengths=len1, langs=langs1, causal=False)
-        enc1 = enc1.transpose(0, 1)
-
-        # decode target sentence
-        dec2 = self.decoder('fwd', x=x2, lengths=len2, langs=langs2, causal=True, src_enc=enc1, src_len=len1)
-
-        # loss
-        _, loss = self.decoder('predict', tensor=dec2, pred_mask=pred_mask, y=y, get_scores=False)
-        self.stats[('AE-%s' % lang1) if lang1 == lang2 else ('MT-%s-%s' % (lang1, lang2))].append(loss.item())
-        loss = lambda_coeff * loss
-
-        # optimize
-        self.optimize(loss, ['encoder', 'decoder'])
-
-        # number of processed sentences / words
-        self.n_sentences += params.batch_size
-        self.stats['processed_s'] += len2.size(0)
-        self.stats['processed_w'] += (len2 - 1).sum().item()
-
-    def bt_step(self, lang1, lang2, lang3, lambda_coeff):
-        """
-        Back-translation step for machine translation.
-        """
-        assert lambda_coeff >= 0
-        if lambda_coeff == 0:
-            return
-        assert lang1 == lang3 and lang1 != lang2 and lang2 is not None
-        params = self.params
-        _encoder = self.encoder.module if params.multi_gpu else self.encoder
-        _decoder = self.decoder.module if params.multi_gpu else self.decoder
-
-        lang1_id = params.lang2id[lang1]
-        lang2_id = params.lang2id[lang2]
-
-        # generate source batch
-        x1, len1 = self.get_batch('bt', lang1)
-        langs1 = x1.clone().fill_(lang1_id)
-
-        # cuda
-        x1, len1, langs1 = to_cuda(x1, len1, langs1)
-
-        # generate a translation
-        with torch.no_grad():
-
-            # evaluation mode
-            self.encoder.eval()
-            self.decoder.eval()
-
-            # encode source sentence and translate it
-            enc1 = _encoder('fwd', x=x1, lengths=len1, langs=langs1, causal=False)
-            enc1 = enc1.transpose(0, 1)
-            x2, len2 = _decoder.generate(enc1, len1, lang2_id, max_len=int(1.3 * len1.max().item() + 5))
-            langs2 = x2.clone().fill_(lang2_id)
-
-            # free CUDA memory
-            del enc1
-
-            # training mode
-            self.encoder.train()
-            self.decoder.train()
-
-        # encode generate sentence
-        enc2 = self.encoder('fwd', x=x2, lengths=len2, langs=langs2, causal=False)
-        enc2 = enc2.transpose(0, 1)
-
-        # words to predict
-        alen = torch.arange(len1.max(), dtype=torch.long, device=len1.device)
-        pred_mask = alen[:, None] < len1[None] - 1  # do not predict anything given the last target word
-        y1 = x1[1:].masked_select(pred_mask[:-1])
-
-        # decode original sentence
-        dec3 = self.decoder('fwd', x=x1, lengths=len1, langs=langs1, causal=True, src_enc=enc2, src_len=len2)
-
-        # loss
-        _, loss = self.decoder('predict', tensor=dec3, pred_mask=pred_mask, y=y1, get_scores=False)
-        self.stats[('BT-%s-%s-%s' % (lang1, lang2, lang3))].append(loss.item())
-
-        # optimize
-        self.optimize(loss, ['encoder', 'decoder'])
-
-        # number of processed sentences / words
-        self.n_sentences += params.batch_size
-        self.stats['processed_s'] += len1.size(0)
-        self.stats['processed_w'] += (len1 - 1).sum().item()
 
     def get_mass_batch(self, step_name, lang):
         """
@@ -1032,122 +656,11 @@ class EncCombinerDecTrainer(Trainer):
         x_, len_ = self.get_batch(step_name, lang)
         (x1, len1, x2, len2, y, pred_mask, positions) = self.restricted_mask_sent(x_, len_, int(params.lambda_span))
         (x1, len1, x2, len2, y, pred_mask, positions) = to_cuda(x1, len1, x2, len2, y, pred_mask, positions)
-        mass_batch = MassBatch(x1=x1, len1=len1, x2=x2, len2=len2, y=y, pred_mask=pred_mask, positions=positions, lang_id=params.lang2id[lang])
-        return mass_batch
-
-    def mass_step_with_combiner(self, lang, lambda_coeff):
-        assert lambda_coeff >= 0
-        if lambda_coeff == 0:
-            return
-        params = self.params
-        mass_batch = self.get_mass_batch("mass_with_combiner", lang)
-
-        models = CommonCombineModel(encoder=self.encoder, decoder=self.decoder, combiner=self.combiner)
-        _, losses, statistics = combiner_mass(
-            models=models,
-            mass_batch=mass_batch,
-            params=params,
-            dico=self.data["dico"],
-            mode="train"
-        )
-        loss = losses.decoding_loss
-        self.stats[("mass_with_combiner-{}".format(lang))].append(loss.item())
-
-        self.optimize(loss, ["encoder", "combiner", "decoder"])
-
-        self.n_sentences += params.batch_size
-        self.stats["processed_s"] += statistics.processed_s
-        self.stats["processed_w"] += statistics.processed_w
-
-    def mass_step_with_explicit_split(self, lang, lambda_coeff):
-        assert lambda_coeff >= 0
-        if lambda_coeff == 0:
-            return
-        params = self.params
-
-        mass_batch = self.get_mass_batch("expicit_mass", lang)
-
-        models = ExplicitSplitModel(encoder=self.encoder, decoder=self.decoder, combiner=self.combiner)
-        _, losses, statistics = combiner_mass_with_explict_split(
-            models=models,
-            mass_batch=mass_batch,
-            params=params,
-            dico=self.data["dico"],
-            splitter=self.splitter,
-            combine_loss_fn=self.loss_function,
-            mode="train"
-        )
-
-        if losses.combine_loss is not None:
-            loss = losses.combine_loss + losses.decoding_loss
-            self.stats[("mass_with_combiner_with_explicit_split-{}".format(lang))].append(losses.decoding_loss.item())
-            self.stats[("combiner-{}".format(lang))].append(losses.combine_loss.item())
-        else:
-            print("NO")
-            loss = losses.decoding_loss
-
-        self.optimize(loss, ["encoder", "combiner", "decoder"])
-
-        self.n_sentences += params.batch_size
-        self.stats["trained_combiner_words"] += statistics.trained_combiner_words
-        self.stats["processed_s"] += statistics.processed_s
-        self.stats["processed_w"] += statistics.processed_w
-
-
-    def bmt_step(self, lang1, lang2, lambda_coeff):
-        """
-        Machine translation step.
-        Can also be used for denoising auto-encoding.
-        """
-        assert lambda_coeff >= 0
-        if lambda_coeff == 0:
-            return
-        params = self.params
-        self.encoder.train()
-        self.decoder.train()
-
-        lang1_id = params.lang2id[lang1]
-        lang2_id = params.lang2id[lang2]
-
-        # generate batch
-        (x1, len1), (x2, len2) = self.get_batch('bmt', lang1, lang2, back=True)
+        lang1_id = self.params.lang2id[lang]
+        lang2_id = lang1_id
         langs1 = x1.clone().fill_(lang1_id)
         langs2 = x2.clone().fill_(lang2_id)
-
-        # target words to predict
-        alen = torch.arange(len2.max(), dtype=torch.long, device=len2.device)
-        pred_mask = alen[:, None] < len2[None] - 1  # do not predict anything given the last target word
-        y = x2[1:].masked_select(pred_mask[:-1])
-        assert len(y) == (len2 - 1).sum().item()
-
-        # cuda
-        x1, len1, langs1, x2, len2, langs2, y = to_cuda(x1, len1, langs1, x2, len2, langs2, y)
-
-        # encode source sentence
-        enc1 = self.encoder('fwd', x=x1, lengths=len1, langs=langs1, causal=False)
-        enc1 = enc1.transpose(0, 1)
-
-        # decode target sentence
-        dec2 = self.decoder('fwd', x=x2, lengths=len2, langs=langs2, causal=True, src_enc=enc1, src_len=len1)
-
-        # loss
-        _, loss = self.decoder('predict', tensor=dec2, pred_mask=pred_mask, y=y, get_scores=False)
-        self.stats[('BMT-%s-%s' % (lang1, lang2))].append(loss.item())
-        loss = lambda_coeff * loss
-
-        # optimize
-        self.optimize(loss, ['encoder', 'decoder'])
-
-        # number of processed sentences / words
-        self.n_sentences += params.batch_size
-        self.stats['processed_s'] += len2.size(0)
-        self.stats['processed_w'] += (len2 - 1).sum().item()
-
-
-
-
-
-
-
-
+        encoder_inputs = EncoderInputs(x1=x1, len1=len1, lang_id=lang1_id, langs1=langs1)
+        decoder_inputs = DecoderInputs(x2=x2, len2=len2, langs2=langs2, y=y, pred_mask=pred_mask, positions=positions, lang_id=lang2_id)
+        return encoder_inputs, decoder_inputs
 
