@@ -154,7 +154,8 @@ class Seq2SeqEvaluator(Evaluator):
 
         for data in ["valid", "test"]:
             for lang1, lang2 in self.params.mt_steps:
-                self.evaluate_mt(scores, data, lang1, lang2, self.params.eval_bleu)
+                self.evaluate_mt(scores, data, lang1, lang2, self.params.eval_bleu and self.params.is_master)
+        return scores
 
     def evaluate_mass_with_explicit_split(self, scores, data_set, lang):
         with torch.no_grad():
@@ -352,7 +353,7 @@ class Seq2SeqEvaluator(Evaluator):
                 y = x2[1:].masked_select(pred_mask[:-1])
                 assert len(y) == (len2 - 1).sum().item()
 
-                x1, len1, langs1, x2, len2, langs2, pred_mask = to_cuda(x1, len1, langs1, x2, len2, langs2, pred_mask)
+                x1, len1, langs1, x2, len2, langs2, y, pred_mask = to_cuda(x1, len1, langs1, x2, len2, langs2, y, pred_mask)
 
                 encoder_inputs = EncoderInputs(x1=x1, len1=len1, lang_id=lang1_id, langs1=langs1)
                 decoder_inputs = DecoderInputs(x2=x2, len2=len2, langs2=langs2, y=y, pred_mask=pred_mask, positions=None, lang_id=lang2_id)
@@ -363,13 +364,16 @@ class Seq2SeqEvaluator(Evaluator):
                     tgt_lang_id=lang2_id,
                     decoding_params=params
                 )
+                if eval_bleu:
+                    hypothesis.extend(convert_to_text(generated, lengths, self.dico, params))
 
-                hypothesis.extend(convert_to_text(generated, lengths, self.dico, params))
                 n_words += y.size(0)
                 xe_loss += loss.item() * len(y)
-                n_valid += (word_scores.max(1)[1] == y).sum().item()
+                n_valid += (word_scores.max(1)[1] == y).long().sum().item()
 
-
+        # compute perplexity and prediction accuracy
+        scores['%s_%s-%s_mt_ppl' % (data_set, lang1, lang2)] = np.exp(xe_loss / n_words)
+        scores['%s_%s-%s_mt_acc' % (data_set, lang1, lang2)] = 100. * n_valid / n_words
 
         if eval_bleu:
             # hypothesis / reference paths

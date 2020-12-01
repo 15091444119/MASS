@@ -15,9 +15,6 @@ import time
 import random
 from logging import getLogger
 from collections import OrderedDict
-from src.combiner.forward_function.cheat_combine import cheat
-from src.combiner.forward_function.explicit_split import combiner_mass_with_explict_split, ExplicitSplitModel
-from src.combiner.forward_function.common_combine import combiner_mass, CommonCombineModel
 import numpy as np
 import torch
 from torch.nn import functional as F
@@ -136,7 +133,6 @@ class Trainer(object):
         """
         Build optimizer.
         """
-        assert module in ['model', 'encoder', 'decoder', 'combiner']
         optimizer = get_optimizer(getattr(self, module).parameters(), self.params.optimizer)
         if self.params.fp16:
             optimizer = FP16_Optimizer(optimizer, dynamic_loss_scale=True)
@@ -209,14 +205,12 @@ class Trainer(object):
         # processing speed
         new_time = time.time()
         diff = new_time - self.last_time
-        s_speed = "{:7.2f} sent/s - {:8.2f} words/s - {:8.2f} combiner_words/s".format(
+        s_speed = "{:7.2f} sent/s - {:8.2f} words/s ".format(
             self.stats['processed_s'] * 1.0 / diff,
             self.stats['processed_w'] * 1.0 / diff,
-            self.stats['trained_combiner_words'] * 1.0 / diff
         )
         self.stats['processed_s'] = 0
         self.stats['processed_w'] = 0
-        self.stats['trained_combiner_words'] = 0
         self.last_time = new_time
 
         # log speed + stats + learning rate
@@ -246,7 +240,7 @@ class Trainer(object):
             assert stream is False
             _lang1, _lang2 = (lang1, lang2) if lang1 < lang2 else (lang2, lang1)
             iterator = self.data['para'][(_lang1, _lang2)]['train'].get_iterator(
-                shuffle=True,
+                shuffle=self.params.debug_train,
                 group_by_size=self.params.group_by_size,
                 n_sentences=-1,
             )
@@ -429,7 +423,7 @@ class Seq2SeqTrainer(Trainer):
 
         # optimizers
         self.optimizers = {
-            self.get_optimizer_fp('seq2seq_model'),
+            'seq2seq_model': self.get_optimizer_fp('seq2seq_model'),
         }
 
         super().__init__(data, params)
@@ -453,16 +447,12 @@ class Seq2SeqTrainer(Trainer):
         params = self.params
         self.seq2seq_model.train()
 
+        assert lang1 != lang2
         lang1_id = params.lang2id[lang1]
         lang2_id = params.lang2id[lang2]
 
         # generate batch
-        if lang1 == lang2:
-            (x1, len1) = self.get_batch('ae', lang1)
-            (x2, len2) = (x1, len1)
-            (x1, len1) = self.add_noise(x1, len1)
-        else:
-            (x1, len1), (x2, len2) = self.get_batch('mt', lang1, lang2)
+        (x1, len1), (x2, len2) = self.get_batch('mt', lang1, lang2)
         langs1 = x1.clone().fill_(lang1_id)
         langs2 = x2.clone().fill_(lang2_id)
 
@@ -476,11 +466,11 @@ class Seq2SeqTrainer(Trainer):
         x1, len1, langs1, x2, len2, langs2, y = to_cuda(x1, len1, langs1, x2, len2, langs2, y)
 
         encoder_inputs = EncoderInputs(x1=x1, len1=len1, lang_id=lang1_id, langs1=langs1)
-        decoder_inputs = DecoderInputs(x2=x2, len2=len2, y=y, pred_mask=pred_mask, positions=None)
+        decoder_inputs = DecoderInputs(x2=x2, len2=len2, y=y, pred_mask=pred_mask, positions=None, langs2=langs2, lang_id=lang2_id)
 
-        _, loss = self.seq2seq_model.forward("seq2seq_loss", encoder_inputs=encoder_inputs, decoder_inputs=decoder_inputs)
+        _, loss = self.seq2seq_model("seq2seq_loss", encoder_inputs=encoder_inputs, decoder_inputs=decoder_inputs)
 
-        self.stats[('AE-%s' % lang1) if lang1 == lang2 else ('MT-%s-%s' % (lang1, lang2))].append(loss.item())
+        self.stats[('MT-%s-%s' % (lang1, lang2))].append(loss.item())
         loss = lambda_coeff * loss
 
         # optimize

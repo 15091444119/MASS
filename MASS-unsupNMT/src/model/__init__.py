@@ -93,7 +93,7 @@ def build_model(params, dico):
     decoder = TransformerModel(params, dico, is_encoder=False, with_output=True)
 
     # reload a mass pretrained model
-    if params.reload_mass_model != '':
+    if params.reload_model != '':
         enc_path, dec_path = params.reload_model.split(',')
         assert not (enc_path == '' and dec_path == '')
 

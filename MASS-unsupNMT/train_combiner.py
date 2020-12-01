@@ -55,7 +55,7 @@ def get_parser():
                         help="Run model with float16")
 
     # only use an encoder (use a specific decoder for machine translation)
-    parser.add_argument("--encoder_only", type=bool_flag, default=True,
+    parser.add_argument("--encoder_only", type=bool_flag, default=False,
                         help="Only use an encoder")
     parser.add_argument("--english_only", type=bool_flag, default=False,
                         help="Only use english domain (equal to only use one language)")
@@ -289,6 +289,10 @@ def main(params):
         logger.info("Using nn.parallel.DistributedDataParallel ...")
         seq2seq_model = apex.parallel.DistributedDataParallel(seq2seq_model, delay_allreduce=True)
 
+    if params.fp16:
+        assert torch.backends.cudnn.enabled
+        seq2seq_model = network_to_half(seq2seq_model)
+
     trainer = Seq2SeqTrainer(seq2seq_model, data, params)
     evaluator = Seq2SeqEvaluator(trainer=trainer, data=data, params=params)
 
@@ -350,20 +354,6 @@ def main(params):
         trainer.save_periodic()
         trainer.end_epoch(scores)
 
-
-def reload_combiner(params, dico):
-    reloaded = torch.load(params.reload_combiner_path, map_location=lambda storage, loc: storage.cuda(params.local_rank))
-    logger = logging.getLogger()
-    # reload encoder
-    combiner = build_combiner(params)
-    combiner_reload = reloaded['combiner']
-    if all([k.startswith('module.') for k in combiner_reload.keys()]):
-        combiner_reload = {k[len('module.'):]: v for k, v in combiner_reload.items()}
-
-    combiner.load_state_dict(combiner_reload)
-    logger.info("Reload combiner from {}".format(params.reload_combiner_path))
-
-    return combiner.cuda()
 
 if __name__ == '__main__':
     # generate parser / parse parameters

@@ -45,17 +45,23 @@ class BaseSeq2Seq(torch.nn.Module):
 
         """
         encoded_info = self.encoder.encode(encoder_inputs)
+
         decoding_batch = self.get_loss_decoding_batch(encoded_info=encoded_info, decoder_inputs=decoder_inputs)
+
         scores, losses = self.run_decode_loss(decoding_batch, get_scores=True)
 
         generate_batch = self.get_generate_batch(encoded_info=encoded_info, tgt_lang_id=tgt_lang_id)
+
         generated, lengths = self.generate_decode(generate_decode_batch=generate_batch, decoding_params=decoding_params)
         return scores, losses, generated, lengths
 
     def run_seq2seq_loss(self, encoder_inputs, decoder_inputs, get_scores=False):
         encoded_info = self.encoder.encode(encoder_inputs)
+
         decoding_batch = self.get_loss_decoding_batch(encoded_info=encoded_info, decoder_inputs=decoder_inputs)
+
         scores, losses = self.run_decode_loss(decoding_batch, get_scores=get_scores)
+
         return scores, losses
 
     def run_decode_loss(self, decoding_batch, get_scores=False):
@@ -76,7 +82,9 @@ class BaseSeq2Seq(torch.nn.Module):
 
     def generate(self, encoder_inputs, tgt_lang_id, decoding_params):
         encoded_info = self.encoder.encode(encoder_inputs)
+
         generate_batch = self.get_generate_batch(encoded_info=encoded_info, tgt_lang_id=tgt_lang_id)
+
         generated, lengths = self.generate_decode(generate_decode_batch=generate_batch, decoding_params=decoding_params)
         return generated, lengths
 

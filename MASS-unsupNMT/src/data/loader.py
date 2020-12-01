@@ -138,7 +138,7 @@ def load_mono_data(params, data):
                 data['mono_stream'][lang][splt].select_data(a, b)
 
             # for denoising auto-encoding and online back-translation, we need a non-stream (batched) dataset
-            if lang in params.ae_steps or lang in params.bt_src_langs or lang in params.mass_steps or lang in [params.src_lang, params.tgt_lang]:
+            if lang in params.ae_steps or lang in params.bt_src_langs or lang in params.mass_steps:
 
                 # create batched dataset
                 dataset = Dataset(mono_data['sentences'], mono_data['positions'], params)
@@ -326,10 +326,6 @@ def check_data_params(params):
             if src != tgt:
                 mass_steps.append(tuple([src, tgt]))
 
-    # combiner steps
-    assert params.src_lang in params.langs
-    assert params.tgt_lang in params.langs
-
     # back-translation steps
     params.bt_steps = [tuple(s.split('-')) for s in params.bt_steps.split(',') if len(s) > 0]
     assert all([len(x) == 3 for x in params.bt_steps])
@@ -340,7 +336,7 @@ def check_data_params(params):
     params.bt_src_langs = [l1 for l1, _, _ in params.bt_steps]
 
     # check monolingual datasets
-    required_mono = set([l1 for l1, l2 in (params.mlm_steps + params.clm_steps) if l2 is None] + params.ae_steps + params.bt_src_langs + params.mass_steps + [params.src_lang, params.tgt_lang])
+    required_mono = set([l1 for l1, l2 in (params.mlm_steps + params.clm_steps) if l2 is None] + params.ae_steps + params.bt_src_langs + params.mass_steps )
     params.mono_dataset = {
         lang: {
             splt: os.path.join(params.data_path, '%s.%s.pth' % (splt, lang))
@@ -351,7 +347,7 @@ def check_data_params(params):
 
     # check parallel datasets
     required_para_train = set(params.clm_steps + params.mlm_steps + params.pc_steps + params.mt_steps)
-    required_para = required_para_train | set([(l2, l3) for _, l2, l3 in params.bt_steps] + mass_steps + [(params.src_lang, params.tgt_lang)])
+    required_para = required_para_train | set([(l2, l3) for _, l2, l3 in params.bt_steps] + mass_steps)
     params.para_dataset = {
         (src, tgt): {
             splt: (os.path.join(params.data_path, '%s.%s-%s.%s.pth' % (splt, src, tgt, src)),

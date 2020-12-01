@@ -1,4 +1,4 @@
-from . import  BaseSeq2Seq, DecodeInputs, LossDecodingBatch, GenerateDecodeBatch
+from . import  BaseSeq2Seq, DecoderInputs, LossDecodingBatch, GenerateDecodeBatch
 from src.model.encoder.common_encoder import CommonEncodedInfo, CommonEncoder
 
 
@@ -10,12 +10,12 @@ class CommonSeq2Seq(BaseSeq2Seq):
         super().__init__(encoder=encoder, decoder=decoder)
 
     def forward(self, loss_name, encoder_inputs, decoder_inputs):
-        if "loss_name" == "seq2seq_loss":
+        if loss_name == "seq2seq_loss":
             return self.run_seq2seq_loss(encoder_inputs=encoder_inputs, decoder_inputs=decoder_inputs)
         else:
             raise Exception("Unknown training method : {}".format(loss_name))
 
-    def get_loss_decoding_batch(self, encoded_info: CommonEncodedInfo, decoder_inputs: DecodeInputs):
+    def get_loss_decoding_batch(self, encoded_info: CommonEncodedInfo, decoder_inputs: DecoderInputs):
         loss_decoding_batch = LossDecodingBatch(
             x=decoder_inputs.x2,
             lengths=decoder_inputs.len2,
