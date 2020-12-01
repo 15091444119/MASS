@@ -136,42 +136,18 @@ class Trainer(object):
         optimizer = get_optimizer(getattr(self, module).parameters(), self.params.optimizer)
         if self.params.fp16:
             optimizer = FP16_Optimizer(optimizer, dynamic_loss_scale=True)
+        optimizer.zero_grad()
         return optimizer
 
-    def optimize(self, loss, modules):
-        """
-        Optimize.
-        """
-        if type(modules) is str:
-            modules = [modules]
-
-        # check NaN
+    def backward(self, loss, module):
         if (loss != loss).data.any():
             logger.error("NaN detected")
             exit()
 
-        # zero grad
-        for module in modules:
-            self.optimizers[module].zero_grad()
-
-        # backward
-        if self.params.fp16:
-            assert len(modules) == 1, "fp16 not implemented for more than one module"
-            self.optimizers[module].backward(loss)
-        else:
-            loss.backward()
-
-        # clip gradients
+        loss = loss / self.params.update_cycle
+        loss.backward()
         if self.params.clip_grad_norm > 0:
-            for module in modules:
-                if self.params.fp16:
-                    self.optimizers[module].clip_master_grads(self.params.clip_grad_norm)
-                else:
-                    clip_grad_norm_(getattr(self, module).parameters(), self.params.clip_grad_norm)
-
-        # optimization step
-        for module in modules:
-            self.optimizers[module].step()
+            clip_grad_norm_(getattr(self, module).parameters(), self.params.clip_grad_norm)
 
     def iter(self):
         """
@@ -429,6 +405,15 @@ class Seq2SeqTrainer(Trainer):
         super().__init__(data, params)
         self.init_stats()
 
+    def optimize(self):
+        self.optimizers["seq2seq_model"].step()
+        self.optimizers["seq2seq_model"].zero_grad()
+
+    def step(self):
+        # combiner step
+        for lang1, lang2 in self.params.mt_steps:
+            self.mt_step(lang1, lang2, self.params.lambda_mt)
+
     def init_stats(self):
         params = self.params
         self.stats = OrderedDict(
@@ -468,13 +453,14 @@ class Seq2SeqTrainer(Trainer):
         encoder_inputs = EncoderInputs(x1=x1, len1=len1, lang_id=lang1_id, langs1=langs1)
         decoder_inputs = DecoderInputs(x2=x2, len2=len2, y=y, pred_mask=pred_mask, positions=None, langs2=langs2, lang_id=lang2_id)
 
-        _, loss = self.seq2seq_model("seq2seq_loss", encoder_inputs=encoder_inputs, decoder_inputs=decoder_inputs)
+        self.seq2seq_model("seq2seq_loss", encoder_inputs=encoder_inputs, decoder_inputs=decoder_inputs)
+        loss = torch.tensor(1)
 
         self.stats[('MT-%s-%s' % (lang1, lang2))].append(loss.item())
         loss = lambda_coeff * loss
 
         # optimize
-        self.optimize(loss, ['seq2seq_model'])
+     #   self.backward(loss, "seq2seq_model")
 
         # number of processed sentences / words
         self.n_sentences += params.batch_size

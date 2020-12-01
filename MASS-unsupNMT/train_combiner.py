@@ -232,6 +232,9 @@ def get_parser():
     parser.add_argument("--master_port", type=int, default=-1,
                         help="Master port (for multi-node SLURM jobs)")
 
+    # gradient acc
+    parser.add_argument("--update_cycle", type=int, default=1, help="gradient acc")
+
     # combiner
     parser.add_argument("--splitter", type=str, choices=["BPE", "CHAR", "ROB"], help="use random bpe or character to split word")
     parser.add_argument("--n_combiner_layers", type=int, default=4)
@@ -287,11 +290,7 @@ def main(params):
     # distributed
     if params.multi_gpu:
         logger.info("Using nn.parallel.DistributedDataParallel ...")
-        seq2seq_model = apex.parallel.DistributedDataParallel(seq2seq_model, delay_allreduce=True)
-
-    if params.fp16:
-        assert torch.backends.cudnn.enabled
-        seq2seq_model = network_to_half(seq2seq_model)
+        seq2seq_model = torch.nn.parallel.distributed.DistributedDataParallel(seq2seq_model, device_ids=[params.local_rank], output_device=params.local_rank)
 
     trainer = Seq2SeqTrainer(seq2seq_model, data, params)
     evaluator = Seq2SeqEvaluator(trainer=trainer, data=data, params=params)
@@ -317,9 +316,16 @@ def main(params):
 
         while trainer.n_sentences < trainer.epoch_size:
 
-            # combiner step
-            for lang1, lang2 in params.mt_steps:
-                trainer.mt_step(lang1, lang2, params.lambda_mt)
+            if params.multi_gpu:
+                with seq2seq_model.no_sync():
+                    for i in range(params.update_cycle - 1):
+                        trainer.step()
+                trainer.step()
+                trainer.optimize()
+            else:
+                for i in range(params.update_cycle):
+                    trainer.step()
+                trainer.optimize()
 
             trainer.iter()
 

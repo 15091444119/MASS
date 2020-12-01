@@ -60,9 +60,9 @@ class BaseSeq2Seq(torch.nn.Module):
 
         decoding_batch = self.get_loss_decoding_batch(encoded_info=encoded_info, decoder_inputs=decoder_inputs)
 
-        scores, losses = self.run_decode_loss(decoding_batch, get_scores=get_scores)
+        #scores, losses = self.run_decode_loss(decoding_batch, get_scores=get_scores)
 
-        return scores, losses
+        #return scores, losses
 
     def run_decode_loss(self, decoding_batch, get_scores=False):
         dec = self.decoder('fwd',
