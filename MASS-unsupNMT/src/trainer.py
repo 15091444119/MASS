@@ -448,19 +448,18 @@ class Seq2SeqTrainer(Trainer):
         assert len(y) == (len2 - 1).sum().item()
 
         # cuda
-        x1, len1, langs1, x2, len2, langs2, y = to_cuda(x1, len1, langs1, x2, len2, langs2, y)
+        x1, len1, langs1, x2, len2, langs2, y, pred_mask = to_cuda(x1, len1, langs1, x2, len2, langs2, y, pred_mask)
 
         encoder_inputs = EncoderInputs(x1=x1, len1=len1, lang_id=lang1_id, langs1=langs1)
         decoder_inputs = DecoderInputs(x2=x2, len2=len2, y=y, pred_mask=pred_mask, positions=None, langs2=langs2, lang_id=lang2_id)
 
-        self.seq2seq_model("seq2seq_loss", encoder_inputs=encoder_inputs, decoder_inputs=decoder_inputs)
-        loss = torch.tensor(1)
+        _, loss = self.seq2seq_model("seq2seq_loss", encoder_inputs=encoder_inputs, decoder_inputs=decoder_inputs)
 
         self.stats[('MT-%s-%s' % (lang1, lang2))].append(loss.item())
         loss = lambda_coeff * loss
 
         # optimize
-     #   self.backward(loss, "seq2seq_model")
+        self.backward(loss, "seq2seq_model")
 
         # number of processed sentences / words
         self.n_sentences += params.batch_size
