@@ -316,17 +316,8 @@ def main(params):
 
         while trainer.n_sentences < trainer.epoch_size:
 
-            if params.multi_gpu:
-                with seq2seq_model.no_sync():
-                    for i in range(params.update_cycle - 1):
-                        trainer.step()
-                trainer.step()
-                trainer.optimize()
-            else:
-                for i in range(params.update_cycle):
-                    trainer.step()
-                trainer.optimize()
-
+            trainer.step()
+            trainer.optimize()
             trainer.iter()
 
             # evaluate loss
