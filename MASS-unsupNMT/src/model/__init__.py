@@ -24,23 +24,6 @@ def check_model_params(params):
     assert params.bptt >= 1
     assert 0 <= params.word_pred < 1
     assert 0 <= params.sample_alpha < 1
-    s = params.word_mask_keep_rand.split(',')
-    assert len(s) == 3
-    s = [float(x) for x in s]
-    assert all([0 <= x <= 1 for x in s]) and sum(s) == 1
-    params.word_mask = s[0]
-    params.word_keep = s[1]
-    params.word_rand = s[2]
-
-    # input sentence noise for DAE
-    if len(params.ae_steps) == 0:
-        assert params.word_shuffle == 0
-        assert params.word_dropout == 0
-        assert params.word_blank == 0
-    else:
-        assert params.word_shuffle == 0 or params.word_shuffle > 1
-        assert 0 <= params.word_dropout < 1
-        assert 0 <= params.word_blank < 1
 
     # model dimensions
     assert params.emb_dim % params.n_heads == 0

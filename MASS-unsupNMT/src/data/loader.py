@@ -267,6 +267,15 @@ def load_back_data(params, data):
         logger.info("")
 
 
+def check_eval_params(params):
+    params.eval_mt_steps = [tuple(direction.split('-')) for direction in params.eval_mt_steps.split(',') if len(direction) > 0]
+    if len(params.eval_mt_steps) != 0:
+        assert all([l1 in params.langs and l2 in params.langs for l1, l2 in params.eval_mt_steps])
+    params.eval_mass_steps = [lang for lang in params.eval_mass_steps.split(',') if len(lang) > 0]
+    if len(params.eval_mass_steps) != 0:
+        assert all([l in params.langs for l in params.eval_mass_steps])
+
+
 def check_data_params(params):
     """
     Check datasets parameters.

@@ -18,10 +18,10 @@ import numpy as np
 from torch import nn
 
 from src.slurm import init_signal_handler, init_distributed_mode
-from src.data.loader import check_data_params, load_data
+from src.data.loader import check_data_params, load_data, check_eval_params
 from src.utils import bool_flag, initialize_exp, set_sampling_probs, shuf_order
 from src.model import check_model_params, build_model
-from src.trainer import Seq2SeqTrainer
+from src.trainer import  Seq2SeqTrainer
 from src.evaluation.evaluator import Seq2SeqEvaluator
 from src.combiner.combiner import build_combiner
 from src.combiner.splitter import WholeWordSplitter
@@ -100,16 +100,7 @@ def get_parser():
                         help="Fraction of words for which we need to make a prediction")
     parser.add_argument("--sample_alpha", type=float, default=0,
                         help="Exponent for transforming word counts to probabilities (~word2vec sampling)")
-    parser.add_argument("--word_mask_keep_rand", type=str, default="0.8,0.1,0.1",
-                        help="Fraction of words to mask out / keep / randomize, among the words to predict")
 
-    # input sentence noise
-    parser.add_argument("--word_shuffle", type=float, default=0,
-                        help="Randomly shuffle input words (0 to disable)")
-    parser.add_argument("--word_dropout", type=float, default=0,
-                        help="Randomly dropout input words (0 to disable)")
-    parser.add_argument("--word_blank", type=float, default=0,
-                        help="Randomly blank input words (0 to disable)")
     parser.add_argument("--word_mass", type=float, default=0,
                         help="Randomly mask input words (0 to disable)")
 
@@ -248,6 +239,13 @@ def get_parser():
     parser.add_argument("--tgt_lang", type=str)
     parser.add_argument("--re_encode_rate", type=float, default=1.0)
 
+
+    # evaluation params
+    parser.add_argument("--eval_mt_steps", type=str, default="")
+    parser.add_argument("--eval_mass_steps", type=str, default="")
+
+    parser.add_argument("--whole_word_mask", type=bool_flag, default=False)
+
     return parser
 
 
@@ -359,6 +357,8 @@ if __name__ == '__main__':
 
     # check parameters
     check_data_params(params)
+    check_eval_params(params)
+
     check_model_params(params)
 
     # run experiment

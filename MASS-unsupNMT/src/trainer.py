@@ -9,6 +9,7 @@
 #
 
 import os
+import numpy
 import math
 import pdb
 import time
@@ -96,15 +97,6 @@ class Trainer(object):
 
         # data iterators
         self.iterators = {}
-
-        # probability of masking out / randomize / not modify words to predict
-        params.pred_probs = torch.FloatTensor([params.word_mask, params.word_keep, params.word_rand])
-
-        # probabilty to predict a word
-        counts = np.array(list(self.data['dico'].counts.values()))
-        params.mask_scores = np.maximum(counts, 1) ** -params.sample_alpha
-        params.mask_scores[params.pad_index] = 0  # do not predict <PAD> index
-        params.mask_scores[counts == 0] = 0       # do not predict special tokens
 
         # validation metrics
         self.metrics = []
@@ -413,12 +405,15 @@ class Seq2SeqTrainer(Trainer):
         # combiner step
         for lang1, lang2 in self.params.mt_steps:
             self.mt_step(lang1, lang2, self.params.lambda_mt)
+        for lang in self.params.mass_steps:
+            self.mass_step(lang, self.params.lambda_mass)
 
     def init_stats(self):
         params = self.params
         self.stats = OrderedDict(
             [('processed_s', 0), ('processed_w', 0)] +
-            [('MT-%s-%s' % (l1, l2), []) for l1, l2 in params.mt_steps]
+            [('MT-%s-%s' % (l1, l2), []) for l1, l2 in params.mt_steps] +
+            [('MASS-%s' % (l1), []) for l1 in params.mass_steps]
         )
 
     def mt_step(self, lang1, lang2, lambda_coeff):
@@ -467,20 +462,6 @@ class Seq2SeqTrainer(Trainer):
         self.stats['processed_w'] += (len2 - 1).sum().item()
 
 
-class MassTrainer(Seq2SeqTrainer):
-
-    def __init__(self, seq2seq_model: BaseSeq2Seq, data, params):
-        super().__init__(seq2seq_model, data, params)
-        self.init_stats()
-
-    def init_stats(self):
-        params = self.params
-        self.stats = OrderedDict(
-            [('processed_s', 0), ('processed_w', 0)] +
-            [('MT-%s-%s' % (l1, l2), []) for l1, l2 in params.mt_steps] +
-            [('MASS-%s' % (l1), []) for l1 in params.mass_steps]
-        )
-
     def mass_step(self, lang, lambda_coeff):
         assert lambda_coeff >= 0
         if lambda_coeff == 0:
@@ -493,129 +474,14 @@ class MassTrainer(Seq2SeqTrainer):
 
         _, loss = self.seq2seq_model("seq2seq_loss", encoder_inputs=encoder_inputs, decoder_inputs=decoder_inputs)
 
-        self.stats[('MA-%s' % lang)].append(loss.item())
+        self.stats[('MASS-%s' % lang)].append(loss.item())
 
-        self.optimize(loss, ['encoder', 'decoder'])
+        self.backward(loss, "seq2seq_model")
 
         # number of processed sentences / words
         self.n_sentences += params.batch_size
         self.stats['processed_s'] += decoder_inputs.len2.size(0)
         self.stats['processed_w'] += (decoder_inputs.len2 - 1).sum().item()
-
-    def mask_word(self, w):
-        _w_real = w
-        _w_rand = np.random.randint(self.params.n_words, size=w.shape)
-        _w_mask = np.full(w.shape, self.params.mask_index)
-
-        probs = torch.multinomial(self.params.pred_probs, len(_w_real), replacement=True)
-
-        _w = _w_mask * (probs == 0).numpy() + _w_real * (probs == 1).numpy() + _w_rand * (probs == 2).numpy()
-        return _w
-
-    def unfold_segments(self, segs):
-        """Unfold the random mask segments, for example:
-           The shuffle segment is [2, 0, 0, 2, 0], 
-           so the masked segment is like:
-           [1, 1, 0, 0, 1, 1, 0]
-           [1, 2, 3, 4, 5, 6, 7] (positions)
-           (1 means this token will be masked, otherwise not)
-           We return the position of the masked tokens like:
-           [1, 2, 5, 6]
-        """
-        pos = []
-        curr = 1   # We do not mask the start token
-        for l in segs:
-            if l >= 1:
-                pos.extend([curr + i for i in range(l)])
-                curr += l
-            else:
-                curr += 1
-        return np.array(pos)
-
-    def shuffle_segments(self, segs, unmasked_tokens):
-        """
-        We control 20% mask segment is at the start of sentences
-                   20% mask segment is at the end   of sentences
-                   60% mask segment is at random positions,
-        """
-
-        p = np.random.random()
-        if p >= 0.8:
-            shuf_segs = segs[1:] + unmasked_tokens
-        elif p >= 0.6:
-            shuf_segs = segs[:-1] + unmasked_tokens
-        else:
-            shuf_segs = segs + unmasked_tokens
-
-        random.shuffle(shuf_segs)
-        
-        if p >= 0.8:
-            shuf_segs = segs[0:1] + shuf_segs
-        elif p >= 0.6:
-            shuf_segs = shuf_segs + segs[-1:]
-        return shuf_segs
-
-    def get_segments(self, mask_len, span_len):
-        segs = []
-        while mask_len >= span_len:
-            segs.append(span_len)
-            mask_len -= span_len
-        if mask_len != 0:
-            segs.append(mask_len)
-        return segs
-
-    def restricted_mask_sent(self, x, l, span_len=100000):
-        """ Restricted mask sents
-            if span_len is equal to 1, it can be viewed as
-            discrete mask;
-            if span_len -> inf, it can be viewed as 
-            pure sentence mask
-        """
-        if span_len <= 0:
-            span_len = 1
-        max_len = 0
-
-        positions, inputs, targets, outputs, = [], [], [], []
-        mask_len = round(len(x[:, 0]) * self.params.word_mass)
-        
-        unmasked_tokens = [0 for i in range(l[0] - mask_len - 1)]
-        segs = self.get_segments(mask_len, span_len)
-        
-        len2 = []
-        for i in range(l.size(0)):
-            words = np.array(x[:l[i], i].tolist())
-            shuf_segs = self.shuffle_segments(segs, unmasked_tokens)
-            pos_i = self.unfold_segments(shuf_segs)
-            #print("Masked tokens before whole mask: {}".format([self.data["dico"][x[idx][i].item()] for idx in pos_i]))
-            # doing whole word mask
-            pos_i = whole_word_mask(x[:, i], pos_i, self.data['dico'])
-                #print("Masked tokens after whole mask: {}".format([self.data["dico"][x[idx][i].item()] for idx in pos_i]))
-            output_i = words[pos_i].copy()
-            target_i = words[pos_i - 1].copy()
-            words[pos_i] = self.mask_word(words[pos_i])
-            len2.append(len(pos_i))
-
-            inputs.append(words)
-            targets.append(target_i)
-            outputs.append(output_i)
-            positions.append(pos_i - 1)
-
-        x1  = torch.LongTensor(max(l) , l.size(0)).fill_(self.params.pad_index)
-        x2  = torch.LongTensor(max(len2), l.size(0)).fill_(self.params.pad_index)
-        y   = torch.LongTensor(max(len2), l.size(0)).fill_(self.params.pad_index)
-        pos = torch.LongTensor(max(len2), l.size(0)).fill_(self.params.pad_index)
-        l1  = l.clone()
-        l2  = torch.LongTensor(len2)
-        for i in range(l.size(0)):
-            x1[:l1[i], i].copy_(torch.LongTensor(inputs[i]))
-            x2[:l2[i], i].copy_(torch.LongTensor(targets[i]))
-            y[:l2[i], i].copy_(torch.LongTensor(outputs[i]))
-            pos[:l2[i], i].copy_(torch.LongTensor(positions[i]))  # use this positions as the input of decoder
-
-        pred_mask = y != self.params.pad_index
-        y = y.masked_select(pred_mask)
-        return x1, l1, x2, l2, y, pred_mask, pos
-
 
     def get_mass_batch(self, step_name, lang):
         """
@@ -627,9 +493,9 @@ class MassTrainer(Seq2SeqTrainer):
         Returns:
 
         """
-        params = self.params
         x_, len_ = self.get_batch(step_name, lang)
-        (x1, len1, x2, len2, y, pred_mask, positions) = self.restricted_mask_sent(x_, len_, int(params.lambda_span))
+        rng = np.random.RandomState()
+        (x1, len1, x2, len2, y, pred_mask, positions) = mask_sent(x_, len_, rng, self.params, self.data["dico"])
         (x1, len1, x2, len2, y, pred_mask, positions) = to_cuda(x1, len1, x2, len2, y, pred_mask, positions)
         lang1_id = self.params.lang2id[lang]
         lang2_id = lang1_id
@@ -639,3 +505,71 @@ class MassTrainer(Seq2SeqTrainer):
         decoder_inputs = DecoderInputs(x2=x2, len2=len2, langs2=langs2, y=y, pred_mask=pred_mask, positions=positions, lang_id=lang2_id)
         return encoder_inputs, decoder_inputs
 
+
+def mask_sent(x, lengths, rng, params, dico):
+    def random_start(end):
+        p = rng.rand()
+        if p >= 0.8:
+            return 1
+        elif p >= 0.6:
+            return end - 1
+        else:
+            return rng.randint(1, end)
+
+    def mask_word(w):
+        return params.mask_index
+
+    positions, inputs, targets, outputs, len2 = [], [], [], [], []
+    for i in range(lengths.size(0)):
+        words = x[:lengths[i], i].tolist()
+        l = len(words)
+        # Prevent some short sentences will be whole masked
+        mask_len = max(1, round(l * params.word_mass) - 1)
+        start = random_start(l - mask_len + 1)
+
+        if params.whole_word_mask:
+            # whole word mask
+            while (start - 1 >= 0 and "@@" in dico.id2word[x[start - 1, i].item()]):
+                start -= 1
+            end = start + mask_len - 1
+
+            while (end + 1 < lengths[i].item() and "@@" in dico.id2word[x[end, i].item()]):
+                end += 1
+        else:
+            end = start + mask_len - 1
+
+        len2.append(end - start + 1)
+
+        pos_i, target_i, output_i, input_i = [], [], [], []
+        prev_w = None
+        for j, w in enumerate(words):
+            if j >= start and j <= end:
+                output_i.append(w)
+                target_i.append(prev_w)
+                pos_i.append(j - 1)
+                input_i.append(mask_word(w))
+            else:
+                input_i.append(w)
+            prev_w = w
+
+        inputs.append(input_i)
+        targets.append(target_i)
+        outputs.append(output_i)
+        positions.append(pos_i)
+
+    l1 = lengths.clone()
+    l2 = torch.LongTensor(len2)
+    x1 = torch.LongTensor(max(l1), l1.size(0)).fill_(params.pad_index)
+    x2 = torch.LongTensor(max(len2), l1.size(0)).fill_(params.pad_index)
+    y = torch.LongTensor(max(len2), l1.size(0)).fill_(params.pad_index)
+    pos = torch.LongTensor(max(len2), l1.size(0)).fill_(params.pad_index)
+
+    for i in range(l1.size(0)):
+        x1[:l1[i], i].copy_(torch.LongTensor(inputs[i]))
+        x2[:l2[i], i].copy_(torch.LongTensor(targets[i]))
+        y[:l2[i], i].copy_(torch.LongTensor(outputs[i]))
+        pos[:l2[i], i].copy_(torch.LongTensor(positions[i]))
+    pred_mask = y != params.pad_index
+    y = y.masked_select(pred_mask)
+
+    return x1, l1, x2, l2, y, pred_mask, pos

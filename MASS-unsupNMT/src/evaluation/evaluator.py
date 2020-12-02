@@ -21,6 +21,7 @@ from .bli import BLI
 from .eval_context_bli import eval_whole_separated_bli, read_retokenize_words, generate_context_word_representation, encode_whole_word_separated_word, generate_and_eval
 from src.model.encoder import EncoderInputs
 from src.model.seq2seq import DecoderInputs
+from src.trainer import mask_sent
 
 
 BLEU_SCRIPT_PATH = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'multi-bleu.perl')
@@ -28,6 +29,8 @@ assert os.path.isfile(BLEU_SCRIPT_PATH)
 
 
 logger = getLogger()
+
+
 
 
 class Evaluator(object):
@@ -153,62 +156,13 @@ class Seq2SeqEvaluator(Evaluator):
         scores["epoch"] = epoch
 
         for data in ["valid", "test"]:
-            for lang1, lang2 in self.params.mt_steps:
+            for lang1, lang2 in self.params.eval_mt_steps:
                 self.evaluate_mt(scores, data, lang1, lang2, self.params.eval_bleu and self.params.is_master)
+
+            for lang in self.params.eval_mass_steps:
+                self.evaluate_mass(scores, data, lang)
+
         return scores
-
-    def evaluate_mass_with_explicit_split(self, scores, data_set, lang):
-        with torch.no_grad():
-            params = self.params
-            assert data_set in ['valid', 'test']
-            assert lang in params.langs
-
-            encoder = self.encoder.module if params.multi_gpu else self.encoder
-            decoder = self.decoder.module if params.multi_gpu else self.decoder
-            combiner = self.combiner.module if params.multi_gpu else self.combiner
-
-            rng = np.random.RandomState(0)
-
-            params = params
-
-            n_words = 0
-            xe_loss = 0
-            n_valid = 0
-            combiner_loss = 0
-            n_combiner_words = 0
-
-            for (x1, len1) in self.get_iterator(data_set, lang):
-                (x1, len1, x2, len2, y, pred_mask, positions) = self.mask_sent(x1, len1, rng)
-
-                batch = MassBatch(x1=x1, len1=len1, x2=x2, len2=len2, y=y, pred_mask=pred_mask, positions=positions, lang_id=params.lang2id[lang])
-
-                models = {"encoder": encoder, "decoder": decoder, "combiner": combiner}
-
-                # loss
-                word_scores, losses, statistics = combiner_mass_with_explict_split(
-                    models=models,
-                    mass_batch=batch,
-                    params=params,
-                    dico=self.data["dico"],
-                    splitter=self.splitter,
-                    mode="eval",
-                    combine_loss_fn=self.loss_function
-                )
-
-                # update stats
-                n_words += y.size(0)
-                xe_loss += losses.decoding_loss.item() * len(y)
-                combiner_loss += losses.combine_loss.item() * statistics.trained_combiner_words
-                n_combiner_words += statistics.trained_combiner_words
-                n_valid += (word_scores.max(1)[1] == y.cuda()).long().sum().item()
-
-            # compute perplexity and prediction accuracy
-            scores['%s_%s-%s_explicit_mass_ppl' % (data_set, lang, lang)] = np.exp(xe_loss / n_words)
-            scores['%s_%s-%s_explicit_mass_acc' % (data_set, lang, lang)] = 100. * n_valid / n_words
-
-            # compute combiner loss(distance)
-            scores['{}_{}_combiner_loss'.format(data_set, lang)] = combiner_loss / n_combiner_words
-
 
     def evaluate_mass(self, scores, data_set, lang):
         with torch.no_grad():
@@ -225,7 +179,7 @@ class Seq2SeqEvaluator(Evaluator):
             xe_loss = 0
             n_valid = 0
             for (x1, len1) in self.get_iterator(data_set, lang):
-                (x1, len1, x2, len2, y, pred_mask, positions) = self.mask_sent(x1, len1, rng)
+                (x1, len1, x2, len2, y, pred_mask, positions) = mask_sent(x1, len1, rng, self.params, self.data["dico"])
                 (x1, len1, x2, len2, y, pred_mask, positions) = to_cuda(x1, len1, x2, len2, y, pred_mask, positions)
                 lang_id = self.params.lang2id[lang]
                 langs1 = x1.clone().fill_(lang_id)
@@ -236,81 +190,13 @@ class Seq2SeqEvaluator(Evaluator):
                 word_scores, loss = seq2seq_model.run_seq2seq_loss(encoder_inputs=encoder_inputs, decoder_inputs=decoder_inputs, get_scores=True)
                 # update stats
                 n_words += y.size(0)
-                xe_loss += loss.decoding_loss.item() * len(y)
+                xe_loss += loss.item() * len(y)
                 n_valid += (word_scores.max(1)[1] == y.cuda()).long().sum().item()
 
             # compute perplexity and prediction accuracy
             scores['%s_%s-%s_mass_ppl' % (data_set, lang, lang)] = np.exp(xe_loss / n_words)
             scores['%s_%s-%s_mass_acc' % (data_set, lang, lang)] = 100. * n_valid / n_words
 
-    def mask_sent(self, x, lengths, rng):
-        
-        def random_start(end):
-            p = rng.rand()
-            if p >= 0.8:
-                return 1
-            elif p >= 0.6:
-                return end - 1
-            else:
-                return rng.randint(1, end)
-
-        def mask_word(w):
-            return self.params.mask_index
-
-        dico = self.data["dico"]
-        positions, inputs, targets, outputs, len2 = [], [], [], [], []
-        for i in range(lengths.size(0)):
-            words = x[:lengths[i], i].tolist()
-            l = len(words)
-            # Prevent some short sentences will be whole masked
-            mask_len = max(1, round(l * self.params.word_mass) - 1)
-            start = random_start(l - mask_len + 1)
-
-            # whole word mask
-            while(start - 1 >= 0 and "@@" in dico.id2word[x[start - 1, i].item()]):
-                start -= 1
-
-            end = start + mask_len - 1
-
-            while(end + 1 < lengths[i].item() and "@@" in dico.id2word[x[end, i].item()]):
-                end += 1
-
-            len2.append(end - start + 1)
-
-
-            pos_i, target_i, output_i, input_i = [], [], [], []
-            prev_w = None
-            for j, w in enumerate(words):
-                if j >= start and j <= end:
-                    output_i.append(w)
-                    target_i.append(prev_w)
-                    pos_i.append(j - 1)
-                    input_i.append(mask_word(w))
-                else:
-                    input_i.append(w)
-                prev_w = w
-
-            inputs.append(input_i)
-            targets.append(target_i)
-            outputs.append(output_i)
-            positions.append(pos_i)
-
-        l1 = lengths.clone()
-        l2 = torch.LongTensor(len2)
-        x1 = torch.LongTensor(max(l1) , l1.size(0)).fill_(self.params.pad_index)
-        x2 = torch.LongTensor(max(len2), l1.size(0)).fill_(self.params.pad_index)
-        y  = torch.LongTensor(max(len2), l1.size(0)).fill_(self.params.pad_index)
-        pos = torch.LongTensor(max(len2), l1.size(0)).fill_(self.params.pad_index)
-        
-        for i in range(l1.size(0)):
-            x1[:l1[i], i].copy_(torch.LongTensor(inputs[i]))
-            x2[:l2[i], i].copy_(torch.LongTensor(targets[i]))
-            y[:l2[i], i].copy_(torch.LongTensor(outputs[i]))
-            pos[:l2[i], i].copy_(torch.LongTensor(positions[i]))
-        pred_mask = y != self.params.pad_index
-        y = y.masked_select(pred_mask)
-
-        return x1, l1, x2, l2, y, pred_mask, pos
 
     def evaluate_mt(self, scores, data_set, lang1, lang2, eval_bleu):
         """
