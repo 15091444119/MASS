@@ -155,11 +155,11 @@ class Seq2SeqEvaluator(Evaluator):
         scores["epoch"] = epoch
 
         for data in ["valid", "test"]:
-            #for lang1, lang2 in self.params.eval_mt_steps:
-            #    self.evaluate_mt(scores, data, lang1, lang2, self.params.eval_bleu and self.params.is_master)
+            for lang1, lang2 in self.params.eval_mt_steps:
+                self.evaluate_mt(scores, data, lang1, lang2, self.params.eval_bleu and self.params.is_master)
 
-            #for lang in self.params.eval_mass_steps:
-           #     self.evaluate_mass(scores, data, lang)
+            for lang in self.params.eval_mass_steps:
+                self.evaluate_mass(scores, data, lang)
 
             for lang in self.params.eval_explicit_mass_steps:
                 self.evaluate_explicit_mass(scores=scores, data_set=data, lang=lang)
