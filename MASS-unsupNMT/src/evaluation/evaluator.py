@@ -16,7 +16,6 @@ import torch
 
 from ..utils import to_cuda, restore_segmentation, concat_batches
 from .utils import SenteceEmbedder, WordEmbedderWithCombiner
-from src.combiner.combiner import MultiLingualNoneParaCombiner
 from .bli import BLI
 from .eval_context_bli import eval_whole_separated_bli, read_retokenize_words, generate_context_word_representation, encode_whole_word_separated_word, generate_and_eval
 from src.model.encoder import EncoderInputs
@@ -164,6 +163,47 @@ class Seq2SeqEvaluator(Evaluator):
 
         return scores
 
+    def evaluate_explicit_mass(self, scores, data_set, lang):
+        with torch.no_grad():
+            params = self.params
+            assert data_set in ['valid', 'test']
+            assert lang in params.langs
+
+            self.seq2seq_model.eval()
+            seq2seq_model = self.seq2seq_model.module if params.multi_gpu else self.seq2seq_model
+
+            rng = np.random.RandomState(0)
+
+            n_words = 0
+            xe_loss = 0
+            xe_combiner_loss = 0
+            n_valid = 0
+            n_combiner_words = 0
+
+            for (x1, len1) in self.get_iterator(data_set, lang):
+                (x1, len1, x2, len2, y, pred_mask, positions) = mask_sent(x1, len1, rng, self.params, self.data["dico"])
+                (x1, len1, x2, len2, y, pred_mask, positions) = to_cuda(x1, len1, x2, len2, y, pred_mask, positions)
+                lang_id = self.params.lang2id[lang]
+                langs1 = x1.clone().fill_(lang_id)
+                langs2 = x2.clone().fill_(lang_id)
+                encoder_inputs = EncoderInputs(x1=x1, len1=len1, lang_id=lang_id, langs1=langs1)
+                decoder_inputs = DecoderInputs(x2=x2, len2=len2, langs2=langs2, y=y, pred_mask=pred_mask,
+                                               positions=positions, lang_id=lang_id)
+
+                word_scores, decoding_loss, combiner_loss, trained_combiner_words = seq2seq_model.explicit_loss(encoder_inputs=encoder_inputs,
+                                                                   decoder_inputs=decoder_inputs, get_scores=True)
+                # update stats
+                n_words += y.size(0)
+                xe_loss += decoding_loss.item() * len(y)
+                xe_combiner_loss += combiner_loss.item() * trained_combiner_words
+                n_combiner_words += trained_combiner_words
+                n_valid += (word_scores.max(1)[1] == y.cuda()).long().sum().item()
+
+            # compute perplexity and prediction accuracy
+            scores['%s_%s-%s_explicit_mass_ppl' % (data_set, lang, lang)] = np.exp(xe_loss / n_words)
+            scores['%s_%s-%s_explicit_mass_acc' % (data_set, lang, lang)] = 100. * n_valid / n_words
+            scores["%s-combiner_loss" % (lang)] = combiner_loss * 1.0 / n_combiner_words
+
     def evaluate_mass(self, scores, data_set, lang):
         with torch.no_grad():
             params = self.params
@@ -196,7 +236,6 @@ class Seq2SeqEvaluator(Evaluator):
             # compute perplexity and prediction accuracy
             scores['%s_%s-%s_mass_ppl' % (data_set, lang, lang)] = np.exp(xe_loss / n_words)
             scores['%s_%s-%s_mass_acc' % (data_set, lang, lang)] = 100. * n_valid / n_words
-
 
     def evaluate_mt(self, scores, data_set, lang1, lang2, eval_bleu):
         """

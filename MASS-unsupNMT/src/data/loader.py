@@ -344,6 +344,11 @@ def check_data_params(params):
     assert len(params.bt_steps) == 0 or not params.encoder_only
     params.bt_src_langs = [l1 for l1, _, _ in params.bt_steps]
 
+    # explicit mass steps
+    params.explicit_mass_steps = [s for s in params.explicit_mass_steps.split(',') if len(s) > 0]
+    if params.encoder_type == "common":
+        assert len(params.explicit_mass_steps) == 0
+
     # check monolingual datasets
     required_mono = set([l1 for l1, l2 in (params.mlm_steps + params.clm_steps) if l2 is None] + params.ae_steps + params.bt_src_langs + params.mass_steps )
     params.mono_dataset = {

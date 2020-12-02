@@ -2,7 +2,7 @@ from . import LossDecodingBatch, GenerateDecodeBatch, BaseSeq2Seq
 from src.model.encoder.combiner_encoder import CombinerEncodedInfo, CombinerEncoder
 
 
-class CombineSeq2Seq(BaseSeq2Seq):
+class CombinerSeq2Seq(BaseSeq2Seq):
 
     def __init__(self, encoder:CombinerEncoder, decoder):
         """

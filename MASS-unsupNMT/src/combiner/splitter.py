@@ -124,17 +124,18 @@ def get_sentence_combiner_mask(mappers, origin_lengths, new_lengths):
 
 class WholeWordSplitter(object):
 
-    def __init__(self):
-        pass
+    def __init__(self, bpe_codes, word_vocab):
+        self.bpe_codes = bpe_codes
+        self.word_vocab = word_vocab  # can't split into unk
 
     @classmethod
-    def build_splitter(cls, params):
+    def build_splitter(cls, params, word_vocab):
         if params.splitter == "BPE":
-            return RandomBpeSplitter.from_code_path(params.codes_path)
+            return RandomBpeSplitter.from_code_path(params.codes_path, word_vocab)
         elif params.splitter == "ROB":
-            return ReduceOneBpeSplitter.from_code_path(params.codes_path)
+            return ReduceOneBpeSplitter.from_code_path(params.codes_path, word_vocab)
         elif params.splitter == "CHAR":
-            return CharSplitter()
+            return CharSplitter(params.codes_path, word_vocab)
         else:
             raise NotImplementedError
 
@@ -242,7 +243,15 @@ class WholeWordSplitter(object):
                     prob = random.random()
                     if prob <= re_encode_rate:
                         re_encoded_word = self.split_word(word)
-                        new_sentence.extend(re_encoded_word)
+                        # some times a word may be splitted into <unk> character, then we don't split it, this case doesn't always happen
+                        discard_flag = False
+                        for word in re_encoded_word:
+                            if word not in self.word_vocab:
+                                discard_flag = True
+                        if discard_flag:
+                            new_sentence.append(word)
+                        else:
+                            new_sentence.extend(re_encoded_word)
                     else:
                         new_sentence.append(word)
             else:
@@ -309,14 +318,13 @@ class WholeWordSplitter(object):
 
 class RandomBpeSplitter(WholeWordSplitter):
 
-    def __init__(self, bpe_codes):
-        super().__init__()
-        self.bpe_codes = bpe_codes
+    def __init__(self, bpe_codes, word_vocab):
+        super().__init__(bpe_codes, word_vocab)
 
     @classmethod
-    def from_code_path(cls, codes_path):
+    def from_code_path(cls, codes_path, word_vocab):
         bpe_codes = read_codes(codes_path)
-        return RandomBpeSplitter(bpe_codes)
+        return RandomBpeSplitter(bpe_codes, word_vocab)
 
     def split_word(self, word):
         """ don't fully merge bpe
@@ -341,14 +349,13 @@ class RandomBpeSplitter(WholeWordSplitter):
 
 class ReduceOneBpeSplitter(WholeWordSplitter):
 
-    def __init__(self, bpe_codes):
-        super().__init__()
-        self.bpe_codes = bpe_codes
+    def __init__(self, bpe_codes, word_vocab):
+        super().__init__(bpe_codes, word_vocab)
 
     @classmethod
-    def from_code_path(cls, codes_path):
+    def from_code_path(cls, codes_path, word_vocab):
         bpe_codes = read_codes(codes_path)
-        return ReduceOneBpeSplitter(bpe_codes)
+        return ReduceOneBpeSplitter(bpe_codes, word_vocab)
 
     def split_word(self, word):
         """ don't fully merge bpe
@@ -375,8 +382,13 @@ class CharSplitter(WholeWordSplitter):
     """ split the word into characters """
 
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, bpe_codes, word_vocab):
+        super().__init__(bpe_codes, word_vocab)
+
+    @classmethod
+    def from_code_path(cls, codes_path, word_vocab):
+        bpe_codes = read_codes(codes_path)
+        return CharSplitter(bpe_codes, word_vocab)
 
     def split_word(self, word):
         """ split the word into characters
@@ -398,14 +410,13 @@ class CharSplitter(WholeWordSplitter):
 
 class BPESplitter(WholeWordSplitter):
 
-    def __init__(self, bpe_codes):
-        super().__init__()
-        self.bpe_codes = bpe_codes
+    def __init__(self, bpe_codes, word_vocab):
+        super().__init__(bpe_codes, word_vocab)
 
     @classmethod
-    def from_code_path(cls, codes_path):
+    def from_code_path(cls, codes_path, word_vocab):
         bpe_codes = read_codes(codes_path)
-        return BPESplitter(bpe_codes)
+        return BPESplitter(bpe_codes, word_vocab)
 
     def split_word(self, word):
         """ don't fully merge bpe

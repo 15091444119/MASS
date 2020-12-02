@@ -1,5 +1,6 @@
 from . import BaseEncoder, EncoderInputs
 from src.combiner.combine_utils import CombineTool, ExplicitSplitCombineTool
+import torch
 
 
 class CombinerEncoder(BaseEncoder):
@@ -49,21 +50,24 @@ class CombinerEncoder(BaseEncoder):
 
         # teacher
         if combine_tool.trained_combiner_words != 0:
-            original_rep = self.encoder(
-                "fwd",
-                x=explicit_batch.x1,
-                lengths=explicit_batch.len1,
-                langs=explicit_batch.langs1,
-                causal=False
-            ).transpose(0, 1)
+            with torch.no_grad():
+                original_rep = self.encoder(
+                    "fwd",
+                    x=explicit_batch.x1,
+                    lengths=explicit_batch.len1,
+                    langs=explicit_batch.langs1,
+                    causal=False
+                ).transpose(0, 1)
 
-            dim = final_encoded.size(-1)
+                dim = final_encoded.size(-1)
 
-            trained_original_words_rep = original_rep.masked_select(
-                combine_tool.splitted_original_word_mask.unsqueeze(-1)).view(-1, dim)
+                trained_original_words_rep = original_rep.masked_select(
+                    combine_tool.splitted_original_word_mask.unsqueeze(-1)).view(-1, dim)
 
-            trained_combined_words_rep = combined_rep.index_select(dim=0,
-                                                                   index=combine_tool.select_trained_rep_from_combined_rep).view(-1, dim)
+            trained_combined_words_rep = combined_rep.index_select(
+                dim=0,
+                index=combine_tool.select_trained_rep_from_combined_rep
+            ).view(-1, dim)
 
             combine_loss = self.loss_fn(trained_original_words_rep, trained_combined_words_rep)
         else:

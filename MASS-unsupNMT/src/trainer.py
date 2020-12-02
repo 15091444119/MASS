@@ -30,44 +30,6 @@ from .utils import parse_lambda_config, update_lambdas
 logger = getLogger()
 
 
-def is_word_end(idx, dico):
-    return not ("@@" in dico[idx])
-
-
-def whole_word_mask(x, pos, dico):
-    """ change a random mask into a whole word mask
-    Params:
-        x: index of a sentence (maybe pad at last), from eos -> eos -> pad
-        pos: masked positions (ascending order) (pos may be longer than words because there are pad ids)
-    Example:
-        words = [id(eos), id(你@@), id(好), id(eos), id(pad)]
-        pos = [1, 4]
-        returns [1, 2, 4] (你@@ is not a single word)
-    """
-    whole_word_pos = []
-    cur_index = -1
-    for idx in range(len(pos)):
-        if idx != 0:
-            assert pos[idx] > pos[idx - 1]
-
-    for idx in pos:
-        if idx <= cur_index:
-            continue
-        else:
-            word_start = idx
-
-            while(word_start - 1 >= 0 and (not is_word_end(x[word_start - 1].item(), dico))): # if -1 reaches word end or exceed boundry, stop
-                word_start -= 1
-
-            word_end = idx
-            while((not is_word_end(x[word_end].item(), dico)) and (word_end < len(x) - 1)):  # if cur end is a word end or is the right boundry, stop
-                word_end += 1
-
-            whole_word_pos.extend(list(range(word_start, word_end + 1)))
-            cur_index = word_end
-    return np.array(whole_word_pos)
-
-
 class Trainer(object):
 
     def __init__(self, data, params):
@@ -136,7 +98,6 @@ class Trainer(object):
             logger.error("NaN detected")
             exit()
 
-        loss = loss / self.params.update_cycle
         loss.backward()
         if self.params.clip_grad_norm > 0:
             clip_grad_norm_(getattr(self, module).parameters(), self.params.clip_grad_norm)
@@ -179,8 +140,13 @@ class Trainer(object):
         )
         self.stats['processed_s'] = 0
         self.stats['processed_w'] = 0
-        self.last_time = new_time
 
+        # trained combiner words
+        for lang in self.params.explicit_mass_steps:
+            s_speed += "- combiner {} {} words/s ".format(lang, self.stats["trained_combiner_words-{}".format(lang)] * 1.0 / diff)
+            self.stats["trained_combiner_words-{}".format(lang)] = 0
+
+        self.last_time = new_time
         # log speed + stats + learning rate
         logger.info(s_iter + s_speed + s_stat + s_lr)
 
@@ -407,14 +373,21 @@ class Seq2SeqTrainer(Trainer):
             self.mt_step(lang1, lang2, self.params.lambda_mt)
         for lang in self.params.mass_steps:
             self.mass_step(lang, self.params.lambda_mass)
+        for lang in self.params.explicit_mass_steps:
+            self.explicit_mass_step(lang, self.params.lambda_explicit_mass)
+
 
     def init_stats(self):
         params = self.params
         self.stats = OrderedDict(
             [('processed_s', 0), ('processed_w', 0)] +
             [('MT-%s-%s' % (l1, l2), []) for l1, l2 in params.mt_steps] +
-            [('MASS-%s' % (l1), []) for l1 in params.mass_steps]
+            [('MASS-%s' % (l1), []) for l1 in params.mass_steps] +
+            [('Explicit-MASS-decoding-%s' % l, []) for l in params.explicit_mass_steps] +
+            [('Explicit-MASS-combiner-%s' % l, []) for l in params.explicit_mass_steps] +
+            [('trained_combiner_words-{}'.format(l), 0) for l in params.explicit_mass_steps]
         )
+
 
     def mt_step(self, lang1, lang2, lambda_coeff):
         """
@@ -475,6 +448,7 @@ class Seq2SeqTrainer(Trainer):
         _, loss = self.seq2seq_model("seq2seq_loss", encoder_inputs=encoder_inputs, decoder_inputs=decoder_inputs)
 
         self.stats[('MASS-%s' % lang)].append(loss.item())
+        loss = loss * lambda_coeff
 
         self.backward(loss, "seq2seq_model")
 
@@ -482,6 +456,30 @@ class Seq2SeqTrainer(Trainer):
         self.n_sentences += params.batch_size
         self.stats['processed_s'] += decoder_inputs.len2.size(0)
         self.stats['processed_w'] += (decoder_inputs.len2 - 1).sum().item()
+
+    def explicit_mass_step(self, lang, lambda_coeff):
+        assert lambda_coeff >= 0
+        if lambda_coeff == 0:
+            return
+        params = self.params
+
+        self.seq2seq_model.train()
+
+        encoder_inputs, decoder_inputs = self.get_mass_batch("mass", lang)
+        _, decoding_loss, combiner_loss, trained_combiner_words = self.seq2seq_model("explicit_loss", encoder_inputs=encoder_inputs, decoder_inputs=decoder_inputs)
+
+        self.stats[('Explicit-MASS-decoding-%s' % lang)].append(decoding_loss.item())
+        self.stats[('Explicit-MASS-combiner-%s' % lang)].append(combiner_loss.item())
+
+        loss = lambda_coeff * (decoding_loss + combiner_loss)
+        self.backward(loss, "seq2seq_model")
+
+        # number of processed sentences / words
+        self.n_sentences += params.batch_size
+        self.stats['processed_s'] += decoder_inputs.len2.size(0)
+        self.stats['processed_w'] += (decoder_inputs.len2 - 1).sum().item()
+        self.stats['trained_combiner_words-{}'.format(lang)] += trained_combiner_words
+
 
     def get_mass_batch(self, step_name, lang):
         """
@@ -527,7 +525,7 @@ def mask_sent(x, lengths, rng, params, dico):
         mask_len = max(1, round(l * params.word_mass) - 1)
         start = random_start(l - mask_len + 1)
 
-        if params.whole_word_mask:
+        if params.encoder_type == "combiner":  # we have to do whole word mask because the splitter
             # whole word mask
             while (start - 1 >= 0 and "@@" in dico.id2word[x[start - 1, i].item()]):
                 start -= 1

@@ -54,6 +54,7 @@ class CheatCombineTool(BaseCombineTool):
 
         self.splitted_original_word_mask = get_splitted_words_mask(mappers, length_before_split)
 
+
 class ExplicitSplitCombineTool(BaseCombineTool):
 
     def __init__(self, splitted_batch, length_before_split, length_after_split, dico, mappers, mask_index):
@@ -73,12 +74,13 @@ class ExplicitSplitCombineTool(BaseCombineTool):
 
         self.select_trained_rep_from_combined_rep = get_mask_for_select_combined_rep(
             all_subword_labels=self.combine_labels,
-            new_generated_subwords_labels=get_new_splitted_combine_labels(
-                mappers=mappers,
-                length_before_split=length_before_split,
-                length_after_split=length_after_split
-            )
+            new_generated_subwords_labels=get_new_splitted_combine_labels(mappers=mappers,length_before_split=length_before_split,length_after_split=length_after_split)
         )
+
+        try:
+            assert len(self.select_trained_rep_from_combined_rep) == (self.splitted_original_word_mask == True).long().sum()
+        except AssertionError:
+            pdb.set_trace()
 
 
 def get_mask_for_select_combined_rep(all_subword_labels, new_generated_subwords_labels):

@@ -11,6 +11,9 @@ import torch
 
 from .transformer import TransformerModel
 from src.model.seq2seq.common_seq2seq import CommonSeq2Seq, CommonEncoder
+from src.model.seq2seq.combiner_seq2seq import CombinerEncoder, CombinerSeq2Seq
+from src.combiner.splitter import WholeWordSplitter
+from src.combiner.combiner import build_combiner
 
 
 logger = getLogger()
@@ -98,16 +101,50 @@ def build_model(params, dico):
                 dec_reload = {k[len('module.'):]: v for k, v in dec_reload.items()}
             decoder.load_state_dict(dec_reload, strict=False)
 
-    logger.debug("Encoder: {}".format(encoder))
-    logger.debug("Decoder: {}".format(decoder))
+    if params.encoder_type == "common":
+        encoder = CommonEncoder(encoder)
+    elif params.encoder_type == "combiner":
+        encoder = build_combiner_encoder(encoder=encoder, params=params, dico=dico)
+    else:
+        raise ValueError
+
+
     logger.info("Number of parameters (encoder): %i" % sum([p.numel() for p in encoder.parameters() if p.requires_grad]))
     logger.info("Number of parameters (decoder): %i" % sum([p.numel() for p in decoder.parameters() if p.requires_grad]))
 
-    encoder = CommonEncoder(encoder)
-    seq2seq_model = CommonSeq2Seq(encoder=encoder, decoder=decoder)
+    if params.encoder_type == "common":
+        seq2seq_model = CommonSeq2Seq(encoder=encoder, decoder=decoder)
+    elif params.encoder_type == "combiner":
+        seq2seq_model = CombinerSeq2Seq(encoder=encoder, decoder=decoder)
+    logger.info("Model:{}".format(seq2seq_model))
 
     return seq2seq_model.cuda()
 
 
+def build_loss_function(params):
+    if params.combiner_loss == "MSE":
+        return torch.nn.MSELoss()
+    elif params.combiner_loss == "COS":
+        def cos_loss(x, y):
+            return -torch.nn.CosineSimilarity(dim=1)(x, y).mean()
+        return cos_loss
+    else:
+        return NotImplementedError
 
+
+def build_combiner_encoder(encoder, params, dico):
+    loss_fn = build_loss_function(params)
+    splitter = WholeWordSplitter.build_splitter(params, word_vocab=dico.word2id.keys())
+    combiner = build_combiner(params)
+
+    combiner_encoder = CombinerEncoder(
+        encoder=encoder,
+        combiner=combiner,
+        params=params,
+        dico=dico,
+        splitter=splitter,
+        loss_fn=loss_fn
+    )
+
+    return combiner_encoder
 

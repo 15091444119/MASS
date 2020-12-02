@@ -168,7 +168,7 @@ def get_parser():
                         help="MASS coefficient")
     parser.add_argument("--lambda_span", type=str, default="10000",
                         help="Span coefficient")
-    parser.add_argument("--lambda_mass_combine", type=str, default="1",
+    parser.add_argument("--lambda_explicit_mass", type=str, default="1",
                         help="MASS and combine coefficient")
 
     # training steps
@@ -188,6 +188,7 @@ def get_parser():
                         help="Back-translation steps")
     parser.add_argument("--pc_steps", type=str, default="",
                         help="Parallel classification steps")
+    parser.add_argument("--explicit_mass_steps", type=str, default="")
 
     # reload a pretrained model
     parser.add_argument("--reload_model", type=str, default="",
@@ -223,50 +224,27 @@ def get_parser():
     parser.add_argument("--master_port", type=int, default=-1,
                         help="Master port (for multi-node SLURM jobs)")
 
-    # gradient acc
-    parser.add_argument("--update_cycle", type=int, default=1, help="gradient acc")
+    # encoder mode
+    parser.add_argument("--encoder_type", type=str, choices=["common", "combiner"])
 
     # combiner
+    parser.add_argument("--combiner", type=str)
     parser.add_argument("--splitter", type=str, choices=["BPE", "CHAR", "ROB"], help="use random bpe or character to split word")
-    parser.add_argument("--n_combiner_layers", type=int, default=4)
     parser.add_argument("--codes_path", type=str)
-    parser.add_argument("--reload_combiner_path", type=str, default="")
-
+    parser.add_argument("--n_combiner_layers", type=int, default=4)
     parser.add_argument("--combiner_loss", type=str, default="MSE", choices=["MSE", "COS", "BNC"])
-    parser.add_argument("--eval_loss_sentences", type=int, default=-1)
-
-    parser.add_argument("--src_lang", type=str)
-    parser.add_argument("--tgt_lang", type=str)
-    parser.add_argument("--re_encode_rate", type=float, default=1.0)
+    parser.add_argument("--re_encode_rate", type=float, default=0.0)
 
 
     # evaluation params
+    parser.add_argument("--eval_loss_sentences", type=int, default=-1)
     parser.add_argument("--eval_mt_steps", type=str, default="")
     parser.add_argument("--eval_mass_steps", type=str, default="")
-
-    parser.add_argument("--whole_word_mask", type=bool_flag, default=False)
+    parser.add_argument("--eval_explicit_mass_steps", type=str, default="")
 
     return parser
 
 
-def get_loss_function(params):
-    if params.combiner_loss == "MSE":
-        return torch.nn.MSELoss()
-    elif params.combiner_loss == "COS":
-        def cos_loss(x, y):
-            return -torch.nn.CosineSimilarity(dim=1)(x, y).mean()
-        return cos_loss
-    elif params.combiner_loss == "BNC":
-        def batch_neg_cos(x, y):
-            x = torch.nn.functional.normalize(x, p=2, dim=1)
-            y = torch.nn.functional.normalize(y, p=2, dim=1)
-            positive_cos = x.mul(y).sum(dim=-1).mean()
-            negative_cos = x.matmul(y.transpose(0, 1)).mean()
-            loss = -positive_cos + negative_cos
-            return loss
-        return batch_neg_cos
-    else:
-        return NotImplementedError
 
 
 def main(params):
