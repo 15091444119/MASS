@@ -70,7 +70,7 @@ class ExplicitSplitCombineTool(BaseCombineTool):
         self.length_before_split = length_before_split
         self.length_after_split = length_after_split
         self.splitted_original_word_mask = get_splitted_words_mask(mappers, length_before_split)
-        self.trained_combiner_words = self.splitted_original_word_mask.long().sum()
+        self.trained_combiner_words = self.splitted_original_word_mask.long().sum().item()
 
         self.select_trained_rep_from_combined_rep = get_mask_for_select_combined_rep(
             all_subword_labels=self.combine_labels,

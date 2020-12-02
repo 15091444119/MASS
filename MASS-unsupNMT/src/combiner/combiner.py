@@ -68,11 +68,11 @@ class LastTokenCombiner(Combiner):
         if subword_last_token_mask.to(torch.long).sum() == 0:
             return None
 
-        # src_key_padding_mask set padding with false
+        # src_key_padding_mask set padding with true
         padding_mask = (~(get_masks(slen=max_length, lengths=lengths, causal=False)[0])).to(
             encoded.device)  # (batch_size, max_length)
-        outputs = transformer_encoder(src=encoded, src_key_padding_mask=padding_mask) #[len, bs, dim]
-        outputs = outputs.transpose(0, 1) #[bs, len, dim]
+        outputs = transformer_encoder(src=encoded, src_key_padding_mask=padding_mask) # [len, bs, dim]
+        outputs = outputs.transpose(0, 1) # [bs, len, dim]
 
         representation = outputs.masked_select(subword_last_token_mask).view(-1, self.output_dim)
 

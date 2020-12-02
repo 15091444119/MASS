@@ -21,7 +21,7 @@ python train_combiner.py \
   --combiner_loss "COS" \
   --re_encode_rate 0.3 \
 	--batch_size 64 \
-	--epoch_size 100000                                  \
+	--epoch_size 1000                                  \
 	--max_epoch 200                                      \
   --group_by_size False \
 	--mass_steps 'zh,en' \
@@ -31,4 +31,4 @@ python train_combiner.py \
   --eval_explicit_mass_steps "zh,en" \
   --eval_only False \
   --eval_bleu True \
-  --debug_train True
+  --debug_train False

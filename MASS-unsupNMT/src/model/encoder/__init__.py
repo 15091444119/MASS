@@ -18,9 +18,6 @@ class BaseCombinerEncoder(BaseEncoder):
         self.combiner = combiner
         self.params = params
 
-    def convert_data(self, encoder_inputs):
-        raise NotImplementedError
-
     def encode(self, *args, **kwargs):
         raise NotImplementedError
 

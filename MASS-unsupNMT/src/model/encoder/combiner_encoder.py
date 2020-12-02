@@ -14,13 +14,13 @@ class CombinerEncoder(BaseEncoder):
         self.splitter = splitter
         self.loss_fn = loss_fn
 
-    def get_combine_tool(self, encode_inputs):
-        combine_tool = CombineTool(encode_inputs.x1, length=encode_inputs.len1, dico=self.dico, mask_index=self.params.mask_index)
+    def get_combine_tool(self, encoder_inputs):
+        combine_tool = CombineTool(encoder_inputs.x1, length=encoder_inputs.len1, dico=self.dico, mask_index=self.params.mask_index)
         return combine_tool
 
-    def explicit_encode_combiner_loss(self, encode_inputs):
+    def explicit_encode_combiner_loss(self, encoder_inputs):
 
-        explicit_batch = ExplicitSplitEncoderBatch(encode_inputs, self.params, self.dico, self.splitter)
+        explicit_batch = ExplicitSplitEncoderBatch(encoder_inputs, self.params, self.dico, self.splitter)
         combine_tool = ExplicitSplitCombineTool(
             splitted_batch=explicit_batch.x3,
             length_before_split=explicit_batch.len1,
@@ -43,7 +43,7 @@ class CombinerEncoder(BaseEncoder):
             encoded=encoded,
             lengths=combine_tool.final_length,
             combine_labels=combine_tool.combine_labels,
-            lang_id=encode_inputs.lang_id
+            lang_id=encoder_inputs.lang_id
         )
 
         final_encoded = combine_tool.gather(splitted_rep=encoded, combined_rep=combined_rep)
@@ -75,14 +75,14 @@ class CombinerEncoder(BaseEncoder):
 
         return CombinerEncodedInfo(encoded=final_encoded, combine_tool=combine_tool), combine_loss, combine_tool.trained_combiner_words
 
-    def encode(self, encode_inputs: EncoderInputs):
-        combine_tool = self.get_combine_tool(encode_inputs)
+    def encode(self, encoder_inputs: EncoderInputs):
+        combine_tool = self.get_combine_tool(encoder_inputs)
 
         encoded = self.encoder(
             "fwd",
-            x=encode_inputs.x1,
-            lengths=encode_inputs.len1,
-            langs=encode_inputs.langs1,
+            x=encoder_inputs.x1,
+            lengths=encoder_inputs.len1,
+            langs=encoder_inputs.langs1,
             causal=False
         ).transpose(0, 1)
 
@@ -90,7 +90,7 @@ class CombinerEncoder(BaseEncoder):
             encoded=encoded,
             lengths=combine_tool.final_length,
             combine_labels=combine_tool.combine_labels,
-            lang_id=encode_inputs.lang_id
+            lang_id=encoder_inputs.lang_id
         )
         final_encoded = combine_tool.gather(splitted_rep=encoded, combined_rep=combined_rep)
 

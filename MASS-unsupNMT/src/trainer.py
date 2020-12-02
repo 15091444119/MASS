@@ -468,6 +468,8 @@ class Seq2SeqTrainer(Trainer):
         encoder_inputs, decoder_inputs = self.get_mass_batch("mass", lang)
         _, decoding_loss, combiner_loss, trained_combiner_words = self.seq2seq_model("explicit_loss", encoder_inputs=encoder_inputs, decoder_inputs=decoder_inputs)
 
+        assert combiner_loss != None
+
         self.stats[('Explicit-MASS-decoding-%s' % lang)].append(decoding_loss.item())
         self.stats[('Explicit-MASS-combiner-%s' % lang)].append(combiner_loss.item())
 

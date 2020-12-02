@@ -155,11 +155,14 @@ class Seq2SeqEvaluator(Evaluator):
         scores["epoch"] = epoch
 
         for data in ["valid", "test"]:
-            for lang1, lang2 in self.params.eval_mt_steps:
-                self.evaluate_mt(scores, data, lang1, lang2, self.params.eval_bleu and self.params.is_master)
+            #for lang1, lang2 in self.params.eval_mt_steps:
+            #    self.evaluate_mt(scores, data, lang1, lang2, self.params.eval_bleu and self.params.is_master)
 
-            for lang in self.params.eval_mass_steps:
-                self.evaluate_mass(scores, data, lang)
+            #for lang in self.params.eval_mass_steps:
+           #     self.evaluate_mass(scores, data, lang)
+
+            for lang in self.params.eval_explicit_mass_steps:
+                self.evaluate_explicit_mass(scores=scores, data_set=data, lang=lang)
 
         return scores
 
@@ -202,7 +205,7 @@ class Seq2SeqEvaluator(Evaluator):
             # compute perplexity and prediction accuracy
             scores['%s_%s-%s_explicit_mass_ppl' % (data_set, lang, lang)] = np.exp(xe_loss / n_words)
             scores['%s_%s-%s_explicit_mass_acc' % (data_set, lang, lang)] = 100. * n_valid / n_words
-            scores["%s-combiner_loss" % (lang)] = combiner_loss * 1.0 / n_combiner_words
+            scores["%s-combiner_loss" % (lang)] = xe_combiner_loss * 1.0 / n_combiner_words
 
     def evaluate_mass(self, scores, data_set, lang):
         with torch.no_grad():

@@ -12,8 +12,8 @@ class CheatEncoder(BaseEncoder):
         self.dico = dico
         self.splitter = splitter
 
-    def convert_data(self, encode_inputs: EncoderInputs):
-        batch = ExplicitSplitEncoderBatch(encode_inputs, params=self.params, dico=self.dico, splitter=self.splitter)
+    def convert_data(self, encoder_inputs: EncoderInputs):
+        batch = ExplicitSplitEncoderBatch(encoder_inputs, params=self.params, dico=self.dico, splitter=self.splitter)
         combine_tool = CheatCombineTool(
             splitted_batch=batch.x3,
             length_before_split=batch.len1,
@@ -24,8 +24,8 @@ class CheatEncoder(BaseEncoder):
         )
         return batch, combine_tool
 
-    def encode(self, encode_inputs: EncoderInputs):
-        explicit_split_batch, combine_tool = self.convert_data(encode_inputs)
+    def encode(self, encoder_inputs: EncoderInputs):
+        explicit_split_batch, combine_tool = self.convert_data(encoder_inputs)
         orignal_encoded = self.encoder(
             "fwd",
             x=explicit_split_batch.x1,
