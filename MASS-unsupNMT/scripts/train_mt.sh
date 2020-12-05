@@ -4,7 +4,7 @@ MODEL=/home/data_ti5_d/zhouzh/low-resource-mt/MASS/MASS-unsupNMT/dumped/cn-en-zh
 #python -m torch.distributed.launch --nproc_per_node=$NGPU train_combiner.py \
 export CUDA_VISIBLE_DEVICES="1"
 python train_combiner.py \
-	--exp_name test_mass                             \
+	--exp_name combiner_0.3                             \
 	--encoder_type combiner \
 	--data_path /home/data_ti5_d/zhouzh/low-resource-mt/XLM_MASS_preprocessed_data/pretrain/cn-split-sen-zh-en-pretrain \
 	--lgs 'zh-en'                                        \

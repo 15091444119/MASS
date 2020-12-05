@@ -15,6 +15,9 @@ from src.model.seq2seq.combiner_seq2seq import CombinerEncoder, CombinerSeq2Seq
 from src.combiner.splitter import WholeWordSplitter
 from src.combiner.combiner import build_combiner
 
+from collections import OrderedDict
+from src.data.dictionary import Dictionary
+from src.utils import AttrDict
 
 logger = getLogger()
 
@@ -148,3 +151,32 @@ def build_combiner_encoder(encoder, params, dico):
 
     return combiner_encoder
 
+
+def load_combiner_model(model_path):
+    print("Load model from {}".format(model_path))
+    reloaded = torch.load(model_path)
+    model_params = AttrDict(reloaded['params'])
+    logger.info("Supported languages: %s" % ", ".join(model_params.lang2id.keys()))
+
+    # build dictionary / build encoder / build decoder / reload weights
+    dico = Dictionary(reloaded['dico_id2word'], reloaded['dico_word2id'], reloaded['dico_counts'])
+
+    assert model_params.encoder == "combiner"
+    combiner_seq2seq = build_model(model_params, dico)
+
+    combiner_seq2seq.load_state_dict(package_module(reloaded["seq2seq_model"]))
+
+    return dico, model_params, combiner_seq2seq
+
+
+def package_module(modules):
+    """
+    Return model state dict, take multi-gpu case into account
+    """
+    state_dict = OrderedDict()
+    for k, v in modules.items():
+        if k.startswith('module.'):
+            state_dict[k[7:]] = v
+        else:
+            state_dict[k] = v
+    return state_dict

@@ -7,7 +7,6 @@ from src.model.transformer import TransformerModel
 from src.utils import AttrDict
 from collections import OrderedDict
 from src.utils import to_cuda
-from src.model import build_model
 
 logger = logging.getLogger()
 
@@ -24,22 +23,6 @@ def package_module(modules):
             state_dict[k] = v
     return state_dict
 
-
-def load_combiner_model(model_path):
-    print("Load model from {}".format(model_path))
-    reloaded = torch.load(model_path)
-    model_params = AttrDict(reloaded['params'])
-    logger.info("Supported languages: %s" % ", ".join(model_params.lang2id.keys()))
-
-    # build dictionary / build encoder / build decoder / reload weights
-    dico = Dictionary(reloaded['dico_id2word'], reloaded['dico_word2id'], reloaded['dico_counts'])
-
-    assert model_params.encoder == "combiner"
-    combiner_seq2seq = build_model(model_params, dico)
-
-    combiner_seq2seq.load_state_dict(package_module(reloaded["seq2seq_model"]))
-
-    return dico, model_params, combiner_seq2seq
 
 def load_mass_model(model_path):
     """ reload a mass model
