@@ -161,7 +161,7 @@ def load_combiner_model(model_path):
     # build dictionary / build encoder / build decoder / reload weights
     dico = Dictionary(reloaded['dico_id2word'], reloaded['dico_word2id'], reloaded['dico_counts'])
 
-    assert model_params.encoder == "combiner"
+    assert model_params.encoder_type == "combiner"
     combiner_seq2seq = build_model(model_params, dico)
 
     combiner_seq2seq.load_state_dict(package_module(reloaded["seq2seq_model"]))

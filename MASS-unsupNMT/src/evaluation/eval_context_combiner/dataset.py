@@ -1,10 +1,38 @@
 import torch
 import argparse
 import numpy as np
+import pdb
 from src.model.encoder import EncoderInputs
-from src.evaluation.utils import load_combiner_model, to_cuda
+from src.utils import to_cuda
+from src.model import load_combiner_model
+from enum import Enum
 
-AlignmentTypes = ["src_whole_tgt_sep", "src_whole_tgt_whole", "src_sep_tgt_sep", "src_sep_tgt_whole"]
+
+class AlignmentTypes(Enum):
+    src_whole_tgt_sep = 0
+    src_whole_tgt_whole = 1
+    src_sep_tgt_sep = 2
+    src_sep_tgt_whole = 3
+
+
+def judge_alignment_type(len_src_word, len_tgt_word):
+    """
+
+    Args:
+        len_src_word: number of tokens source word have
+        len_tgt_word:
+
+    Returns:
+
+    """
+    if len_src_word == 1 and len_tgt_word == 1:
+        return AlignmentTypes.src_whole_tgt_whole
+    elif len_src_word == 1 and len_tgt_word > 1:
+        return AlignmentTypes.src_whole_tgt_sep
+    elif len_src_word > 1 and len_tgt_word == 1:
+        return AlignmentTypes.src_sep_tgt_whole
+    elif len_src_word > 1 and len_tgt_word > 1:
+        return AlignmentTypes.src_sep_tgt_sep
 
 
 class SentenceAlignment(object):
@@ -12,40 +40,34 @@ class SentenceAlignment(object):
     def __init__(self):
         self.src_positions = []
         self.tgt_positions = []
+        self.alignment_types = []
 
-    def add_position(self, src_position, tgt_position):
+    def add_position(self, src_position, tgt_position, alignment_type):
         self.src_positions.append(src_position)
         self.tgt_positions.append(tgt_position)
-
-
-class AllTypeSentenceAlignment(object):
-
-    def __init__(self, src_whole_tgt_sep: SentenceAlignment, src_whole_tgt_whole, src_sep_tgt_sep, src_sep_tgt_whole):
-        self.src_whole_tgt_sep = src_whole_tgt_sep
-        self.src_whole_tgt_whole = src_whole_tgt_whole
-        self.src_sep_tgt_sep = src_sep_tgt_sep
-        self.src_sep_tgt_whole = src_sep_tgt_whole
+        self.alignment_types.append(alignment_type)
 
 
 class BatchAlignment(object):
 
-    def __init__(self, src_batch_size_index, src_length_index, tgt_batch_size_index, tgt_length_index):
+    def __init__(self, src_batch_size_index, src_length_index, tgt_batch_size_index, tgt_length_index, alignment_types):
+        """
+
+        Args:
+            src_batch_size_index: torch.long
+                batch size index of each word
+            src_length_index:  torch.long
+                length index of each word
+            tgt_batch_size_index:
+            tgt_length_index:
+            alignment_types: list
+                list of alignment type
+        """
         self.src_batch_size_index = src_batch_size_index
         self.src_length_index = src_length_index
         self.tgt_batch_size_index = tgt_batch_size_index
         self.tgt_length_index = tgt_length_index
-
-
-class AllTypeBatchAlignment(object):
-    """
-    Batch alingment mask, for each alignment type, we have a source positions and a target positions,
-    """
-
-    def __init__(self, src_whole_tgt_sep: BatchAlignment, src_whole_tgt_whole, src_sep_tgt_sep, src_sep_tgt_whole):
-        self.src_whole_tgt_sep = src_whole_tgt_sep
-        self.src_whole_tgt_whole = src_whole_tgt_whole
-        self.src_sep_tgt_sep = src_sep_tgt_sep
-        self.src_sep_tgt_whole = src_sep_tgt_whole
+        self.alignment_types = alignment_types
 
 
 class AlignmentDataset(object):
@@ -55,7 +77,6 @@ class AlignmentDataset(object):
         self.dico = dico
         self.pad_index = params.pad_index
         self.eos_index = params.eos_index
-
         src_bped_sentences = group_tokens(read_sentences(src_bped_path))
         tgt_bped_sentences = group_tokens(read_sentences(tgt_bped_path))
         string_alignments = read_alignments(alignment_path)
@@ -137,32 +158,23 @@ class AlignmentDataset(object):
         corpus_alignments = []
 
         for src_bped_sentence, tgt_bped_sentence, alignment in zip(src_bped_sentences, tgt_bped_sentences, string_alignments):
-            src_whole_tgt_whole = SentenceAlignment()
-            src_whole_tgt_sep = SentenceAlignment()
-            src_sep_tgt_whole = SentenceAlignment()
-            src_sep_tgt_sep = SentenceAlignment()
+            sentence_alignment = SentenceAlignment()
 
             for word_align in alignment.split(' '):
                 src_index, tgt_index = word_align.split('-')
-                len_src_word = len(src_bped_sentences[src_index])
-                len_tgt_word = len(tgt_bped_sentences[tgt_index])
-                if len_src_word == 1 and len_tgt_word == 1:
-                    src_whole_tgt_whole.add_position(src_position=src_index, tgt_position=tgt_index)
-                elif len_src_word == 1 and len_tgt_word > 1:
-                    src_whole_tgt_sep.add_position(src_position=src_index, tgt_position=tgt_index)
-                elif len_src_word > 1 and len_tgt_word == 1:
-                    src_sep_tgt_whole.add_position(src_position=src_index, tgt_position=tgt_index)
-                elif len_src_word > 1 and len_tgt_word > 1:
-                    src_sep_tgt_sep.add_position(src_position=src_index, tgt_position=tgt_index)
+                src_index, tgt_index = int(src_index), int(tgt_index)
+                len_src_word = len(src_bped_sentence[src_index])
+                len_tgt_word = len(tgt_bped_sentence[tgt_index])
 
-            all_type_sentence_alignment = AllTypeSentenceAlignment(
-                src_whole_tgt_sep=src_whole_tgt_sep,
-                src_whole_tgt_whole=src_whole_tgt_whole,
-                src_sep_tgt_sep=src_sep_tgt_sep,
-                src_sep_tgt_whole=src_sep_tgt_whole
-            )
+                alignment_type = judge_alignment_type(len_src_word=len_src_word, len_tgt_word=len_tgt_word)
 
-            corpus_alignments.append(all_type_sentence_alignment)
+                sentence_alignment.add_position(
+                    src_position=src_index,
+                    tgt_position=tgt_index,
+                    alignment_type=alignment_type
+                )
+
+            corpus_alignments.append(sentence_alignment)
 
         return corpus_alignments
 
@@ -182,42 +194,38 @@ class AlignmentDataset(object):
         sent[0] = self.eos_index
         for i, s in enumerate(indexed_sentences):
             if lengths[i] > 2:  # if sentence not empty
-                sent[1:lengths[i] - 1, i].copy_(torch.from_numpy(s.astype(np.int64)))
+                sent[1:lengths[i] - 1, i].copy_(torch.from_numpy(np.array(s).astype(np.int64)))
             sent[lengths[i] - 1, i] = self.eos_index
 
         return sent, lengths
 
     def batch_alignments(self, alignments):
+        src_batch_size_index = []
+        src_length_index = []
+        tgt_batch_size_index = []
+        tgt_length_index = []
+        alignment_types = []
 
-        alignments_dict = {}
+        for idx in range(len(alignments)):
+            sentence_alignment = alignments[idx]
+            for src_position in sentence_alignment.src_positions:
+                src_batch_size_index.append(idx)
+                src_length_index.append(src_position)
+            for tgt_position in sentence_alignment.tgt_positions:
+                tgt_batch_size_index.append(idx)
+                tgt_length_index.append(tgt_position)
+            for alignment_type in sentence_alignment.alignment_types:
+                alignment_types.append(alignment_type)
 
-        for alignment_type in AlignmentTypes:
-            src_batch_size_index = []
-            src_length_index = []
-            tgt_batch_size_index = []
-            tgt_length_index = []
+        batch_alignment = BatchAlignment(
+            src_batch_size_index=torch.tensor(src_batch_size_index).long(),
+            tgt_batch_size_index=torch.tensor(tgt_batch_size_index).long(),
+            src_length_index=torch.tensor(src_length_index).long(),
+            tgt_length_index=torch.tensor(tgt_length_index).long(),
+            alignment_types=alignment_types
+        )
 
-            for idx in range(len(alignments)):
-
-                sentence_alignment = getattr(alignments[idx], alignment_type)
-
-                for src_position in sentence_alignment.src_positions:
-                    src_batch_size_index.append(idx)
-                    src_length_index.append(src_position)
-                for tgt_position in sentence_alignment.tgt_positions:
-                    tgt_batch_size_index.append(idx)
-                    tgt_length_index.append(tgt_position)
-
-            batch_alignment = BatchAlignment(
-                src_batch_size_index=torch.tensor(src_batch_size_index).long(),
-                tgt_batch_size_index=torch.tensor(tgt_batch_size_index).long(),
-                src_length_index=torch.tensor(src_length_index).long(),
-                tgt_length_index=torch.tensor(tgt_length_index).long()
-            )
-
-            alignments_dict[alignment_type] = batch_alignment
-
-        return AllTypeBatchAlignment(**alignments_dict)
+        return batch_alignment
 
 
     def get_batch(self, indices):
@@ -236,7 +244,7 @@ class AlignmentDataset(object):
                 j = min(i + self.batch_size, n_sentences)
                 yield self.get_batch(list(range(i, j)))
 
-        return iterator
+        return iterator()
 
 def filter_alignment_one2one(alignment):
     """ Delete one to many and many to one in the alignment
@@ -311,11 +319,13 @@ def group_tokens(bped_sentences):
 
 def get_encoder_inputs(x, len, lang_id):
 
-    langs = x.clone().copy(lang_id)
+    langs = x.clone().fill_(lang_id)
     x, len, langs = to_cuda(x, len, langs)
     encoder_inputs = EncoderInputs(x1=x, len1=len, lang_id=lang_id, langs1=langs)
 
     return encoder_inputs
+
+
 
 
 if __name__ == "__main__":
@@ -345,27 +355,33 @@ if __name__ == "__main__":
     dis_sum = {alignment_type: 0 for alignment_type in AlignmentTypes}
     words_sum = {alignment_type: 0 for alignment_type in AlignmentTypes}
 
-    for src, src_len, tgt, tgt_len, all_type_alignments in dataset.get_iterator():
+    for src, src_len, tgt, tgt_len, alignments in dataset.get_iterator():
         src_inputs = get_encoder_inputs(src, src_len, train_params.lang2id[eval_args.src_lang])
         tgt_inputs = get_encoder_inputs(tgt, tgt_len, train_params.lang2id[eval_args.tgt_lang])
 
-        src_encoded = combiner_seq2seq.encoder.encode(src_inputs).encoded
-        tgt_encoded = combiner_seq2seq.encoder.encode(tgt_inputs).encoded
+        combiner_seq2seq.encoder.eval()
+        with torch.no_grad():
+            # forward
+            src_encoded = combiner_seq2seq.encoder.encode(src_inputs).encoded
+            tgt_encoded = combiner_seq2seq.encoder.encode(tgt_inputs).encoded
 
-        for alignment_type in AlignmentTypes:
-            single_type_alignments = getattr(all_type_alignments, alignment_type)
+            # extract specific words rep
             dim = src_encoded.size(-1)
-            src_representations = src_encoded[single_type_alignments.src_batch_size_index, single_type_alignments.src_length_index].view(-1, dim)
-            tgt_representations = tgt_encoded[single_type_alignments.tgt_batch_size_index, single_type_alignments.tgt_length_index].view(-1, dim)
-            n_words = src_representations.size(0)
+            src_representations = src_encoded[alignments.src_batch_size_index, alignments.src_length_index].view(-1, dim)
+            tgt_representations = tgt_encoded[alignments.tgt_batch_size_index, alignments.tgt_length_index].view(-1, dim)
+            sims = torch.nn.CosineSimilarity(dim=-1)(src_representations, tgt_representations)
 
-            dis = torch.nn.CosineSimilarity(src_representations, tgt_representations)
-
-            dis_sum[alignment_type] += dis * n_words
-            words_sum[alignment_type] += n_words
+            assert sims.size(0) == len(alignments)
+            # update dis sum words sum
+            for sim, alignment_type in zip(sims, alignments.alignment_types):
+                dis_sum[alignment_type] += sim.item()
+                words_sum[alignment_type] += 1
 
     for alignment_type in AlignmentTypes:
-        print("Alignment type: {} Cos distance: {}".format(alignment_type, dis_sum[alignment_type] / words_sum[alignment_type]))
+        if words_sum[alignment_type] == 0:
+            print("Alignment type: {} No words".format(alignment_type))
+        else:
+            print("Alignment type: {} Cos distance: {}".format(alignment_type, dis_sum[alignment_type] / words_sum[alignment_type]))
 
     print("Done")
 
