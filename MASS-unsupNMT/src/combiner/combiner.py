@@ -6,7 +6,7 @@ from src.evaluation.utils import Context2Sentence
 
 from src.utils import AttrDict
 from src.evaluation.utils import package_module
-from src.combiner.constant import COMBINE_END
+from src.combiner.constant import COMBINE_END, COMBINE_FRONT
 
 
 class Combiner(nn.Module):
@@ -31,7 +31,45 @@ class Combiner(nn.Module):
         raise NotImplementedError
 
 
+class AverageCombiner(Combiner):
+    """
+    Use the average of tokens of the mass encoded representation as the word representation
+    """
+    def __init__(self):
+        super().__init__()
+
+    def combine(self, encoded, lengths, combine_labels, lang_id):
+        """
+        Args:
+            encoded: [bs, len, dim]
+            lengths: [bs]
+            combine_labels: [bs, len]
+            lang_id: int
+                language index
+
+        Returns:
+            representation: [splitted word number, dim]
+            trained_representation
+        """
+        bs, max_len, dim = encoded.size()
+        representations = []
+        for i in range(bs):
+            token_id = 0
+            while(token_id < max_len): #
+                if combine_labels[i][token_id] == COMBINE_FRONT:
+                    front_id = token_id
+                    while(combine_labels[i][token_id] != COMBINE_END):
+                        token_id += 1
+                        assert token_id < max_len
+                    representations.append(encoded[i][front_id:token_id + 1].mean(dim=0))
+                token_id += 1
+        return torch.stack(representations, dim=0)
+
+
 class LastTokenCombiner(Combiner):
+    """
+    Use a transformer layer above mass encoder, and use the last token of each word for representation
+    """
 
     def __init__(self, params):
         super().__init__()
@@ -87,6 +125,8 @@ class LastTokenCombiner(Combiner):
 def build_combiner(params):
     if params.combiner == "last_token":
         return LastTokenCombiner(params)
+    elif params.combiner == "average":
+        return AverageCombiner()
     else:
         raise Exception("No combiner named: {}".format(params.combiner))
 

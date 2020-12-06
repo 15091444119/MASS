@@ -6,6 +6,7 @@ from src.model.encoder import EncoderInputs
 from src.utils import to_cuda
 from src.model import load_combiner_model
 from enum import Enum
+from src.combiner.combiner import AverageCombiner
 
 
 class AlignmentTypes(Enum):
@@ -43,6 +44,7 @@ class SentenceAlignment(object):
         self.alignment_types = []
 
     def add_position(self, src_position, tgt_position, alignment_type):
+        #TODO this positions don't consider bos and eos
         self.src_positions.append(src_position)
         self.tgt_positions.append(tgt_position)
         self.alignment_types.append(alignment_type)
@@ -91,7 +93,7 @@ class AlignmentDataset(object):
             src_bped_sentences=src_bped_sentences,
             tgt_bped_sentences=tgt_bped_sentences,
             string_alignments=string_alignments
-        )
+        )  # this alignments is on word level, not bped level
 
         self.src_indexed_sentences = self.index_sentences(src_bped_sentences, self.dico)
         self.tgt_indexed_sentences = self.index_sentences(tgt_bped_sentences, self.dico)
@@ -153,7 +155,7 @@ class AlignmentDataset(object):
             alignments:
 
         Returns:
-            positions: list of WholeSeparateAlignmentPositions
+            positions: list of sentence_alignment
         """
         corpus_alignments = []
 
@@ -246,6 +248,7 @@ class AlignmentDataset(object):
 
         return iterator()
 
+
 def filter_alignment_one2one(alignment):
     """ Delete one to many and many to one in the alignment
     Params:
@@ -326,6 +329,57 @@ def get_encoder_inputs(x, len, lang_id):
     return encoder_inputs
 
 
+def hack_to_average_combiner(mass_checkpoint, combiner_seq2seq):
+    """
+    1.  use average combiner instead of the original combiner
+    2. use the params in the mass checkpoint
+    Args:
+        mass_checkpoint:
+        combiner_seq2seq:
+
+    Returns:
+    """
+    print("HACK to Average combiner")
+    reloaded = torch.load(mass_checkpoint)
+    enc_reload = reloaded['encoder']
+    if all([k.startswith('module.') for k in enc_reload.keys()]):
+        enc_reload = {k[len('module.'):]: v for k, v in enc_reload.items()}
+    dec_reload = reloaded['decoder']
+    if all([k.startswith('module.') for k in dec_reload.keys()]):
+        dec_reload = {k[len('module.'):]: v for k, v in dec_reload.items()}
+    combiner_seq2seq.encoder.encoder.load_state_dict(enc_reload)
+    combiner_seq2seq.decoder.load_state_dict(dec_reload)
+    combiner_seq2seq.encoder.combiner = AverageCombiner()
+
+    return combiner_seq2seq
+
+
+def convert_ids2grouped_bpe_tokens(ids, dico):
+    sentence = []
+    tokens = []
+    for idx in ids:
+        token = dico.id2word[idx]
+        if "@@" not in token:
+            tokens.append(token)
+            sentence.append(tokens)
+            tokens = []
+        else:
+            tokens.append(token)
+    assert len(tokens) == 0
+    return sentence
+
+
+def show_alignments(src, tgt, dico, alignments):
+    src = src.transpose(0, 1)
+    tgt = tgt.transpose(0, 1)
+    src_sentences = [convert_ids2grouped_bpe_tokens(list(ids.numpy()), dico) for ids in src]
+    tgt_sentences = [convert_ids2grouped_bpe_tokens(list(ids.numpy()), dico) for ids in tgt]
+
+    for src_batch_idx, src_length_idx, tgt_batch_idx, tgt_length_idx in zip(
+            alignments.src_batch_size_index, alignments.src_length_index, alignments.tgt_batch_size_index, alignments.tgt_length_index):
+        src_word = src_sentences[src_batch_idx][src_length_idx + 1]  # +1 because of eos
+        tgt_word = tgt_sentences[tgt_batch_idx][tgt_length_idx + 1]  # +1 because of eos
+        print("{}-{}".format(src_word, tgt_word))
 
 
 if __name__ == "__main__":
@@ -339,9 +393,20 @@ if __name__ == "__main__":
     parser.add_argument("--alignments", type=str)
     parser.add_argument("--batch_size", type=int, default=32)
 
+    # hack to an average combiner
+    parser.add_argument("--average_hack", action="store_true", default=False)
+    if parser.parse_known_args()[0].average_hack is True:
+        parser.add_argument("--mass_checkpoint_for_hack", required=False)
+
+    # debug
+    parser.add_argument("--debug", action="store_true", default=False)
+
     eval_args = parser.parse_args()
 
     dico, train_params, combiner_seq2seq = load_combiner_model(model_path=eval_args.checkpoint)
+
+    if eval_args.average_hack:
+        combiner_seq2seq = hack_to_average_combiner(mass_checkpoint=eval_args.mass_checkpoint_for_hack, combiner_seq2seq=combiner_seq2seq)
 
     dataset = AlignmentDataset(
         src_bped_path=eval_args.bped_src,
@@ -352,8 +417,8 @@ if __name__ == "__main__":
         params=train_params
     )
 
-    dis_sum = {alignment_type: 0 for alignment_type in AlignmentTypes}
-    words_sum = {alignment_type: 0 for alignment_type in AlignmentTypes}
+    type2dis = {alignment_type: [] for alignment_type in AlignmentTypes}
+    type2num = {alignment_type: 0 for alignment_type in AlignmentTypes}
 
     for src, src_len, tgt, tgt_len, alignments in dataset.get_iterator():
         src_inputs = get_encoder_inputs(src, src_len, train_params.lang2id[eval_args.src_lang])
@@ -365,23 +430,31 @@ if __name__ == "__main__":
             src_encoded = combiner_seq2seq.encoder.encode(src_inputs).encoded
             tgt_encoded = combiner_seq2seq.encoder.encode(tgt_inputs).encoded
 
+            # show alignments
+            if eval_args.debug:
+                show_alignments(src, tgt, dico, alignments)
+
             # extract specific words rep
             dim = src_encoded.size(-1)
-            src_representations = src_encoded[alignments.src_batch_size_index, alignments.src_length_index].view(-1, dim)
-            tgt_representations = tgt_encoded[alignments.tgt_batch_size_index, alignments.tgt_length_index].view(-1, dim)
+            src_representations = src_encoded[alignments.src_batch_size_index, alignments.src_length_index + 1].view(-1, dim) # +1 because of bos
+            tgt_representations = tgt_encoded[alignments.tgt_batch_size_index, alignments.tgt_length_index + 1].view(-1, dim)
             sims = torch.nn.CosineSimilarity(dim=-1)(src_representations, tgt_representations)
 
-            assert sims.size(0) == len(alignments)
+            assert sims.size(0) == len(alignments.alignment_types)
             # update dis sum words sum
             for sim, alignment_type in zip(sims, alignments.alignment_types):
-                dis_sum[alignment_type] += sim.item()
-                words_sum[alignment_type] += 1
+                type2dis[alignment_type].append(sim.item())
+                type2num[alignment_type] += 1
 
     for alignment_type in AlignmentTypes:
-        if words_sum[alignment_type] == 0:
+        if type2num[alignment_type] == 0:
             print("Alignment type: {} No words".format(alignment_type))
         else:
-            print("Alignment type: {} Cos distance: {}".format(alignment_type, dis_sum[alignment_type] / words_sum[alignment_type]))
+            dis = np.array(type2dis[alignment_type])
+            num = type2num[alignment_type]
+            average_dis = dis.mean()
+            var = dis.var()
+            print("Alignment type: {} Average Cos distance: {}, Varience: {}, Number: {}".format(alignment_type, average_dis, var, num))
 
     print("Done")
 
