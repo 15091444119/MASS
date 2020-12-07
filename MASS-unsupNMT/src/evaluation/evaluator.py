@@ -178,6 +178,7 @@ class Seq2SeqEvaluator(Evaluator):
         scores = {}
         scores["epoch"] = epoch
 
+        """
         for data in ["valid", "test"]:
             for lang1, lang2 in self.params.eval_mt_steps:
                 self.evaluate_mt(scores, data, lang1, lang2, self.params.eval_bleu and self.params.is_master)
@@ -187,6 +188,10 @@ class Seq2SeqEvaluator(Evaluator):
 
             for lang in self.params.eval_explicit_mass_steps:
                 self.evaluate_explicit_mass(scores=scores, data_set=data, lang=lang)
+        """
+
+        if self.params.eval_alignment:
+            self.evaluate_alignment(scores)
 
         return scores
 
@@ -263,17 +268,6 @@ class Seq2SeqEvaluator(Evaluator):
             # compute perplexity and prediction accuracy
             scores['%s_%s-%s_mass_ppl' % (data_set, lang, lang)] = np.exp(xe_loss / n_words)
             scores['%s_%s-%s_mass_acc' % (data_set, lang, lang)] = 100. * n_valid / n_words
-
-    def evaluate_alignment(self, scores, data_set, ):
-        """
-        Evaluate context alignment
-        Args:
-            scores:
-            data_set:
-            lang:
-        Returns:
-
-        """
 
     def evaluate_mt(self, scores, data_set, lang1, lang2, eval_bleu):
         """

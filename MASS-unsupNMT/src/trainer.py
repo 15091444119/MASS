@@ -275,7 +275,7 @@ class Trainer(object):
         """
         Reload a checkpoint if we find one.
         """
-        checkpoint_path = self.params.checkpoint_path
+        checkpoint_path = self.params.checkpoint
         assert os.path.isfile(checkpoint_path)
         logger.warning('Reloading checkpoint from %s ...' % checkpoint_path)
         data = torch.load(checkpoint_path, map_location=lambda storage, loc: storage.cuda(self.params.local_rank))
@@ -356,7 +356,7 @@ class Seq2SeqTrainer(Trainer):
         self.params = params
 
         # optimizers
-        if params.train_combiner_only:
+        if not params.train_combiner_only:
             trained_parameters = self.seq2seq_model.parameters()
         else:
             trained_parameters = self.seq2seq_model.encoder.combiner.parameters()

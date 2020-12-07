@@ -2,9 +2,9 @@ MODEL=/home/data_ti5_d/zhouzh/low-resource-mt/MASS/MASS-unsupNMT/dumped/cn-en-zh
 #export NGPU=2
 #python train_combiner.py \
 #python -m torch.distributed.launch --nproc_per_node=$NGPU train_combiner.py \
-export CUDA_VISIBLE_DEVICES="1"
+export CUDA_VISIBLE_DEVICES="2"
 python train_combiner.py \
-	--exp_name combiner_0.3                             \
+	--exp_name combiner_only_cos_0.3                             \
 	--encoder_type combiner \
 	--data_path /home/data_ti5_d/zhouzh/low-resource-mt/XLM_MASS_preprocessed_data/pretrain/cn-split-sen-zh-en-pretrain \
 	--lgs 'zh-en'                                        \
@@ -31,7 +31,7 @@ python train_combiner.py \
   --eval_mass_steps "zh,en" \
   --eval_explicit_mass_steps "zh,en" \
   --eval_mt_steps "zh-en,en-zh" \
-  --eval_only True \
+  --eval_only False \
   --eval_bleu True \
   --debug_train False \
   --eval_alignment True \
@@ -39,4 +39,5 @@ python train_combiner.py \
   --alignment_tgt_bped_path  /home/data_ti5_d/zhouzh/low-resource-mt/XLM_MASS_preprocessed_data/pretrain/cn-split-sen-zh-en-pretrain/valid.en-zh.en \
   --alignment_src_lang zh \
   --alignment_tgt_lang en \
-  --alignment_path /home/data_ti5_d/zhouzh/low-resource-mt/XLM_MASS_preprocessed_data/pretrain/cn-split-sen-zh-en-pretrain/valid.en-zh.en
+  --alignment_path /home/data_ti5_d/zhouzh/low-resource-mt/alignment_data/zh-en/final_align.intersect.valid \
+  --train_combiner_only True
