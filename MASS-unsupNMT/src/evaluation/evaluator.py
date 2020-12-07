@@ -21,6 +21,7 @@ from .eval_context_bli import eval_whole_separated_bli, read_retokenize_words, g
 from src.model.encoder import EncoderInputs
 from src.model.seq2seq import DecoderInputs
 from src.trainer import mask_sent
+from .eval_context_combiner import eval_alignment, AlignmentTypes, AlignmentDataset
 
 
 BLEU_SCRIPT_PATH = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'multi-bleu.perl')
@@ -141,6 +142,7 @@ class Evaluator(object):
                 restore_segmentation(lang2_path)
 
 
+
 class Seq2SeqEvaluator(Evaluator):
 
     def __init__(self, trainer, data, params):
@@ -149,6 +151,28 @@ class Seq2SeqEvaluator(Evaluator):
         """
         super().__init__(trainer, data, params)
         self.seq2seq_model = trainer.seq2seq_model
+        if params.eval_alignment:
+            self.alignment_dataset = AlignmentDataset(
+                src_bped_path=params.alignment_src_bped_path,
+                tgt_bped_path=params.alignment_tgt_bped_path,
+                alignment_path=params.alignment_path,
+                batch_size=params.batch_size,
+                dico=data["dico"],
+                src_lang=params.alignment_src_lang,
+                tgt_lang=params.alignment_tgt_lang,
+                pad_index=params.pad_index,
+                eos_index=params.eos_index
+            )
+
+    def evaluate_alignment(self, scores):
+        type2ave_dis, type2var, type2num = eval_alignment(
+            combiner_seq2seq=self.seq2seq_model,
+            dataset=self.alignment_dataset,
+            lang2id=self.params.lang2id
+        )
+        for alignment_type in AlignmentTypes:
+            score = type2ave_dis[alignment_type]
+            scores["alignment-{}-ave-score".format(alignment_type)] = score
 
     def run_all_evals(self, epoch):
         scores = {}

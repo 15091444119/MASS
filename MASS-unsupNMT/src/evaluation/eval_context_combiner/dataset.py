@@ -71,11 +71,11 @@ class BatchAlignment(object):
 
 class AlignmentDataset(object):
 
-    def __init__(self, src_bped_path, tgt_bped_path, alignment_path, batch_size, dico, params, src_lang, tgt_lang):
+    def __init__(self, src_bped_path, tgt_bped_path, alignment_path, batch_size, dico, src_lang, tgt_lang, pad_index, eos_index):
         self.batch_size = batch_size
         self.dico = dico
-        self.pad_index = params.pad_index
-        self.eos_index = params.eos_index
+        self.pad_index = pad_index
+        self.eos_index = eos_index
         self.src_lang = src_lang
         self.tgt_lang = tgt_lang
         src_bped_sentences = group_tokens(read_sentences(src_bped_path))

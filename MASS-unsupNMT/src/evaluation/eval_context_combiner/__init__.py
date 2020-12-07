@@ -148,9 +148,10 @@ def main():
         alignment_path=eval_args.alignments,
         batch_size=eval_args.batch_size,
         dico=dico,
-        params=train_params,
         src_lang=eval_args.src_lang,
-        tgt_lang=eval_args.tgt_lang
+        tgt_lang=eval_args.tgt_lang,
+        pad_index=train_params.pad_index,
+        eos_index=train_params.eos_index
     )
 
     type2ave_dis, type2var, type2num = eval_alignment(combiner_seq2seq=combiner_seq2seq, dataset=dataset, lang2id=train_params.lang2id)

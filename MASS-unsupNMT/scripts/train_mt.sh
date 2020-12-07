@@ -31,6 +31,12 @@ python train_combiner.py \
   --eval_mass_steps "zh,en" \
   --eval_explicit_mass_steps "zh,en" \
   --eval_mt_steps "zh-en,en-zh" \
-  --eval_only False \
+  --eval_only True \
   --eval_bleu True \
-  --debug_train False
+  --debug_train False \
+  --eval_alignment True \
+  --alignment_src_bped_path /home/data_ti5_d/zhouzh/low-resource-mt/XLM_MASS_preprocessed_data/pretrain/cn-split-sen-zh-en-pretrain/valid.en-zh.zh \
+  --alignment_tgt_bped_path  /home/data_ti5_d/zhouzh/low-resource-mt/XLM_MASS_preprocessed_data/pretrain/cn-split-sen-zh-en-pretrain/valid.en-zh.en \
+  --alignment_src_lang zh \
+  --alignment_tgt_lang en \
+  --alignment_path /home/data_ti5_d/zhouzh/low-resource-mt/XLM_MASS_preprocessed_data/pretrain/cn-split-sen-zh-en-pretrain/valid.en-zh.en

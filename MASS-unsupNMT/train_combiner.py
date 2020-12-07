@@ -243,9 +243,16 @@ def get_parser():
     parser.add_argument("--eval_mass_steps", type=str, default="")
     parser.add_argument("--eval_explicit_mass_steps", type=str, default="")
 
+    # evaluate alignment params
+    parser.add_argument("--eval_alignment", type=bool_flag, default=False)
+    if parser.parse_known_args()[0].eval_alignment:
+        parser.add_argument("--alignment_src_bped_path", required=True)
+        parser.add_argument("--alignment_tgt_bped_path", required=True)
+        parser.add_argument("--alignment_path", required=True)
+        parser.add_argument("--alignment_src_lang", required=True)
+        parser.add_argument("--alignment_tgt_lang", required=True)
+
     return parser
-
-
 
 
 def main(params):
