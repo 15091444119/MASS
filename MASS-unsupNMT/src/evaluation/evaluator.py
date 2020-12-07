@@ -240,6 +240,17 @@ class Seq2SeqEvaluator(Evaluator):
             scores['%s_%s-%s_mass_ppl' % (data_set, lang, lang)] = np.exp(xe_loss / n_words)
             scores['%s_%s-%s_mass_acc' % (data_set, lang, lang)] = 100. * n_valid / n_words
 
+    def evaluate_alignment(self, scores, data_set, ):
+        """
+        Evaluate context alignment
+        Args:
+            scores:
+            data_set:
+            lang:
+        Returns:
+
+        """
+
     def evaluate_mt(self, scores, data_set, lang1, lang2, eval_bleu):
         """
         Evaluate perplexity and next word prediction accuracy.

@@ -12,6 +12,7 @@ class CombinerSeq2Seq(BaseSeq2Seq):
         """
         super().__init__(encoder=encoder, decoder=decoder)
 
+
     def forward(self, loss_name, encoder_inputs, decoder_inputs):
         if loss_name == "explicit_loss":
              return self.explicit_loss(encoder_inputs=encoder_inputs, decoder_inputs=decoder_inputs)

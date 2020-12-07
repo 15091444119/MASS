@@ -234,6 +234,7 @@ def get_parser():
     parser.add_argument("--n_combiner_layers", type=int, default=4)
     parser.add_argument("--combiner_loss", type=str, default="MSE", choices=["MSE", "COS", "BNC"])
     parser.add_argument("--re_encode_rate", type=float, default=0.0)
+    parser.add_argument("--train_combiner_only", type=bool_flag, default=False)
 
 
     # evaluation params

@@ -382,6 +382,52 @@ def show_alignments(src, tgt, dico, alignments):
         print("{}-{}".format(src_word, tgt_word))
 
 
+def eval_alignment(combiner_seq2seq, dataset):
+    type2dis = {alignment_type: [] for alignment_type in AlignmentTypes}
+    type2num = {alignment_type: 0 for alignment_type in AlignmentTypes}
+
+    for src, src_len, tgt, tgt_len, alignments in dataset.get_iterator():
+        src_inputs = get_encoder_inputs(src, src_len, train_params.lang2id[eval_args.src_lang])
+        tgt_inputs = get_encoder_inputs(tgt, tgt_len, train_params.lang2id[eval_args.tgt_lang])
+
+        combiner_seq2seq.encoder.eval()
+        with torch.no_grad():
+            # forward
+            src_encoded = combiner_seq2seq.encoder.encode(src_inputs).encoded
+            tgt_encoded = combiner_seq2seq.encoder.encode(tgt_inputs).encoded
+
+            # show alignments
+            if eval_args.debug:
+                show_alignments(src, tgt, dico, alignments)
+
+            # extract specific words rep
+            dim = src_encoded.size(-1)
+            src_representations = src_encoded[alignments.src_batch_size_index, alignments.src_length_index + 1].view(-1, dim) # +1 because of bos
+            tgt_representations = tgt_encoded[alignments.tgt_batch_size_index, alignments.tgt_length_index + 1].view(-1, dim)
+            sims = torch.nn.CosineSimilarity(dim=-1)(src_representations, tgt_representations)
+
+            assert sims.size(0) == len(alignments.alignment_types)
+            # update dis sum words sum
+            for sim, alignment_type in zip(sims, alignments.alignment_types):
+                type2dis[alignment_type].append(sim.item())
+                type2num[alignment_type] += 1
+
+    type2ave_dis = {}
+    type2var = {}
+
+    for alignment_type in AlignmentTypes:
+        if type2num[alignment_type] == 0:
+            type2ave_dis[alignment_type] = -1
+        else:
+            dis = np.array(type2dis[alignment_type])
+            num = type2num[alignment_type]
+            average_dis = dis.mean()
+            var = dis.var()
+            type2ave_dis[alignment_type] = average_dis
+            type2var[alignment_type] = var
+
+    return type2ave_dis, type2var, type2num
+
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
@@ -417,44 +463,10 @@ if __name__ == "__main__":
         params=train_params
     )
 
-    type2dis = {alignment_type: [] for alignment_type in AlignmentTypes}
-    type2num = {alignment_type: 0 for alignment_type in AlignmentTypes}
-
-    for src, src_len, tgt, tgt_len, alignments in dataset.get_iterator():
-        src_inputs = get_encoder_inputs(src, src_len, train_params.lang2id[eval_args.src_lang])
-        tgt_inputs = get_encoder_inputs(tgt, tgt_len, train_params.lang2id[eval_args.tgt_lang])
-
-        combiner_seq2seq.encoder.eval()
-        with torch.no_grad():
-            # forward
-            src_encoded = combiner_seq2seq.encoder.encode(src_inputs).encoded
-            tgt_encoded = combiner_seq2seq.encoder.encode(tgt_inputs).encoded
-
-            # show alignments
-            if eval_args.debug:
-                show_alignments(src, tgt, dico, alignments)
-
-            # extract specific words rep
-            dim = src_encoded.size(-1)
-            src_representations = src_encoded[alignments.src_batch_size_index, alignments.src_length_index + 1].view(-1, dim) # +1 because of bos
-            tgt_representations = tgt_encoded[alignments.tgt_batch_size_index, alignments.tgt_length_index + 1].view(-1, dim)
-            sims = torch.nn.CosineSimilarity(dim=-1)(src_representations, tgt_representations)
-
-            assert sims.size(0) == len(alignments.alignment_types)
-            # update dis sum words sum
-            for sim, alignment_type in zip(sims, alignments.alignment_types):
-                type2dis[alignment_type].append(sim.item())
-                type2num[alignment_type] += 1
+    type2ave_dis, type2var, type2num = eval_alignment(combiner_seq2seq=combiner_seq2seq, dataset=dataset)
 
     for alignment_type in AlignmentTypes:
-        if type2num[alignment_type] == 0:
-            print("Alignment type: {} No words".format(alignment_type))
-        else:
-            dis = np.array(type2dis[alignment_type])
-            num = type2num[alignment_type]
-            average_dis = dis.mean()
-            var = dis.var()
-            print("Alignment type: {} Average Cos distance: {}, Varience: {}, Number: {}".format(alignment_type, average_dis, var, num))
+        print("Type: {} Number: {} average dis: {} variance: {}".format(alignment_type, type2num[alignment_type], type2ave_dis[alignment_type], type2var[alignment_type]))
 
     print("Done")
 

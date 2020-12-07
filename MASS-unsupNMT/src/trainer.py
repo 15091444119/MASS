@@ -83,11 +83,11 @@ class Trainer(object):
         # initialize lambda coefficients and their configurations
         parse_lambda_config(params)
 
-    def get_optimizer_fp(self, module):
+    def get_optimizer_fp(self, trained_parameters):
         """
         Build optimizer.
         """
-        optimizer = get_optimizer(getattr(self, module).parameters(), self.params.optimizer)
+        optimizer = get_optimizer(trained_parameters, self.params.optimizer)
         if self.params.fp16:
             optimizer = FP16_Optimizer(optimizer, dynamic_loss_scale=True)
         optimizer.zero_grad()
@@ -356,8 +356,13 @@ class Seq2SeqTrainer(Trainer):
         self.params = params
 
         # optimizers
+        if params.train_combiner_only:
+            trained_parameters = self.seq2seq_model.parameters()
+        else:
+            trained_parameters = self.seq2seq_model.encoder.combiner.parameters()
+
         self.optimizers = {
-            'seq2seq_model': self.get_optimizer_fp('seq2seq_model'),
+            'seq2seq_model': self.get_optimizer_fp(trained_parameters),
         }
 
         super().__init__(data, params)
@@ -366,6 +371,7 @@ class Seq2SeqTrainer(Trainer):
     def optimize(self):
         self.optimizers["seq2seq_model"].step()
         self.optimizers["seq2seq_model"].zero_grad()
+        self.seq2seq_model.zero_grad()
 
     def step(self):
         # combiner step

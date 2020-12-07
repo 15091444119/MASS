@@ -8,7 +8,6 @@ class BaseSeq2Seq(torch.nn.Module):
         self.encoder = encoder
         self.decoder = decoder
 
-
     def get_loss_decoding_batch(self, encoded_info, decoder_inputs):
         """
 
