@@ -329,7 +329,7 @@ def get_encoder_inputs(x, len, lang_id):
     return encoder_inputs
 
 
-def hack_to_average_combiner(mass_checkpoint, combiner_seq2seq):
+def hack(mass_checkpoint, combiner_seq2seq):
     """
     1.  use average combiner instead of the original combiner
     2. use the params in the mass checkpoint
@@ -340,17 +340,17 @@ def hack_to_average_combiner(mass_checkpoint, combiner_seq2seq):
     Returns:
     """
     print("HACK to Average combiner")
-    reloaded = torch.load(mass_checkpoint)
-    enc_reload = reloaded['encoder']
-    if all([k.startswith('module.') for k in enc_reload.keys()]):
-        enc_reload = {k[len('module.'):]: v for k, v in enc_reload.items()}
-    dec_reload = reloaded['decoder']
-    if all([k.startswith('module.') for k in dec_reload.keys()]):
-        dec_reload = {k[len('module.'):]: v for k, v in dec_reload.items()}
-    combiner_seq2seq.encoder.encoder.load_state_dict(enc_reload)
-    combiner_seq2seq.decoder.load_state_dict(dec_reload)
     combiner_seq2seq.encoder.combiner = AverageCombiner()
-
+    if mass_checkpoint != "":
+        reloaded = torch.load(mass_checkpoint)
+        enc_reload = reloaded['encoder']
+        if all([k.startswith('module.') for k in enc_reload.keys()]):
+            enc_reload = {k[len('module.'):]: v for k, v in enc_reload.items()}
+        dec_reload = reloaded['decoder']
+        if all([k.startswith('module.') for k in dec_reload.keys()]):
+            dec_reload = {k[len('module.'):]: v for k, v in dec_reload.items()}
+        combiner_seq2seq.encoder.encoder.load_state_dict(enc_reload)
+        combiner_seq2seq.decoder.load_state_dict(dec_reload)
     return combiner_seq2seq
 
 
@@ -393,10 +393,10 @@ if __name__ == "__main__":
     parser.add_argument("--alignments", type=str)
     parser.add_argument("--batch_size", type=int, default=32)
 
-    # hack to an average combiner
+    # hack
     parser.add_argument("--average_hack", action="store_true", default=False)
     if parser.parse_known_args()[0].average_hack is True:
-        parser.add_argument("--mass_checkpoint_for_hack", required=False)
+        parser.add_argument("--mass_checkpoint_for_hack", type=str, default="", help="also hack the encoder and decoder using a mass model")
 
     # debug
     parser.add_argument("--debug", action="store_true", default=False)
@@ -406,7 +406,7 @@ if __name__ == "__main__":
     dico, train_params, combiner_seq2seq = load_combiner_model(model_path=eval_args.checkpoint)
 
     if eval_args.average_hack:
-        combiner_seq2seq = hack_to_average_combiner(mass_checkpoint=eval_args.mass_checkpoint_for_hack, combiner_seq2seq=combiner_seq2seq)
+        combiner_seq2seq = hack(mass_checkpoint=eval_args.mass_checkpoint_for_hack, combiner_seq2seq=combiner_seq2seq)
 
     dataset = AlignmentDataset(
         src_bped_path=eval_args.bped_src,

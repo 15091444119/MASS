@@ -205,7 +205,7 @@ class Seq2SeqEvaluator(Evaluator):
             # compute perplexity and prediction accuracy
             scores['%s_%s-%s_explicit_mass_ppl' % (data_set, lang, lang)] = np.exp(xe_loss / n_words)
             scores['%s_%s-%s_explicit_mass_acc' % (data_set, lang, lang)] = 100. * n_valid / n_words
-            scores["%s-combiner_loss" % (lang)] = xe_combiner_loss * 1.0 / n_combiner_words
+            scores["%s-%s-combiner_loss" % (data_set, lang)] = xe_combiner_loss * 1.0 / n_combiner_words
 
     def evaluate_mass(self, scores, data_set, lang):
         with torch.no_grad():
