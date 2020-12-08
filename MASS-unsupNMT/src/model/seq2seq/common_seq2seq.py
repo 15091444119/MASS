@@ -22,7 +22,7 @@ class CommonSeq2Seq(BaseSeq2Seq):
             langs=decoder_inputs.langs2,
             src_enc=encoded_info.encoded,
             src_len=encoded_info.enc_len,
-            src_mask=None,
+            src_mask=encoded_info.enc_mask,
             positions=decoder_inputs.positions,
             pred_mask=decoder_inputs.pred_mask,
             y=decoder_inputs.y,
@@ -36,6 +36,6 @@ class CommonSeq2Seq(BaseSeq2Seq):
             src_len=encoded_info.enc_len,
             tgt_lang_id=tgt_lang_id,
             max_len=int(1.5 * encoded_info.enc_len.max().item() + 10),
-            enc_mask=None
+            enc_mask=encoded_info.enc_mask
         )
         return generate_batch

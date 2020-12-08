@@ -103,7 +103,8 @@ class BaseSeq2Seq(torch.nn.Module):
                 tgt_lang_id=generate_decode_batch.tgt_lang_id,
                 beam_size=decoding_params.beam_size,
                 length_penalty=decoding_params.length_penalty,
-                early_stopping=decoding_params.early_stopping
+                early_stopping=decoding_params.early_stopping,
+                enc_mask=generate_decode_batch.enc_mask
             )
         return generated, lengths
 
