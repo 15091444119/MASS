@@ -1,10 +1,10 @@
 MODEL=/home/data_ti5_d/zhouzh/low-resource-mt/MASS/MASS-unsupNMT/dumped/cn-en-zh-500w-pretrain-jointbpe-jointvocab/1jnrqg51bz/periodic-100.pth
-#export NGPU=2
+export NGPU=2
 #python train_combiner.py \
-#python -m torch.distributed.launch --nproc_per_node=$NGPU train_combiner.py \
-export CUDA_VISIBLE_DEVICES="1"
-python train_combiner.py \
-	--exp_name combiner_only_mse_0.3                             \
+#python train_combiner.py \
+export CUDA_VISIBLE_DEVICES="0,1"
+python -m torch.distributed.launch --nproc_per_node=$NGPU train_combiner.py \
+  --exp_name test_multi_gpu                             \
 	--encoder_type combiner \
 	--data_path /home/data_ti5_d/zhouzh/low-resource-mt/XLM_MASS_preprocessed_data/pretrain/cn-split-sen-zh-en-pretrain \
 	--lgs 'zh-en'                                        \
@@ -31,7 +31,7 @@ python train_combiner.py \
   --eval_mass_steps "zh,en" \
   --eval_explicit_mass_steps "zh,en" \
   --eval_mt_steps "zh-en,en-zh" \
-  --eval_only False \
+  --eval_only True \
   --eval_bleu True \
   --debug_train False \
   --eval_alignment True \
@@ -41,4 +41,5 @@ python train_combiner.py \
   --alignment_tgt_lang en \
   --alignment_path /home/data_ti5_d/zhouzh/low-resource-mt/alignment_data/zh-en/final_align.intersect.valid \
   --alignment_metric "MSE" \
-  --train_combiner_only True
+  --train_combiner_only True \
+  --optimize_batch 1

@@ -115,8 +115,6 @@ class Trainer(object):
         """
         Print statistics about the training.
         """
-        if self.n_iter % 5 != 0:
-            return
 
         s_iter = "%7i - " % self.n_iter
         s_stat = ' || '.join([
@@ -355,11 +353,12 @@ class Seq2SeqTrainer(Trainer):
         self.data = data
         self.params = params
 
+        seq2seq_model = self.seq2seq_model.module if self.params.multi_gpu else self.seq2seq_model
         # optimizers
         if not params.train_combiner_only:
-            trained_parameters = self.seq2seq_model.parameters()
+            trained_parameters = seq2seq_model.parameters()
         else:
-            trained_parameters = self.seq2seq_model.encoder.combiner.parameters()
+            trained_parameters = seq2seq_model.encoder.combiner.parameters()
 
         self.optimizers = {
             'seq2seq_model': self.get_optimizer_fp(trained_parameters),

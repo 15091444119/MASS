@@ -79,10 +79,11 @@ def build_metric_fn(metric):
         return mse
 
 
-def eval_alignment(combiner_seq2seq, dataset, lang2id, debug=False, metric="COS"):
+def eval_alignment(combiner_encoder, dataset, lang2id, debug=False, metric="COS"):
 
     metric_fn = build_metric_fn(metric)
 
+    combiner_encoder.eval()
 
     type2dis = {alignment_type: [] for alignment_type in AlignmentTypes}
     type2num = {alignment_type: 0 for alignment_type in AlignmentTypes}
@@ -91,11 +92,10 @@ def eval_alignment(combiner_seq2seq, dataset, lang2id, debug=False, metric="COS"
         src_inputs = get_encoder_inputs(src, src_len, lang2id[dataset.src_lang])
         tgt_inputs = get_encoder_inputs(tgt, tgt_len, lang2id[dataset.tgt_lang])
 
-        combiner_seq2seq.encoder.eval()
         with torch.no_grad():
             # forward
-            src_encoded = combiner_seq2seq.encoder.encode(src_inputs).encoded
-            tgt_encoded = combiner_seq2seq.encoder.encode(tgt_inputs).encoded
+            src_encoded = combiner_encoder.encode(src_inputs).encoded
+            tgt_encoded = combiner_encoder.encode(tgt_inputs).encoded
 
             # show alignments
             if debug:
@@ -168,7 +168,7 @@ def main():
         eos_index=train_params.eos_index
     )
 
-    type2ave_dis, type2var, type2num = eval_alignment(combiner_seq2seq=combiner_seq2seq, dataset=dataset, lang2id=train_params.lang2id, metric=eval_args.metric)
+    type2ave_dis, type2var, type2num = eval_alignment(combiner_encoder=combiner_seq2seq.encoder, dataset=dataset, lang2id=train_params.lang2id, metric=eval_args.metric)
 
     for alignment_type in AlignmentTypes:
         print("Type: {} Number: {} average dis: {} variance: {}".format(alignment_type, type2num[alignment_type], type2ave_dis[alignment_type], type2var[alignment_type]))

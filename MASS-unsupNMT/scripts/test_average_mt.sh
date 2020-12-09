@@ -6,10 +6,10 @@ MODEL_pre=/home/data_ti5_d/zhouzh/low-resource-mt/MASS/MASS-unsupNMT/dumped/cn-e
 export CUDA_VISIBLE_DEVICES="1"
 python train_combiner.py \
 	--exp_name test_avg_mt                             \
-	--encoder_type combiner \
+	--encoder_type "common" \
 	--data_path /home/data_ti5_d/zhouzh/low-resource-mt/XLM_MASS_preprocessed_data/pretrain/cn-split-sen-zh-en-pretrain \
 	--lgs 'zh-en'                                        \
-	--reload_model "$MODEL_pre,$MODEL_pre" \
+	--reload_model "$MODEL_ft,$MODEL_ft" \
 	--emb_dim 1024                                       \
 	--n_layers 6                                         \
 	--n_heads 8                                          \

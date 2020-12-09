@@ -253,6 +253,9 @@ def get_parser():
         parser.add_argument("--alignment_tgt_lang", required=True)
         parser.add_argument("--alignment_metric", required=True)
 
+    # multi
+    parser.add_argument("--optimize_batches", type=int, default=5)
+
     return parser
 
 
@@ -275,7 +278,7 @@ def main(params):
     # distributed
     if params.multi_gpu:
         logger.info("Using nn.parallel.DistributedDataParallel ...")
-        seq2seq_model = torch.nn.parallel.distributed.DistributedDataParallel(seq2seq_model, device_ids=[params.local_rank], output_device=params.local_rank)
+        seq2seq_model = torch.nn.parallel.distributed.DistributedDataParallel(seq2seq_model, device_ids=[params.local_rank], output_device=params.local_rank, find_unused_parameters=True)
 
     trainer = Seq2SeqTrainer(seq2seq_model, data, params)
     evaluator = Seq2SeqEvaluator(trainer=trainer, data=data, params=params)
@@ -291,6 +294,7 @@ def main(params):
     # summary writer
     writer = tensorboardX.SummaryWriter(os.path.join(params.dump_path, 'tensorboard'))
 
+    optimize_count = 0
     # training
     for _ in range(params.max_epoch):
 
@@ -301,9 +305,19 @@ def main(params):
 
         while trainer.n_sentences < trainer.epoch_size:
 
-            trainer.step()
-            trainer.optimize()
-            trainer.iter()
+            optimize_count += 1
+
+            if optimize_count % params.optimize_batches == 0:
+                trainer.step()
+                trainer.optimize()
+                trainer.iter()
+            else:
+                if params.multi_gpu:
+                    with seq2seq_model.no_sync():
+                        trainer.step()
+                else:
+                    trainer.step()
+
 
             # evaluate loss
             if params.eval_loss_sentences != -1 and trainer.n_sentences - last_eval_loss_sentences >= params.eval_loss_sentences:
