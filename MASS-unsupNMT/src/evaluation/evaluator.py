@@ -168,7 +168,8 @@ class Seq2SeqEvaluator(Evaluator):
         type2ave_dis, type2var, type2num = eval_alignment(
             combiner_seq2seq=self.seq2seq_model,
             dataset=self.alignment_dataset,
-            lang2id=self.params.lang2id
+            lang2id=self.params.lang2id,
+            metric=self.params.alignment_metric
         )
         for alignment_type in AlignmentTypes:
             score = type2ave_dis[alignment_type]

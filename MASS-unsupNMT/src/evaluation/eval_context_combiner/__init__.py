@@ -70,7 +70,20 @@ def show_alignments(src, tgt, dico, alignments):
         print("{}-{}".format(src_word, tgt_word))
 
 
-def eval_alignment(combiner_seq2seq, dataset, lang2id, debug=False):
+def build_metric_fn(metric):
+    if metric == "COS":
+        return torch.nn.CosineSimilarity(dim=-1)
+    elif metric == "MSE":
+        def mse(x, y):
+            return torch.nn.MSELoss(reduction="none")(x, y).mean(dim=-1)
+        return mse
+
+
+def eval_alignment(combiner_seq2seq, dataset, lang2id, debug=False, metric="COS"):
+
+    metric_fn = build_metric_fn(metric)
+
+
     type2dis = {alignment_type: [] for alignment_type in AlignmentTypes}
     type2num = {alignment_type: 0 for alignment_type in AlignmentTypes}
 
@@ -92,7 +105,7 @@ def eval_alignment(combiner_seq2seq, dataset, lang2id, debug=False):
             dim = src_encoded.size(-1)
             src_representations = src_encoded[alignments.src_batch_size_index, alignments.src_length_index + 1].view(-1, dim) # +1 because of bos
             tgt_representations = tgt_encoded[alignments.tgt_batch_size_index, alignments.tgt_length_index + 1].view(-1, dim)
-            sims = torch.nn.CosineSimilarity(dim=-1)(src_representations, tgt_representations)
+            sims = metric_fn(src_representations, tgt_representations)
 
             assert sims.size(0) == len(alignments.alignment_types)
             # update dis sum words sum
@@ -126,6 +139,7 @@ def main():
     parser.add_argument("--tgt_lang", type=str)
     parser.add_argument("--alignments", type=str)
     parser.add_argument("--batch_size", type=int, default=32)
+    parser.add_argument("--metric", choices=["MSE", "COS"], default="COS")
 
     # hack
     parser.add_argument("--average_hack", action="store_true", default=False)
@@ -154,7 +168,7 @@ def main():
         eos_index=train_params.eos_index
     )
 
-    type2ave_dis, type2var, type2num = eval_alignment(combiner_seq2seq=combiner_seq2seq, dataset=dataset, lang2id=train_params.lang2id)
+    type2ave_dis, type2var, type2num = eval_alignment(combiner_seq2seq=combiner_seq2seq, dataset=dataset, lang2id=train_params.lang2id, metric=eval_args.metric)
 
     for alignment_type in AlignmentTypes:
         print("Type: {} Number: {} average dis: {} variance: {}".format(alignment_type, type2num[alignment_type], type2ave_dis[alignment_type], type2var[alignment_type]))

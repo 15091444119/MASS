@@ -109,7 +109,7 @@ class MaskedLanguagePairDataset(FairseqDataset):
         }
         batch['net_input']['prev_output_tokens'] = prev_output_tokens
         return batch
-        
+
 
     def collater(self, samples):
         return self._collate(

@@ -11,5 +11,6 @@ python3 -m src.evaluation.eval_context_combiner.__init__ \
   --tgt_lang en \
   --alignments /home/data_ti5_d/zhouzh/low-resource-mt/alignment_data/zh-en/final_align.intersect.valid \
   --batch_size 32 \
-  --mass_checkpoint_for_hack $MODEL \
-  --average_hack
+  --metric "MSE"
+  #--mass_checkpoint_for_hack $MODEL \
+  #--average_hack

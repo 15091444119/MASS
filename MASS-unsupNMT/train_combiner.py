@@ -251,6 +251,7 @@ def get_parser():
         parser.add_argument("--alignment_path", required=True)
         parser.add_argument("--alignment_src_lang", required=True)
         parser.add_argument("--alignment_tgt_lang", required=True)
+        parser.add_argument("--alignment_metric", required=True)
 
     return parser
 
