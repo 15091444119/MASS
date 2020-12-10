@@ -311,6 +311,7 @@ def main(params):
                 trainer.step()
                 trainer.optimize()
                 trainer.iter()
+                optimize_count = 0
             else:
                 if params.multi_gpu:
                     with seq2seq_model.no_sync():

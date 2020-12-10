@@ -4,7 +4,7 @@ export NGPU=2
 #python train_combiner.py \
 export CUDA_VISIBLE_DEVICES="0,1"
 python -m torch.distributed.launch --nproc_per_node=$NGPU train_combiner.py \
-  --exp_name test_multi_gpu                             \
+  --exp_name multi_gpu_cos_0.3_combiner_only                             \
 	--encoder_type combiner \
 	--data_path /home/data_ti5_d/zhouzh/low-resource-mt/XLM_MASS_preprocessed_data/pretrain/cn-split-sen-zh-en-pretrain \
 	--lgs 'zh-en'                                        \
@@ -19,7 +19,7 @@ python -m torch.distributed.launch --nproc_per_node=$NGPU train_combiner.py \
   --combiner "last_token" \
   --splitter "ROB" \
 	--codes_path /home/data_ti5_d/zhouzh/low-resource-mt/XLM_MASS_preprocessed_data/pretrain/cn-split-sen-zh-en-pretrain/codes \
-  --combiner_loss "MSE" \
+  --combiner_loss "COS" \
   --re_encode_rate 0.3 \
 	--batch_size 64 \
 	--epoch_size 200000                                  \
@@ -40,6 +40,6 @@ python -m torch.distributed.launch --nproc_per_node=$NGPU train_combiner.py \
   --alignment_src_lang zh \
   --alignment_tgt_lang en \
   --alignment_path /home/data_ti5_d/zhouzh/low-resource-mt/alignment_data/zh-en/final_align.intersect.valid \
-  --alignment_metric "MSE" \
+  --alignment_metric "COS" \
   --train_combiner_only True \
   --optimize_batch 1
