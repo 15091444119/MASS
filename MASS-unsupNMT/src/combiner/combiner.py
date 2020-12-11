@@ -7,6 +7,14 @@ from src.evaluation.utils import Context2Sentence
 from src.utils import AttrDict
 from src.evaluation.utils import package_module
 from src.combiner.constant import COMBINE_END, COMBINE_FRONT
+from src.model.transformer import create_sinusoidal_embeddings, N_MAX_POSITIONS, Embedding
+
+
+def check_combiner_inputs(encoded, lengths, combiner_labels):
+    bs, slen, dim = encoded.size()
+    assert bs == lengths.size(0)
+    assert slen == lengths.max()
+    assert (bs, slen) == combiner_labels.size()
 
 
 class Combiner(nn.Module):
@@ -43,6 +51,7 @@ class AverageCombiner(Combiner):
         Args:
             encoded: [bs, len, dim]
             lengths: [bs]
+                lengths of encoded tokens(not final length)
             combine_labels: [bs, len]
             lang_id: int
                 language index
@@ -51,6 +60,7 @@ class AverageCombiner(Combiner):
             representation: [splitted word number, dim]
             trained_representation
         """
+        check_combiner_inputs(encoded, lengths, combine_labels)
         bs, max_len, dim = encoded.size()
         representations = []
         for i in range(bs):
@@ -95,9 +105,10 @@ class LastTokenCombiner(Combiner):
             trained_representation
 
         """
+        check_combiner_inputs(encoded, lengths, combine_labels)
+
         transformer_encoder = self.encoder[lang_id]
         encoded = encoded.transpose(0, 1)  #[len, bs, dim]
-        assert encoded.size(1) == lengths.size(0)
         max_length = encoded.size(0)
 
         subword_last_token_mask = self.word_end_mask(combine_labels).unsqueeze(-1) # [bs, len, 1]
@@ -107,8 +118,7 @@ class LastTokenCombiner(Combiner):
             return None
 
         # src_key_padding_mask set padding with true
-        padding_mask = (~(get_masks(slen=max_length, lengths=lengths, causal=False)[0])).to(
-            encoded.device)  # (batch_size, max_length)
+        padding_mask = get_torch_transformer_encoder_mask(lengths=lengths).to(encoded.device)
         outputs = transformer_encoder(src=encoded, src_key_padding_mask=padding_mask) # [len, bs, dim]
         outputs = outputs.transpose(0, 1) # [bs, len, dim]
 
@@ -122,11 +132,191 @@ class LastTokenCombiner(Combiner):
         return mask
 
 
+def get_torch_transformer_encoder_mask(lengths):
+    """
+    Args:
+        lengths: [bs]
+
+    Returns:
+
+    """
+    slen = lengths.max().item()
+    return (~(get_masks(slen=slen, lengths=lengths, causal=False)[0]))  # (batch_size, max_length)
+
+
+class WordInputCombiner(Combiner):
+
+
+    def __init__(self, params):
+        super().__init__()
+        self.bos_id = 0
+        self.eos_id = 1
+        self.pad_id = 2
+
+        self.position_embeddings = Embedding(N_MAX_POSITIONS, params.emb_dim)
+        if params.sinusoidal_embeddings:
+            create_sinusoidal_embeddings(N_MAX_POSITIONS, params.emb_dim, out=self.position_embeddings.weight)
+
+        self.special_embeddings = Embedding(3, params.emb_dim, padding_idx=self.pad_id)  # bos and eos embedding for word combiner
+
+        transformer_layer = nn.TransformerEncoderLayer(d_model=params.emb_dim, nhead=params.n_heads,
+                                                       dim_feedforward=params.emb_dim * 4)
+
+        self.another_context_encoders = torch.nn.ModuleList(
+            [nn.TransformerEncoder(transformer_layer, num_layers=params.n_combiner_layers) for _ in
+             params.lang2id.keys()]
+        )
+
+        self.word_combiners = torch.nn.ModuleList(
+            [nn.TransformerEncoder(transformer_layer, num_layers=params.n_combiner_layers) for _ in
+             params.lang2id.keys()]
+        )
+
+    def another_encode(self, encoded, lengths, lang_id):
+        """
+
+        Args:
+            encoded:  [bs, len, dim]
+            lengths: [dim]
+            lang_id:  int
+
+        Returns:
+
+        """
+        another_context_encoder = self.another_context_encoders[lang_id]
+        bs, slen, _ = encoded.size()
+        positions = torch.arange(slen).to(encoded.device).long().unsqueeze(-1)  # [len, 1]
+        encoded = encoded.transpose(0, 1)
+
+        positional_embeddings = self.position_embeddings(positions).expand_as(encoded)  # [len, bs, dim]
+
+        mask = get_torch_transformer_encoder_mask(lengths)  # [bs, len]
+
+        encoded = another_context_encoder(src=encoded + positional_embeddings, src_key_padding_mask=mask)  # [len, bs, dim]
+
+        return encoded, lengths
+
+    def word_encode(self, word_combiner_inputs, word_combiner_lengths, lang_id):
+        """
+
+        Args:
+            word_combiner_inputs: [len, bs, dim]
+            word_combiner_lengths: [len]
+            lang_id: int
+
+        Returns:
+
+        """
+        word_combiner = self.word_combiners[lang_id]
+        slen = word_combiner_lengths.max()
+        dim = word_combiner_inputs.size(-1)
+
+        positions = torch.arange(slen).to(word_combiner_inputs.device).long().unsqueeze(-1)  # [len, 1]
+        positional_embeddings = self.position_embeddings(positions).expand_as(word_combiner_inputs)  # [len, bs, dim]
+
+        word_combiner_mask = get_torch_transformer_encoder_mask(word_combiner_lengths)
+
+        representation = word_combiner(src=word_combiner_inputs + positional_embeddings, src_key_padding_mask=word_combiner_mask)[0].view(-1, dim)  # use bos index as word representation
+
+        return representation
+
+    def combine(self, encoded, lengths, combine_labels, lang_id):
+        if (combine_labels == COMBINE_END).long().sum() == 0:
+            return None
+
+        check_combiner_inputs(encoded, lengths, combine_labels)
+
+        encoded, lengths = self.another_encode(encoded, lengths, lang_id)
+        word_combiner_inputs, word_combiner_lengths = self.get_word_combiner_inputs(
+            encoded=encoded,
+            lengths=lengths,
+            combine_labels=combine_labels
+        )  # [len, bs, dim]
+
+        representation = self.word_encode(word_combiner_inputs, word_combiner_lengths, lang_id)
+
+        return representation
+
+    def get_word_combiner_inputs(self, encoded, lengths, combine_labels):
+        """
+
+        Args:
+            encoded: [len, bs, dim]
+            lengths:  [bs]
+            combine_labels: [bs, len]
+        Returns:
+        """
+        slen, bs, dim = encoded.size()
+
+        # calculate max word length
+        word_combiner_lengths = []
+        for batch_id in range(bs):
+            cur_word_length = 0
+            for token_id in range(slen):
+                if combine_labels[batch_id][token_id] == COMBINE_FRONT:
+                    cur_word_length += 1
+                elif combine_labels[batch_id][token_id] == COMBINE_END:
+                    cur_word_length += 1
+                    word_combiner_lengths.append(cur_word_length)
+                    cur_word_length = 0
+                else:
+                    cur_word_length = 0
+
+        word_combiner_lengths = torch.tensor(word_combiner_lengths).long().to(lengths.device) + 2  # 2 means bos and eos
+        max_word_length = word_combiner_lengths.max().item()
+
+        # word number
+        n_word = word_combiner_lengths.size(0)
+
+        # selecting_mask
+        to_token_mask = torch.BoolTensor(n_word, max_word_length).fill_(False).to(encoded.device)
+        from_token_mask = torch.BoolTensor(bs, slen).fill_(False).to(encoded.device)
+
+        eos_mask = torch.BoolTensor(n_word, max_word_length).fill_(False).to(encoded.device)
+
+        word_id = 0
+        for batch_id in range(bs):
+            cur_word_length = 0
+            for token_id in range(slen):
+                if combine_labels[batch_id][token_id] == COMBINE_FRONT:
+                    to_token_mask[word_id][1 + cur_word_length] = True
+                    from_token_mask[batch_id][token_id] = True
+
+                    cur_word_length += 1
+                elif combine_labels[batch_id][token_id] == COMBINE_END:
+                    to_token_mask[word_id][1 + cur_word_length] = True
+                    eos_mask[word_id][2 + cur_word_length] = True
+                    from_token_mask[batch_id][token_id] = True
+
+                    cur_word_length = 0
+
+                    word_id += 1
+                else:
+                    cur_word_length = 0
+
+        # create input embeddings
+        word_combiner_inputs = torch.FloatTensor(n_word, max_word_length, dim).to(encoded.device).fill_(0.0)
+
+        # bos
+        word_combiner_inputs[:, 0] = self.special_embeddings(torch.tensor(self.bos_id).long().to(encoded.device))
+
+        # eos
+        word_combiner_inputs[eos_mask.unsqueeze(-1).expand_as(word_combiner_inputs)] = self.special_embeddings(torch.tensor([self.eos_id] * n_word).long().to(encoded.device)).view(-1)
+
+        encoded = encoded.transpose(0, 1) #[bs, len, dim]
+        # words
+        word_combiner_inputs[to_token_mask.unsqueeze(-1).expand_as(word_combiner_inputs)] = encoded[from_token_mask.unsqueeze(-1).expand_as(encoded)]
+
+        return word_combiner_inputs.transpose(0, 1), word_combiner_lengths
+
+
 def build_combiner(params):
     if params.combiner == "last_token":
         return LastTokenCombiner(params)
     elif params.combiner == "average":
         return AverageCombiner()
+    elif params.combiner == "word_input":
+        return WordInputCombiner(params)
     else:
         raise Exception("No combiner named: {}".format(params.combiner))
 

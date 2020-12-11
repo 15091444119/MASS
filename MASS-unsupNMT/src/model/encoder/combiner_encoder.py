@@ -41,7 +41,7 @@ class CombinerEncoder(BaseEncoder):
 
         combined_rep = self.combiner.combine(
             encoded=encoded,
-            lengths=combine_tool.final_length,
+            lengths=explicit_batch.len3,
             combine_labels=combine_tool.combine_labels,
             lang_id=encoder_inputs.lang_id
         )
@@ -88,7 +88,7 @@ class CombinerEncoder(BaseEncoder):
 
         combined_rep = self.combiner.combine(
             encoded=encoded,
-            lengths=combine_tool.final_length,
+            lengths=encoder_inputs.len1,
             combine_labels=combine_tool.combine_labels,
             lang_id=encoder_inputs.lang_id
         )
