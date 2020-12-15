@@ -29,6 +29,16 @@ from src.model.transformer import TransformerModel
 from src.fp16 import network_to_half
 
 
+def package_module(modules):
+    state_dict = OrderedDict()
+    for k, v in modules.items():
+        if k.startswith('module.'):
+            state_dict[k[7:]] = v
+        else:
+            state_dict[k] = v
+    return state_dict
+
+
 def get_parser():
     """
     Generate a parameters parser.
@@ -80,8 +90,8 @@ def main(params):
     dico = Dictionary(reloaded['dico_id2word'], reloaded['dico_word2id'], reloaded['dico_counts'])
     encoder = TransformerModel(model_params, dico, is_encoder=True, with_output=True).cuda().eval()
     decoder = TransformerModel(model_params, dico, is_encoder=False, with_output=True).cuda().eval()
-    encoder.load_state_dict(reloaded['encoder'])
-    decoder.load_state_dict(reloaded['decoder'])
+    encoder.load_state_dict(package_module(reloaded['encoder']))
+    decoder.load_state_dict(package_module(reloaded['decoder']))
     params.src_id = model_params.lang2id[params.src_lang]
     params.tgt_id = model_params.lang2id[params.tgt_lang]
 
