@@ -142,6 +142,24 @@ class Evaluator(object):
                 restore_segmentation(lang2_path)
 
 
+def evaluate_emb_combine(embeddings, emb_combiner, emb_combine_dataset, metric="cos"):
+    """
+    Evaluate combine of subwords, distance and neighbor search accuracy are returned
+    Args:
+        embeddings: torch.tensor
+        emb_combiner:
+        emb_combine_dataset:
+    Returns:
+        tuple:
+            average distance: float
+            top1_acc: float
+            top5_acc: float
+            top10_acc: float
+    """
+
+
+
+
 
 class Seq2SeqEvaluator(Evaluator):
 
@@ -151,6 +169,7 @@ class Seq2SeqEvaluator(Evaluator):
         """
         super().__init__(trainer, data, params)
         self.seq2seq_model = trainer.seq2seq_model
+
         if params.eval_alignment:
             self.alignment_dataset = AlignmentDataset(
                 src_bped_path=params.alignment_src_bped_path,
@@ -162,6 +181,11 @@ class Seq2SeqEvaluator(Evaluator):
                 tgt_lang=params.alignment_tgt_lang,
                 pad_index=params.pad_index,
                 eos_index=params.eos_index
+            )
+
+        if params.eval_emb_combine:
+            self.emb_combine_dataset = EmbCombineDataset(
+                words=params.eval_emb_combine_data_path
             )
 
     def evaluate_alignment(self, scores):
@@ -193,7 +217,12 @@ class Seq2SeqEvaluator(Evaluator):
         if self.params.eval_alignment:
             self.evaluate_alignment(scores)
 
+        if self.params.eval_emb_combine:
+            evaluate_emb_combine(scores, self.seq2seq_model, self.emb_combine_dataset)
+
         return scores
+
+
 
     def evaluate_explicit_mass(self, scores, data_set, lang):
         with torch.no_grad():
