@@ -7,6 +7,7 @@ import argparse
 import random
 import os
 
+
 def parse():
     parser = argparse.ArgumentParser()
     parser.add_argument("--vocab")
@@ -30,7 +31,7 @@ def learn_token2count(vocab, file_path):
             for token in line:
                 if token not in vocab:
                     continue
-                if token in count_dict:
+                if token not in count_dict:
                     count_dict[token] = 1
                 else:
                     count_dict[token] += 1
@@ -60,7 +61,7 @@ def generate_src_tgt_vocab(vocab, src_token2count, tgt_token2count):
 def write_vocab(vocab, path):
     with open(path, 'w') as f:
         for word, count in vocab.items():
-            f.writelines("{} {}\n".format(word, vocab))
+            f.writelines("{} {}\n".format(word, count))
 
 
 def write_train_dev_test(train, dev, test, prefix):
@@ -89,8 +90,9 @@ def read_vocab(vocab_path):
 
     with open(vocab_path, 'r') as f:
         for line in f:
-            token, _ = line.rstrip().split()
+            token, _ = line.rstrip().split(' ')
             vocab.add(token)
+
     return vocab
 
 
@@ -115,14 +117,14 @@ def main(args):
         train=src_train,
         dev=src_dev,
         test=src_test,
-        prefix=os.path.join(args.dest_dir, args.src)
+        prefix=os.path.join(args.dest_dir, args.src_lang)
     )
 
     write_train_dev_test(
         train=tgt_train,
         dev=tgt_dev,
         test=tgt_test,
-        prefix=os.path.join(args.dest_dir, args.tgt)
+        prefix=os.path.join(args.dest_dir, args.tgt_lang)
     )
 
 
