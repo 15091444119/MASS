@@ -1,5 +1,6 @@
 import torch
 import numpy as np
+import pdb
 from src.data.emb_combiner_data.emb_combiner_dataset import EmbCombinerDataset
 from src.data.emb_combiner_data.emb_combiner_dataset import DataLoader
 
@@ -37,7 +38,6 @@ class EmbCombinerCollateFn(object):
         )  # use eos as bos
 
         batch_whole_word_id = torch.LongTensor(batch_whole_word_id)
-
         return batch_splitted_word_ids.cuda(), splitted_words_lengths.cuda(), batch_whole_word_id.cuda()
 
 
@@ -77,7 +77,7 @@ def batch_sentences(sentences, pad_index, bos_index, eos_index, batch_first=Fals
     sent[0] = bos_index
     for i, s in enumerate(sentences):
         if lengths[i] > 2:  # if sentence not empty
-            sent[1:lengths[i] - 1, i].copy_(torch.from_numpy(s.astype(np.int64)))
+            sent[1:lengths[i] - 1, i].copy_(torch.LongTensor(s))
         sent[lengths[i] - 1, i] = eos_index
 
     if batch_first:

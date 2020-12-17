@@ -96,6 +96,16 @@ def read_vocab(vocab_path):
     return vocab
 
 
+def filter_not_splittable_token(vocab):
+    filtered_vocab = {}
+
+    for token, count in vocab.items():
+        if len(token) > 1 and "@@" not in token:
+            filtered_vocab[token] = count
+
+    return filtered_vocab
+
+
 def main(args):
 
     vocab = read_vocab(args.vocab)
@@ -108,6 +118,10 @@ def main(args):
         src_token2count=src_token2count,
         tgt_token2count=tgt_token2count
     )
+
+    src_vocab = filter_not_splittable_token(src_vocab)
+
+    tgt_vocab = filter_not_splittable_token(tgt_vocab)
 
     src_train, src_dev, src_test = split_train_dev_test(src_vocab)
 

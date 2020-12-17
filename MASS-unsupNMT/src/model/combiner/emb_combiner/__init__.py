@@ -1,4 +1,4 @@
-from .emb_combiner import LinearEmbCombiner, GRUEmbCombiner, TransformerCombiner
+from .emb_combiner import LinearEmbCombiner, GRUEmbCombiner, TransformerCombiner, WordTokenAverage
 
 
 def build_emb_combiner_model(emb_dim, params):
@@ -18,9 +18,11 @@ def build_emb_combiner_model(emb_dim, params):
         combiner = GRUEmbCombiner(emb_dim=emb_dim, n_layer=params.n_combiner_layer, context_extractor=params.context_extractor_type)
     elif params.combiner_type == "transformer":
         combiner = TransformerCombiner(emb_dim=emb_dim, n_layer=params.n_combiner_layer, n_head=params.n_head, context_extractor=params.context_extractor_type)
+    elif params.combiner_type == "average":
+        combiner = WordTokenAverage()
     else:
         raise NotImplementedError
 
-    return combiner
+    return combiner.cuda()
 
 

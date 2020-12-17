@@ -18,7 +18,7 @@ class TransformerEncoder(nn.Module):
 
         self.encoder = nn.TransformerEncoder(transformer_layer, num_layers=n_layer)
         self.position_embeddings = Embedding(N_MAX_POSITIONS, emb_dim)
-        create_sinusoidal_embeddings(N_MAX_POSITIONS, emb_dim, out=self.position_embeddings.weight)
+        #create_sinusoidal_embeddings(N_MAX_POSITIONS, emb_dim, out=self.position_embeddings.weight)
 
     def forward(self, embeddings, lengths):
         """

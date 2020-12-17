@@ -26,6 +26,18 @@ class BaseEmbCombiner(torch.nn.Module):
         raise NotImplementedError
 
 
+class WordTokenAverage(BaseEmbCombiner):
+
+    def __init__(self):
+        super().__init__()
+        self.context2rep = Context2Sentence("word_token_average")
+        self.linear = nn.Linear(2, 2)  # thie parametar is not used
+
+    def forward(self, embeddings, lengths):
+        rep = self.context2rep(embeddings, lengths)
+        return rep
+
+
 class LinearEmbCombiner(BaseEmbCombiner):
     """
     context2rep, then linear

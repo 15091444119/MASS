@@ -180,7 +180,7 @@ class EmbCombinerTrainer(EmbCombinerBaseTrainer):
         self.loss_fn = loss_fn
 
         self.optimizers = {
-            'combiner': self.get_optimizer_fp(combiner.parameters()),
+            'combiner': self.get_optimizer_fp(self.combiner.parameters()),
         }
 
         self.init_stats()
@@ -209,7 +209,9 @@ class EmbCombinerTrainer(EmbCombinerBaseTrainer):
         batch = self.get_batch()
         batch_splitted_word_ids, splitted_words_lengths, batch_whole_word_id = batch
 
-        combiner_rep = self.combiner(batch_splitted_word_ids, splitted_words_lengths)
+        batch_splitted_word_embeddings = self.emebddings(batch_splitted_word_ids).detach()
+
+        combiner_rep = self.combiner(batch_splitted_word_embeddings, splitted_words_lengths)
 
         original_rep = self.emebddings(batch_whole_word_id).detach()  # don't update embeddings
 
@@ -219,7 +221,7 @@ class EmbCombinerTrainer(EmbCombinerBaseTrainer):
         self.stats["processed_w"] += batch_whole_word_id.size(0)
         self.n_sentences += batch_whole_word_id.size(0)
 
-        self.backward(loss, self.combiner)
+        self.backward(loss, "combiner")
         self.optimize()
 
     def init_stats(self):

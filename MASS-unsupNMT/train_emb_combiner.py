@@ -27,19 +27,19 @@ from src.trainer.emb_combiner_trainer import EmbCombinerTrainer
 def parse_args():
     parser = argparse.ArgumentParser("parameters for emb combiner")
 
-    parser.add_argument("--dump_path")
-    parser.add_argument("--exp_id")
-    parser.add_argument("--exp_name")
+    parser.add_argument("--dump_path", type=str, default="./dumped")
+    parser.add_argument("--exp_id", type=str, default="")
+    parser.add_argument("--exp_name", type=str,default="")
 
     # only eval
     parser.add_argument("--eval_only", type=bool_flag)
 
     # train params
-    parser.add_argument("--eval_loss_samples", type=int)
+    parser.add_argument("--eval_loss_sentences", type=int)
     parser.add_argument("--max_epoch", type=int)
     parser.add_argument("--epoch_size", type=int)
-    parser.add_argument("--stopping_criterion", type=str)
-    parser.add_argument("--validation_metrics", type=str)
+    parser.add_argument("--stopping_criterion", type=str, default="")
+    parser.add_argument("--validation_metrics", type=str, default="")
     parser.add_argument("--optimizer", type=str)
     parser.add_argument("--clip_grad_norm", type=float, default=5)
 
@@ -57,40 +57,46 @@ def parse_args():
     parser.add_argument("--codes_path", type=str)
 
     # combiner parameters
-    parser.add_argument("--combiner_type", type=int)
+    parser.add_argument("--combiner_type", type=str)
     parser.add_argument("--context_extractor_type", type=str)
 
-    if parser.parse_known_args()[0].combiner_type in ["GRU", "TRANSFORMER"]:
+    if parser.parse_known_args()[0].combiner_type in ["gru", "transformer"]:
         parser.add_argument("--n_combiner_layer", type=int)
 
-    if parser.parse_known_args()[0].combiner_type in ["TRANSFORMER"]:
+    if parser.parse_known_args()[0].combiner_type in ["transformer"]:
         parser.add_argument("--n_head", type=int)
+
+    # loss
+    parser.add_argument("--loss", type=str)
 
     args = parser.parse_args()
 
     return args
 
 
-def build_data(args, dico):
+def build_data(args, dico, splitter):
     train_dataloader = build_emb_combiner_dataloader(
         whole_word_path=args.train,
         dico=dico,
         batch_size=args.batch_size,
-        shuffle=True
+        shuffle=True,
+        splitter=splitter
     )
 
     dev_dataloader = build_emb_combiner_dataloader(
         whole_word_path=args.dev,
         dico=dico,
         batch_size=args.batch_size,
-        shuffle=True
+        shuffle=False,
+        splitter=splitter
     )
 
     test_dataloader = build_emb_combiner_dataloader(
         whole_word_path=args.test,
         dico=dico,
         batch_size=args.batch_size,
-        shuffle=True
+        shuffle=False,
+        splitter=splitter
     )
 
     data = {
@@ -110,7 +116,8 @@ def main():
 
     logger = initialize_exp(args)
 
-    dico, mass_params, encoder, decoder = load_mass_model(args)
+
+    dico, mass_params, encoder, decoder = load_mass_model(args.mass_model)
 
     emb_dim = mass_params.emb_dim
 
@@ -122,7 +129,7 @@ def main():
         word_vocab=dico.word2id.keys()
     )
 
-    data = build_data(args=args, dico=dico)
+    data = build_data(args=args, dico=dico, splitter=splitter)
 
     model = build_emb_combiner_model(emb_dim=emb_dim, params=args)
 
@@ -130,9 +137,9 @@ def main():
 
     trainer = EmbCombinerTrainer(data=data, combiner=model, params=args, embeddings=embeddings, loss_fn=loss)
 
-
     evaluator = EmbCombinerEvaluator(data=data, params=args, combiner=model, embeddings=embeddings, loss_fn=loss)
 
+    logger.info("{}\n{}\n{}\n{}\n{}\n{}\n{}\n".format(args, splitter, data, model, loss, trainer, evaluator))
 
     # evaluation
     if args.eval_only:
@@ -184,3 +191,7 @@ def main():
         # end of epoch
         trainer.save_best_model(scores)
         trainer.end_epoch(scores)
+
+
+if __name__ == "__main__":
+    main()

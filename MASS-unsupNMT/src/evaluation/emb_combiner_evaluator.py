@@ -1,5 +1,6 @@
 from .bli import BLI
 import torch
+import pdb
 
 class EmbCombinerEvaluator(object):
 
@@ -16,6 +17,7 @@ class EmbCombinerEvaluator(object):
         scores["epoch"] = epoch
         self.eval_loss(scores)
         self.eval_neighbor_search(scores)
+        return scores
 
     def eval_loss(self, scores):
         self.combiner.eval()
@@ -28,9 +30,11 @@ class EmbCombinerEvaluator(object):
                 for batch in self.data[part]:
                     batch_splitted_word_ids, splitted_words_lengths, batch_whole_word_id = batch
 
-                    combiner_rep = self.combiner(batch_splitted_word_ids, splitted_words_lengths)
+                    batch_splitted_word_embeddings = self.embeddings(batch_splitted_word_ids).detach()
 
-                    original_rep = self.emebddings(batch_whole_word_id).detach()  # don't update embeddings
+                    combiner_rep = self.combiner(batch_splitted_word_embeddings, splitted_words_lengths)
+
+                    original_rep = self.embeddings(batch_whole_word_id).detach()  # don't update embeddings
 
                     loss = self.loss_fn(combiner_rep, original_rep)
 
@@ -39,7 +43,7 @@ class EmbCombinerEvaluator(object):
 
                 scores["{}-combiner-loss".format(part)] = loss_sum / n_words
 
-    def eval_neighbor_search(self, scores, data):
+    def eval_neighbor_search(self, scores):
         self.combiner.eval()
         self.embeddings.eval()
         with torch.no_grad():
@@ -51,13 +55,15 @@ class EmbCombinerEvaluator(object):
                 for batch in self.data[part]:
                     batch_splitted_word_ids, splitted_words_lengths, batch_whole_word_id = batch
 
-                    combiner_rep = self.combiner(batch_splitted_word_ids, splitted_words_lengths)
+                    batch_splitted_word_embeddings = self.embeddings(batch_splitted_word_ids).detach()
+                    combiner_rep = self.combiner(batch_splitted_word_embeddings, splitted_words_lengths)
                     src_embeddings.append(combiner_rep)
-                    src_ids.extend(list(batch_whole_word_id.numpy()))
+                    src_ids.extend(list(batch_whole_word_id.cpu().numpy()))
 
                 src_embeddings = torch.cat(src_embeddings, dim=0)
                 src_id2word = build_new_id2word(src_ids, self.data["dico"])
                 src_word2id = {word: id for id, word in src_id2word.items()}
+                dic = {i: [src_ids[i]] for i in range(len(src_id2word))}
 
                 bli_scores = self.bli.eval(
                     src_embeddings=src_embeddings,
@@ -65,11 +71,12 @@ class EmbCombinerEvaluator(object):
                     src_word2id=src_word2id,
                     tgt_embeddings=self.embeddings.weight.detach(),
                     tgt_id2word=self.data["dico"].id2word,
-                    tgt_word2id=self.data["dico"].word2id
+                    tgt_word2id=self.data["dico"].word2id,
+                    dic=dic
                 )
 
                 for key, value in bli_scores.items():
-                    scores["NeighborSearchAcc-{}-{}".format(data, key)] = value
+                    scores["NeighborSearchAcc-{}-{}".format(part, key)] = value
 
 
 def build_new_id2word(src_ids, dico):
