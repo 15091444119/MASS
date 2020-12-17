@@ -1,7 +1,7 @@
 import torch
 import numpy as np
-from .emb_combiner_dataset import EmbCombinerDataset
-from .emb_combiner_dataset import DataLoader
+from src.data.emb_combiner_data.emb_combiner_dataset import EmbCombinerDataset
+from src.data.emb_combiner_data.emb_combiner_dataset import DataLoader
 
 
 class EmbCombinerCollateFn(object):
@@ -32,7 +32,8 @@ class EmbCombinerCollateFn(object):
             sentences=batch_splitted_word_ids,
             bos_index=self.dico.eos_index,
             eos_index=self.dico.eos_index,
-            pad_index=self.dico.pad_index
+            pad_index=self.dico.pad_index,
+            batch_first=True
         )  # use eos as bos
 
         batch_whole_word_id = torch.LongTensor(batch_whole_word_id)

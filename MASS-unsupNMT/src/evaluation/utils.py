@@ -38,8 +38,8 @@ def load_mass_model(model_path):
 
     # build dictionary / build encoder / build decoder / reload weights
     dico = Dictionary(reloaded['dico_id2word'], reloaded['dico_word2id'], reloaded['dico_counts'])
-    encoder = TransformerModel(model_params, dico, is_encoder=True, with_output=True).cuda().eval()
-    decoder = TransformerModel(model_params, dico, is_encoder=False, with_output=True).cuda().eval()
+    encoder = TransformerModel(model_params, dico, is_encoder=True, with_output=True).cuda()
+    decoder = TransformerModel(model_params, dico, is_encoder=False, with_output=True).cuda()
 
     encoder.load_state_dict(package_module(reloaded['encoder']))
     decoder.load_state_dict(package_module(reloaded['decoder']))

@@ -124,10 +124,10 @@ def build_model(params, dico):
     return seq2seq_model.cuda()
 
 
-def build_loss_function(params):
-    if params.combiner_loss == "MSE":
+def build_loss_function(loss):
+    if loss == "MSE":
         return torch.nn.MSELoss()
-    elif params.combiner_loss == "COS":
+    elif loss == "COS":
         def cos_loss(x, y):
             return -torch.nn.CosineSimilarity(dim=1)(x, y).mean()
         return cos_loss
@@ -137,7 +137,7 @@ def build_loss_function(params):
 
 def build_combiner_encoder(encoder, params, dico):
     loss_fn = build_loss_function(params)
-    splitter = WholeWordSplitter.build_splitter(params, word_vocab=dico.word2id.keys())
+    splitter = WholeWordSplitter.build_splitter(splitter=params.splitter, codes_path=params.codes_path, word_vocab=dico.word2id.keys())
     combiner = build_combiner(params)
 
     combiner_encoder = CombinerEncoder(

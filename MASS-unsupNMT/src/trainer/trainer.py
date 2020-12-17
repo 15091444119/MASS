@@ -24,8 +24,8 @@ from apex.fp16_utils import FP16_Optimizer
 from src.model.seq2seq import BaseSeq2Seq, DecoderInputs
 from src.model.encoder import EncoderInputs
 
-from .utils import get_optimizer, to_cuda, concat_batches
-from .utils import parse_lambda_config, update_lambdas
+from src.utils import get_optimizer, to_cuda, concat_batches
+from src.utils import parse_lambda_config, update_lambdas
 
 logger = getLogger()
 
@@ -346,6 +346,7 @@ class Seq2SeqTrainer(Trainer):
 
     def __init__(self, seq2seq_model: BaseSeq2Seq, data, params):
 
+        super().__init__(data, params)
         self.MODEL_NAMES = ['seq2seq_model']
 
         # model / data / params
@@ -364,7 +365,6 @@ class Seq2SeqTrainer(Trainer):
             'seq2seq_model': self.get_optimizer_fp(trained_parameters),
         }
 
-        super().__init__(data, params)
         self.init_stats()
 
     def optimize(self):

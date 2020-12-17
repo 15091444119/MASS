@@ -10,16 +10,15 @@
 
 import json
 import argparse
-import tensorboardX
-import torch
-import os
 
 from src.slurm import init_signal_handler, init_distributed_mode
-from src.data.loader import check_data_params, load_data, check_eval_params
-from src.utils import bool_flag, initialize_exp
+from src.data.loader import check_data_params, load_data
+from src.utils import bool_flag, initialize_exp, set_sampling_probs, shuf_order
 from src.model import check_model_params, build_model
-from src.trainer import  Seq2SeqTrainer
+from src.trainer.trainer import Seq2SeqTrainer
 from src.evaluation.evaluator import Seq2SeqEvaluator
+
+import apex
 
 
 def get_parser():
@@ -44,7 +43,7 @@ def get_parser():
                         help="Run model with float16")
 
     # only use an encoder (use a specific decoder for machine translation)
-    parser.add_argument("--encoder_only", type=bool_flag, default=False,
+    parser.add_argument("--encoder_only", type=bool_flag, default=True,
                         help="Only use an encoder")
     parser.add_argument("--english_only", type=bool_flag, default=False,
                         help="Only use english domain (equal to only use one language)")
@@ -89,7 +88,16 @@ def get_parser():
                         help="Fraction of words for which we need to make a prediction")
     parser.add_argument("--sample_alpha", type=float, default=0,
                         help="Exponent for transforming word counts to probabilities (~word2vec sampling)")
+    parser.add_argument("--word_mask_keep_rand", type=str, default="0.8,0.1,0.1",
+                        help="Fraction of words to mask out / keep / randomize, among the words to predict")
 
+    # input sentence noise
+    parser.add_argument("--word_shuffle", type=float, default=0,
+                        help="Randomly shuffle input words (0 to disable)")
+    parser.add_argument("--word_dropout", type=float, default=0,
+                        help="Randomly dropout input words (0 to disable)")
+    parser.add_argument("--word_blank", type=float, default=0,
+                        help="Randomly blank input words (0 to disable)")
     parser.add_argument("--word_mass", type=float, default=0,
                         help="Randomly mask input words (0 to disable)")
 
@@ -136,7 +144,7 @@ def get_parser():
     parser.add_argument("--stopping_criterion", type=str, default="",
                         help="Stopping criterion, and number of non-increase before stopping the experiment")
     parser.add_argument("--validation_metrics", type=str, default="",
-                        help="Validation metrics, if start with _, the smaller the better")
+                        help="Validation metrics")
 
     # training coefficients
     parser.add_argument("--lambda_mlm", type=str, default="1",
@@ -157,8 +165,6 @@ def get_parser():
                         help="MASS coefficient")
     parser.add_argument("--lambda_span", type=str, default="10000",
                         help="Span coefficient")
-    parser.add_argument("--lambda_explicit_mass", type=str, default="1",
-                        help="MASS and combine coefficient")
 
     # training steps
     parser.add_argument("--clm_steps", type=str, default="",
@@ -177,7 +183,6 @@ def get_parser():
                         help="Back-translation steps")
     parser.add_argument("--pc_steps", type=str, default="",
                         help="Parallel classification steps")
-    parser.add_argument("--explicit_mass_steps", type=str, default="")
 
     # reload a pretrained model
     parser.add_argument("--reload_model", type=str, default="",
@@ -213,42 +218,12 @@ def get_parser():
     parser.add_argument("--master_port", type=int, default=-1,
                         help="Master port (for multi-node SLURM jobs)")
 
-    # encoder mode
-    parser.add_argument("--encoder_type", type=str, choices=["common", "combiner"])
-
-    # combiner
-    parser.add_argument("--combiner", type=str)
-    parser.add_argument("--splitter", type=str, choices=["BPE", "CHAR", "ROB"], help="use random bpe or character to split word")
-    parser.add_argument("--codes_path", type=str)
-    parser.add_argument("--n_combiner_layers", type=int, default=4)
-    parser.add_argument("--combiner_loss", type=str, default="MSE", choices=["MSE", "COS", "BNC"])
-    parser.add_argument("--re_encode_rate", type=float, default=0.0)
-    parser.add_argument("--train_combiner_only", type=bool_flag, default=False)
-
-
-    # evaluation params
-    parser.add_argument("--eval_loss_sentences", type=int, default=-1)
-    parser.add_argument("--eval_mt_steps", type=str, default="")
-    parser.add_argument("--eval_mass_steps", type=str, default="")
-    parser.add_argument("--eval_explicit_mass_steps", type=str, default="")
-
-    # evaluate alignment params
-    parser.add_argument("--eval_alignment", type=bool_flag, default=False)
-    if parser.parse_known_args()[0].eval_alignment:
-        parser.add_argument("--alignment_src_bped_path", required=True)
-        parser.add_argument("--alignment_tgt_bped_path", required=True)
-        parser.add_argument("--alignment_path", required=True)
-        parser.add_argument("--alignment_src_lang", required=True)
-        parser.add_argument("--alignment_tgt_lang", required=True)
-        parser.add_argument("--alignment_metric", required=True)
-
-    # multi
-    parser.add_argument("--optimize_batches", type=int, default=5)
 
     return parser
 
 
 def main(params):
+
     # initialize the multi-GPU / multi-node training
     init_distributed_mode(params)
 
@@ -261,79 +236,82 @@ def main(params):
     # load data
     data = load_data(params)
 
+
     # build model
     seq2seq_model = build_model(params, data['dico'])
 
     # distributed
     if params.multi_gpu:
         logger.info("Using nn.parallel.DistributedDataParallel ...")
-        seq2seq_model = torch.nn.parallel.distributed.DistributedDataParallel(seq2seq_model, device_ids=[params.local_rank], output_device=params.local_rank, find_unused_parameters=True)
+        seq2seq_model = apex.parallel.DistributedDataParallel(seq2seq_model, delay_allreduce=True)
 
     trainer = Seq2SeqTrainer(seq2seq_model, data, params)
     evaluator = Seq2SeqEvaluator(trainer=trainer, data=data, params=params)
 
     # evaluation
     if params.eval_only:
-        scores = evaluator.run_all_evals(trainer.epoch)
+        scores = evaluator.run_all_evals(trainer)
         for k, v in scores.items():
             logger.info("%s -> %.6f" % (k, v))
         logger.info("__log__:%s" % json.dumps(scores))
         exit()
 
-    # summary writer
-    writer = tensorboardX.SummaryWriter(os.path.join(params.dump_path, 'tensorboard'))
+    # set sampling probabilities for training
+    set_sampling_probs(data, params)
 
-    optimize_count = 0
-    # training
+    # language model training
     for _ in range(params.max_epoch):
 
         logger.info("============ Starting epoch %i ... ============" % trainer.epoch)
 
         trainer.n_sentences = 0
-        last_eval_loss_sentences = 0
 
         while trainer.n_sentences < trainer.epoch_size:
 
-            optimize_count += 1
+            # CLM steps
+            for lang1, lang2 in shuf_order(params.clm_steps, params):
+                trainer.clm_step(lang1, lang2, params.lambda_clm)
 
-            if optimize_count % params.optimize_batches == 0:
-                trainer.step()
-                trainer.optimize()
-                trainer.iter()
-                optimize_count = 0
-            else:
-                if params.multi_gpu:
-                    with seq2seq_model.no_sync():
-                        trainer.step()
-                else:
-                    trainer.step()
+            # MLM steps (also includes TLM if lang2 is not None)
+            for lang1, lang2 in shuf_order(params.mlm_steps, params):
+                trainer.mlm_step(lang1, lang2, params.lambda_mlm)
 
+            # parallel classification steps
+            for lang1, lang2 in shuf_order(params.pc_steps, params):
+                trainer.pc_step(lang1, lang2, params.lambda_pc)
 
-            # evaluate loss
-            if params.eval_loss_sentences != -1 and trainer.n_sentences - last_eval_loss_sentences >= params.eval_loss_sentences:
-                scores = {}
-                evaluator.eval_loss(scores)
-                for k, v in scores.items():
-                    logger.info("%s -> %.6f" % (k, v))
-                if params.is_master:
-                    logger.info("__log__:%s" % json.dumps(scores))
-                last_eval_loss_sentences = trainer.n_sentences
+            # denoising auto-encoder steps
+            for lang in shuf_order(params.ae_steps):
+                trainer.mt_step(lang, lang, params.lambda_ae)
 
+            # mass prediction steps
+            for lang in shuf_order(params.mass_steps):
+                trainer.mass_step(lang, params.lambda_mass)
+
+            # machine translation steps
+            for lang1, lang2 in shuf_order(params.mt_steps, params):
+                trainer.mt_step(lang1, lang2, params.lambda_mt)
+
+            # back-translation steps
+            for lang1, lang2, lang3 in shuf_order(params.bt_steps):
+                trainer.bt_step(lang1, lang2, lang3, params.lambda_bt)
+            
+            # back-parallel steps
+            for lang1, lang2 in shuf_order(params.bmt_steps, params):
+                trainer.bmt_step(lang1, lang2, params.lambda_bmt)
+
+            trainer.iter()
 
         logger.info("============ End of epoch %i ============" % trainer.epoch)
 
         # evaluate perplexity
-        scores = evaluator.run_all_evals(trainer.epoch)
+        scores = evaluator.run_all_evals(trainer)
 
         # print / JSON log
         for k, v in scores.items():
             logger.info("%s -> %.6f" % (k, v))
         if params.is_master:
             logger.info("__log__:%s" % json.dumps(scores))
-
-        # save log in tensorboard
-        for k, v in scores.items():
-            writer.add_scalar(k, v, trainer.epoch)
 
         # end of epoch
         trainer.save_best_model(scores)
@@ -342,14 +320,13 @@ def main(params):
 
 
 if __name__ == '__main__':
+
     # generate parser / parse parameters
     parser = get_parser()
     params = parser.parse_args()
 
     # check parameters
     check_data_params(params)
-    check_eval_params(params)
-
     check_model_params(params)
 
     # run experiment

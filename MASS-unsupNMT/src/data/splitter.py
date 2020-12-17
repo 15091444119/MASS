@@ -129,13 +129,13 @@ class WholeWordSplitter(object):
         self.word_vocab = word_vocab  # can't split into unk
 
     @classmethod
-    def build_splitter(cls, params, word_vocab):
-        if params.splitter == "BPE":
-            return RandomBpeSplitter.from_code_path(params.codes_path, word_vocab)
-        elif params.splitter == "ROB":
-            return ReduceOneBpeSplitter.from_code_path(params.codes_path, word_vocab)
-        elif params.splitter == "CHAR":
-            return CharSplitter(params.codes_path, word_vocab)
+    def build_splitter(cls, splitter, codes_path, word_vocab):
+        if splitter == "BPE":
+            return RandomBpeSplitter.from_code_path(codes_path, word_vocab)
+        elif splitter == "ROB":
+            return ReduceOneBpeSplitter.from_code_path(codes_path, word_vocab)
+        elif splitter == "CHAR":
+            return CharSplitter(codes_path, word_vocab)
         else:
             raise NotImplementedError
 

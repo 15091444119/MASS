@@ -6,21 +6,15 @@
 #
 
 from logging import getLogger
-import pdb
 import os
-import sys
 import subprocess
-from collections import OrderedDict
 import numpy as np
 import torch
 
-from ..utils import to_cuda, restore_segmentation, concat_batches
-from .utils import SenteceEmbedder, WordEmbedderWithCombiner
-from .bli import BLI
-from .eval_context_bli import eval_whole_separated_bli, read_retokenize_words, generate_context_word_representation, encode_whole_word_separated_word, generate_and_eval
+from ..utils import to_cuda, restore_segmentation
 from src.model.encoder import EncoderInputs
 from src.model.seq2seq import DecoderInputs
-from src.trainer import mask_sent
+from src.trainer.trainer import mask_sent
 from .eval_context_combiner import eval_alignment, AlignmentTypes, AlignmentDataset
 
 
