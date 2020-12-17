@@ -5,9 +5,8 @@ the original encoded word and the word be splitted.
 import argparse
 import torch
 import random
-import pdb
 
-from src.combiner.splitter import ReduceOneBpeSplitter
+from src.data.splitter import ReduceOneBpeSplitter
 from src.evaluation.utils import load_mass_model, encode_sentences
 
 

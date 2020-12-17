@@ -1,5 +1,5 @@
 import unittest
-from src.combiner.splitter import encode_word, RandomBpeSplitter,  CharSplitter
+from src.data.splitter import encode_word, RandomBpeSplitter,  CharSplitter
 
 
 class TestBpe(unittest.TestCase):

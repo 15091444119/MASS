@@ -12,25 +12,14 @@ import json
 import argparse
 import tensorboardX
 import torch
-import pdb
 import os
-import numpy as np
-from torch import nn
 
 from src.slurm import init_signal_handler, init_distributed_mode
 from src.data.loader import check_data_params, load_data, check_eval_params
-from src.utils import bool_flag, initialize_exp, set_sampling_probs, shuf_order
+from src.utils import bool_flag, initialize_exp
 from src.model import check_model_params, build_model
 from src.trainer import  Seq2SeqTrainer
 from src.evaluation.evaluator import Seq2SeqEvaluator
-from src.combiner.combiner import build_combiner
-from src.combiner.splitter import WholeWordSplitter
-from src.model.transformer import TransformerModel
-
-import apex
-import logging
-from src.fp16 import network_to_half
-
 
 
 def get_parser():

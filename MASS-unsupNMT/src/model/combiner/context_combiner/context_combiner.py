@@ -1,12 +1,8 @@
 import torch.nn as nn
 import torch
-import pdb
 from src.model.transformer import get_masks
-from src.evaluation.utils import Context2Sentence
 
-from src.utils import AttrDict
-from src.evaluation.utils import package_module
-from src.combiner.constant import COMBINE_END, COMBINE_FRONT
+from src.model.combiner.context_combiner.constant import COMBINE_END, COMBINE_FRONT
 from src.model.transformer import create_sinusoidal_embeddings, N_MAX_POSITIONS, Embedding
 
 

@@ -7,8 +7,8 @@ import sys
 import pdb
 from .utils import SenteceEmbedder, WordEmbedderWithCombiner, load_mass_model
 from .eval_context_bli import eval_whole_separated_bli, read_retokenize_words, generate_and_eval, BLI, encode_whole_word_separated_word
-from src.combiner.combiner import BiLingualCombiner, load_combiner_model
-from src.combiner.splitter import WholeWordSplitter
+from src.model.combiner.context_combiner.context_combiner import BiLingualCombiner, load_combiner_model
+from src.data.splitter import WholeWordSplitter
 
 
 class CombinerBliEvaluator(object):

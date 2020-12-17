@@ -1,5 +1,5 @@
 from . import BaseEncoder, EncoderInputs
-from src.combiner.combine_utils import ExplicitSplitCombineTool, CheatCombineTool
+from src.model.combiner.context_combiner.combine_utils import CheatCombineTool
 from .combiner_encoder import ExplicitSplitEncoderBatch, CombinerEncodedInfo
 
 

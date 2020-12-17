@@ -4,7 +4,7 @@ import numpy as np
 from src.model.encoder import EncoderInputs
 from src.utils import to_cuda
 from src.model import load_combiner_model
-from src.combiner.combiner import AverageCombiner
+from src.model.combiner.context_combiner.context_combiner import AverageCombiner
 from .dataset import AlignmentDataset, AlignmentTypes
 
 

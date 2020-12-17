@@ -1,12 +1,10 @@
 """ evaluate context bli of a give mass model """
 import argparse
 import torch
-import pdb
 import sys
-import pdb
 from .bli import BLI, read_dict
-from .utils import SenteceEmbedder, WordEmbedderWithCombiner, load_mass_model
-from src.combiner.splitter import WholeWordSplitter
+from .utils import SenteceEmbedder, load_mass_model
+from src.data.splitter import WholeWordSplitter
 
 
 def restore_bpe(tokens):

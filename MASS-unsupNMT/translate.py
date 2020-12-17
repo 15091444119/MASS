@@ -15,10 +15,8 @@
 #     --model_path trained_model.pth --output_path output
 #
 
-import string
 import os
 import io
-import pdb
 import sys
 import argparse
 import torch
@@ -28,7 +26,7 @@ from src.utils import bool_flag, initialize_exp
 from src.data.dictionary import Dictionary
 from src.model.transformer import TransformerModel
 from src.evaluation.utils import package_module
-from src.combiner.splitter import ReduceOneBpeSplitter
+from src.data.splitter import ReduceOneBpeSplitter
 
 from src.fp16 import network_to_half
 

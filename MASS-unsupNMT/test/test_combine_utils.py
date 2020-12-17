@@ -1,7 +1,7 @@
 import unittest
 import torch
-from src.combiner.constant import PAD, COMBINE_END, COMBINE_FRONT, NOT_COMBINE
-from src.combiner.combine_utils import get_combine_labels, get_length_after_combine, get_masks_for_combine_reps, gather_splitted_combine_representation, get_mask_for_select_combined_rep, get_mask_for_decoder
+from src.model.combiner.context_combiner.constant import PAD, COMBINE_END, COMBINE_FRONT, NOT_COMBINE
+from src.model.combiner.context_combiner.combine_utils import get_combine_labels, get_length_after_combine, get_masks_for_combine_reps, gather_splitted_combine_representation, get_mask_for_select_combined_rep, get_mask_for_decoder
 
 
 class test_dico(object):

@@ -12,8 +12,8 @@ import torch
 from .transformer import TransformerModel
 from src.model.seq2seq.common_seq2seq import CommonSeq2Seq, CommonEncoder
 from src.model.seq2seq.combiner_seq2seq import CombinerEncoder, CombinerSeq2Seq
-from src.combiner.splitter import WholeWordSplitter
-from src.combiner.combiner import build_combiner
+from src.data.splitter import WholeWordSplitter
+from src.model.combiner.context_combiner.context_combiner import build_combiner
 
 from collections import OrderedDict
 from src.data.dictionary import Dictionary
