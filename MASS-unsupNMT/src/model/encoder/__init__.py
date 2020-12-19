@@ -10,21 +10,6 @@ class BaseEncoder(torch.nn.Module):
         raise NotImplementedError
 
 
-class BaseCombinerEncoder(BaseEncoder):
-
-    def __init__(self, encoder, combiner, params):
-        super().__init__()
-        self.encoder = encoder
-        self.combiner = combiner
-        self.params = params
-
-    def encode(self, *args, **kwargs):
-        raise NotImplementedError
-
-    def train_combiner(self):
-        raise NotImplementedError
-
-
 class EncoderInputs(object):
 
     def __init__(self, x1, len1, lang_id, langs1, enc_mask=None):

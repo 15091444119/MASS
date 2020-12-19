@@ -21,15 +21,12 @@ class Combiner(nn.Module):
     def __init__(self):
         super().__init__()
 
-    def forward(self, method, *args, **kwargs):
+    def forward(self, *args, **kwargs):
         """
         Combine subword representations to whole word representation
         combine subword front to subword end into whole word representation
         """
-        if method == "combine":
-            return self.combine(*args, **kwargs)
-        else:
-            raise NotImplementedError
+        return self.combine(*args, **kwargs)
 
     def combine(self, *args, **kwargs):
         raise NotImplementedError

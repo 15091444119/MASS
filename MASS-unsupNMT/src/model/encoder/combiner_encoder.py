@@ -75,7 +75,7 @@ class CombinerEncoder(BaseEncoder):
 
         return CombinerEncodedInfo(encoded=final_encoded, combine_tool=combine_tool), combine_loss, combine_tool.trained_combiner_words
 
-    def encode(self, encoder_inputs: EncoderInputs):
+    def encode(self, encoder_inputs: EncoderInputs, combine_tool):
         combine_tool = self.get_combine_tool(encoder_inputs)
 
         encoded = self.encoder(
