@@ -8,7 +8,7 @@ class TransformerEncoder(nn.Module):
     Transformer encoder with positional embedding
     """
 
-    def __init__(self, emb_dim, n_layer, n_head):
+    def __init__(self, emb_dim, sinusoidal_embeddings, n_layer, n_head):
         super().__init__()
         transformer_layer = nn.TransformerEncoderLayer(
             d_model=emb_dim,
@@ -18,7 +18,8 @@ class TransformerEncoder(nn.Module):
 
         self.encoder = nn.TransformerEncoder(transformer_layer, num_layers=n_layer)
         self.position_embeddings = Embedding(N_MAX_POSITIONS, emb_dim)
-        #create_sinusoidal_embeddings(N_MAX_POSITIONS, emb_dim, out=self.position_embeddings.weight)
+        if sinusoidal_embeddings:
+            create_sinusoidal_embeddings(N_MAX_POSITIONS, emb_dim, out=self.position_embeddings.weight)
 
     def forward(self, embeddings, lengths):
         """

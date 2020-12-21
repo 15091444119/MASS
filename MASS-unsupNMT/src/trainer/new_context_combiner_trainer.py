@@ -80,16 +80,12 @@ class Trainer(object):
         if params.checkpoint != "":
             self.reload_checkpoint()
 
-        # initialize lambda coefficients and their configurations
-        parse_lambda_config(params)
 
     def get_optimizer_fp(self, trained_parameters):
         """
         Build optimizer.
         """
         optimizer = get_optimizer(trained_parameters, self.params.optimizer)
-        if self.params.fp16:
-            optimizer = FP16_Optimizer(optimizer, dynamic_loss_scale=True)
         optimizer.zero_grad()
         return optimizer
 
@@ -314,7 +310,7 @@ class NewContextCombinerTrainer(Trainer):
         loss, trained_sentences, trained_words = combiner_step(
             encoder=self.encoder,
             combiner=self.combiner,
-            lang_id=self.params.trained_lang,
+            lang_id=self.lang_id,
             loss_fn=self.loss_fn,
             batch=batch,
         )
@@ -343,25 +339,26 @@ def combiner_step(encoder, combiner, lang_id, batch, loss_fn):
     original_batch_langs = original_batch.clone().fill_(lang_id).cuda()
     splitted_batch_langs = splitted_batch.clone().fill_(lang_id).cuda()
 
-    original_encoded = encoder(
-        "fwd",
-        x=original_batch,
-        lengths=original_length,
-        langs=original_batch_langs,
-        causal=False
-    ).transpose(0, 1) # [bs, len, dim]
+    with torch.no_grad():
+        original_encoded = encoder(
+            "fwd",
+            x=original_batch,
+            lengths=original_length,
+            langs=original_batch_langs,
+            causal=False
+        ).transpose(0, 1) # [bs, len, dim]
 
-    splitted_encoded = encoder(
-        "fwd",
-        x=splitted_batch,
-        lengths=splitted_length,
-        langs=splitted_batch_langs,
-        causal=False
-    ).transpose(0, 1) # [bs, len, dim]
+        splitted_encoded = encoder(
+            "fwd",
+            x=splitted_batch,
+            lengths=splitted_length,
+            langs=splitted_batch_langs,
+            causal=False
+        ).transpose(0, 1) # [bs, len, dim]
 
-    combined_rep = combiner(splitted_encoded, splitted_length, combine_labels, lang_id)
+    combined_rep = combiner(splitted_encoded, splitted_length, combine_labels)
 
-    loss = loss_fn(original_encoded.mask_select(trained_word_mask), combined_rep)
+    loss = loss_fn(original_encoded.masked_select(trained_word_mask).view(combined_rep.size()), combined_rep)
 
     trained_sentences = original_batch.size(0)
 

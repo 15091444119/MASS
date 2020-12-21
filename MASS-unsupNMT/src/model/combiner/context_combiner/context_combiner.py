@@ -3,7 +3,8 @@ import torch
 from src.model.transformer import get_masks
 
 from src.model.combiner.context_combiner.constant import COMBINE_END, COMBINE_FRONT
-from src.model.transformer import create_sinusoidal_embeddings, N_MAX_POSITIONS, Embedding
+from src.modules.encoders import TransformerEncoder
+from src.model.transformer import Embedding
 
 
 def check_combiner_inputs(encoded, lengths, combiner_labels):
@@ -72,22 +73,16 @@ class LastTokenCombiner(Combiner):
     Use a transformer layer above mass encoder, and use the last token of each word for representation
     """
 
-    def __init__(self, params):
+    def __init__(self, emb_dim, sinusoidal_embeddings, n_head, n_layer):
         super().__init__()
-        transformer_layer = nn.TransformerEncoderLayer(d_model=params.emb_dim, nhead=params.n_heads,
-                                                       dim_feedforward=params.emb_dim * 4)
+        self.encoder = TransformerEncoder(emb_dim=emb_dim, sinusoidal_embeddings=sinusoidal_embeddings, n_head=n_head, n_layer=n_layer)
 
-        self.encoder = nn.TransformerEncoder(transformer_layer, num_layers=params.n_combiner_layers)
-        self.output_dim = params.emb_dim
-
-    def combine(self, encoded, lengths, combine_labels, lang_id):
+    def combine(self, encoded, lengths, combine_labels):
         """
         Args:
             encoded: [bs, len, dim]
             lengths: [bs]
             combine_labels: [bs, len]
-            lang_id: int
-                language index
 
         Returns:
             representation: [splitted word number, dim]
@@ -96,20 +91,13 @@ class LastTokenCombiner(Combiner):
         """
         check_combiner_inputs(encoded, lengths, combine_labels)
 
-        transformer_encoder = self.encoder
-        encoded = encoded.transpose(0, 1)  #[len, bs, dim]
-        max_length = encoded.size(0)
-
         subword_last_token_mask = self.word_end_mask(combine_labels).unsqueeze(-1) # [bs, len, 1]
 
         # nothing to combine
         if subword_last_token_mask.to(torch.long).sum() == 0:
             return None
 
-        # src_key_padding_mask set padding with true
-        padding_mask = get_torch_transformer_encoder_mask(lengths=lengths).to(encoded.device)
-        outputs = transformer_encoder(src=encoded, src_key_padding_mask=padding_mask) # [len, bs, dim]
-        outputs = outputs.transpose(0, 1) # [bs, len, dim]
+        outputs = self.encoder(encoded, lengths)
 
         representation = outputs.masked_select(subword_last_token_mask).view(-1, self.output_dim)
 
@@ -135,89 +123,68 @@ def get_torch_transformer_encoder_mask(lengths):
 
 class WordInputCombiner(Combiner):
 
-    def __init__(self, params):
+    def __init__(self, emb_dim, sinusoidal_embeddings, n_head, n_another_context_encoder_layer, n_word_combiner_layer):
         super().__init__()
         self.bos_id = 0
         self.eos_id = 1
         self.pad_id = 2
 
-        self.position_embeddings = Embedding(N_MAX_POSITIONS, params.emb_dim)
-        if params.sinusoidal_embeddings:
-            create_sinusoidal_embeddings(N_MAX_POSITIONS, params.emb_dim, out=self.position_embeddings.weight)
 
-        self.special_embeddings = Embedding(3, params.emb_dim, padding_idx=self.pad_id)  # bos and eos embedding for word combiner
-
-        transformer_layer = nn.TransformerEncoderLayer(d_model=params.emb_dim, nhead=params.n_heads,
-                                                       dim_feedforward=params.emb_dim * 4)
+        self.special_embeddings = Embedding(3, emb_dim, padding_idx=self.pad_id)  # bos and eos embedding for word combiner
 
         self.another_context_encoder = \
-            nn.TransformerEncoder(transformer_layer, num_layers=params.n_combiner_layers)
+            TransformerEncoder(emb_dim=emb_dim, sinusoidal_embeddings=sinusoidal_embeddings, n_layer=n_another_context_encoder_layer, n_head=n_head)
 
         self.word_combiner =  \
-            nn.TransformerEncoder(transformer_layer, num_layers=params.n_combiner_layers)
+            TransformerEncoder(emb_dim=emb_dim, sinusoidal_embeddings=sinusoidal_embeddings, n_layer=n_word_combiner_layer, n_head=n_head)
 
-    def another_encode(self, encoded, lengths, lang_id):
+    def another_encode(self, encoded, lengths):
         """
 
         Args:
             encoded:  [bs, len, dim]
-            lengths: [dim]
-            lang_id:  int
+            lengths: bs]
 
         Returns:
 
         """
-        another_context_encoder = self.another_context_encoder
-        bs, slen, _ = encoded.size()
-        positions = torch.arange(slen).to(encoded.device).long().unsqueeze(-1)  # [len, 1]
-        encoded = encoded.transpose(0, 1)
-
-        positional_embeddings = self.position_embeddings(positions).expand_as(encoded)  # [len, bs, dim]
-
-        mask = get_torch_transformer_encoder_mask(lengths)  # [bs, len]
-
-        encoded = another_context_encoder(src=encoded + positional_embeddings, src_key_padding_mask=mask)  # [len, bs, dim]
+        encoded = self.another_context_encoder(encoded, lengths)
 
         return encoded, lengths
 
-    def word_encode(self, word_combiner_inputs, word_combiner_lengths, lang_id):
+    def word_encode(self, word_combiner_inputs, word_combiner_lengths):
         """
 
         Args:
             word_combiner_inputs: [len, bs, dim]
             word_combiner_lengths: [len]
-            lang_id: int
 
         Returns:
 
         """
-        word_combiner = self.word_combiner
-        slen = word_combiner_lengths.max()
         dim = word_combiner_inputs.size(-1)
 
-        positions = torch.arange(slen).to(word_combiner_inputs.device).long().unsqueeze(-1)  # [len, 1]
-        positional_embeddings = self.position_embeddings(positions).expand_as(word_combiner_inputs)  # [len, bs, dim]
+        encoded = self.word_combiner(word_combiner_inputs, word_combiner_lengths)
 
-        word_combiner_mask = get_torch_transformer_encoder_mask(word_combiner_lengths)
-
-        representation = word_combiner(src=word_combiner_inputs + positional_embeddings, src_key_padding_mask=word_combiner_mask)[0].view(-1, dim)  # use bos index as word representation
+        representation = encoded[0].view(-1, dim)
 
         return representation
 
-    def combine(self, encoded, lengths, combine_labels, lang_id):
+    def combine(self, encoded, lengths, combine_labels):
         if (combine_labels == COMBINE_END).long().sum() == 0:
             return None
 
         check_combiner_inputs(encoded, lengths, combine_labels)
 
-        encoded, lengths = self.another_encode(encoded, lengths, lang_id)
+        encoded, lengths = self.another_encode(encoded, lengths)
+
         word_combiner_inputs, word_combiner_lengths = self.get_word_combiner_inputs(
             encoded=encoded,
             lengths=lengths,
             combine_labels=combine_labels
-        )  # [len, bs, dim]
+        )  # [bs, len, dim]
 
-        representation = self.word_encode(word_combiner_inputs, word_combiner_lengths, lang_id)
+        representation = self.word_encode(word_combiner_inputs, word_combiner_lengths)
 
         return representation
 
@@ -229,6 +196,9 @@ class WordInputCombiner(Combiner):
             lengths:  [bs]
             combine_labels: [bs, len]
         Returns:
+            tuple:
+                word_combiner_inputs: [bs, len, dim]
+                word_combiner_lengths: [bs]
         """
         slen, bs, dim = encoded.size()
 
@@ -291,16 +261,21 @@ class WordInputCombiner(Combiner):
         # words
         word_combiner_inputs[to_token_mask.unsqueeze(-1).expand_as(word_combiner_inputs)] = encoded[from_token_mask.unsqueeze(-1).expand_as(encoded)]
 
-        return word_combiner_inputs.transpose(0, 1), word_combiner_lengths
+        return word_combiner_inputs, word_combiner_lengths
 
 
 def build_combiner(params):
     if params.combiner == "last_token":
-        return LastTokenCombiner(params)
+        return LastTokenCombiner(emb_dim=params.emb_dim, n_head=params.n_head, n_layer=params.n_layer, sinusoidal_embeddings=params.sinusoidal_embeddings)
     elif params.combiner == "average":
         return AverageCombiner()
     elif params.combiner == "word_input":
-        return WordInputCombiner(params)
+        return WordInputCombiner(
+            emb_dim=params.emb_dim,
+            sinusoidal_embeddings=params.sinusoidal_embeddings,
+            n_head=params.n_head,
+            n_another_context_encoder_layer=params.n_another_context_encoder_layer,
+            n_word_combiner_layer=params.n_word_combiner_layer
+        )
     else:
         raise Exception("No combiner named: {}".format(params.combiner))
-

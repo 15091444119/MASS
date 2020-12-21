@@ -18,7 +18,9 @@ from src.evaluation.utils import load_mass_model
 from src.model.combiner.context_combiner.context_combiner import build_combiner
 from src.trainer.new_context_combiner_trainer import NewContextCombinerTrainer
 from src.evaluation.new_context_combiner_evaluator import NewContextCombinerEvaluator
+import src.data.new_context_combiner_data.dataloader as dataloader
 from src.model import build_loss_function
+from src.data.splitter import WholeWordSplitter
 
 
 def get_parser():
@@ -42,88 +44,9 @@ def get_parser():
     parser.add_argument("--fp16", type=bool_flag, default=False,
                         help="Run model with float16")
 
-    # only use an encoder (use a specific decoder for machine translation)
-    parser.add_argument("--encoder_only", type=bool_flag, default=False,
-                        help="Only use an encoder")
-    parser.add_argument("--english_only", type=bool_flag, default=False,
-                        help="Only use english domain (equal to only use one language)")
 
-    # model parameters
-    parser.add_argument("--emb_dim", type=int, default=512,
-                        help="Embedding layer size")
-    parser.add_argument("--n_layers", type=int, default=4,
-                        help="Number of Transformer layers")
-    parser.add_argument("--n_dec_layers", type=int, default=6,
-                        help="Number of Decoder Transformer layers")
-    parser.add_argument("--n_heads", type=int, default=8,
-                        help="Number of Transformer heads")
-    parser.add_argument("--dropout", type=float, default=0,
-                        help="Dropout")
-    parser.add_argument("--attention_dropout", type=float, default=0,
-                        help="Dropout in the attention layer")
-    parser.add_argument("--gelu_activation", type=bool_flag, default=False,
-                        help="Use a GELU activation instead of ReLU")
-    parser.add_argument("--share_inout_emb", type=bool_flag, default=True,
-                        help="Share input and output embeddings")
-    parser.add_argument("--sinusoidal_embeddings", type=bool_flag, default=False,
-                        help="Use sinusoidal embeddings")
-    parser.add_argument("--attention_setting", type=str, default="v1", choices=["v1", "v2"],
-                        help="Setting for attention module, benefits for distinguish language")
-
-    # adaptive softmax
-    parser.add_argument("--asm", type=bool_flag, default=False,
-                        help="Use adaptive softmax")
-    if parser.parse_known_args()[0].asm:
-        parser.add_argument("--asm_cutoffs", type=str, default="8000,20000",
-                            help="Adaptive softmax cutoffs")
-        parser.add_argument("--asm_div_value", type=float, default=4,
-                            help="Adaptive softmax cluster sizes ratio")
-
-    # causal language modeling task parameters
-    parser.add_argument("--context_size", type=int, default=0,
-                        help="Context size (0 means that the first elements in sequences won't have any context)")
-
-    # masked language modeling task parameters
-    parser.add_argument("--word_pred", type=float, default=0.15,
-                        help="Fraction of words for which we need to make a prediction")
-    parser.add_argument("--sample_alpha", type=float, default=0,
-                        help="Exponent for transforming word counts to probabilities (~word2vec sampling)")
-
-    parser.add_argument("--word_mass", type=float, default=0,
-                        help="Randomly mask input words (0 to disable)")
-
-    # data
-    parser.add_argument("--data_path", type=str, default="",
-                        help="Data path")
-    parser.add_argument("--lgs", type=str, default="",
-                        help="Languages (lg1-lg2-lg3 .. ex: en-fr-es-de)")
-    parser.add_argument("--max_vocab", type=int, default=-1,
-                        help="Maximum vocabulary size (-1 to disable)")
-    parser.add_argument("--min_count", type=int, default=0,
-                        help="Minimum vocabulary count")
-    parser.add_argument("--lg_sampling_factor", type=float, default=-1,
-                        help="Language sampling factor")
-    parser.add_argument("--n_para_train", type=int, default=-1, help="Number of data used for parallel training")
-
-    # batch parameters
-    parser.add_argument("--bptt", type=int, default=256,
-                        help="Sequence length")
-    parser.add_argument("--min_len", type=int, default=0,
-                        help="Minimum length of sentences (after BPE)")
-    parser.add_argument("--max_len", type=int, default=100,
-                        help="Maximum length of sentences (after BPE)")
-    parser.add_argument("--group_by_size", type=bool_flag, default=True,
-                        help="Sort sentences by size during the training")
     parser.add_argument("--batch_size", type=int, default=32,
                         help="Number of sentences per batch")
-    parser.add_argument("--max_batch_size", type=int, default=0,
-                        help="Maximum number of sentences per batch (used in combination with tokens_per_batch, 0 to disable)")
-    parser.add_argument("--tokens_per_batch", type=int, default=-1,
-                        help="Number of tokens per batch")
-
-    # training parameters
-    parser.add_argument("--split_data", type=bool_flag, default=False,
-                        help="Split data across workers of a same node")
     parser.add_argument("--optimizer", type=str, default="adam,lr=0.0001",
                         help="Optimizer (SGD / RMSprop / Adam, etc.)")
     parser.add_argument("--clip_grad_norm", type=float, default=5,
@@ -136,47 +59,6 @@ def get_parser():
                         help="Stopping criterion, and number of non-increase before stopping the experiment")
     parser.add_argument("--validation_metrics", type=str, default="",
                         help="Validation metrics, if start with _, the smaller the better")
-
-    # training coefficients
-    parser.add_argument("--lambda_mlm", type=str, default="1",
-                        help="Prediction coefficient (MLM)")
-    parser.add_argument("--lambda_clm", type=str, default="1",
-                        help="Causal coefficient (LM)")
-    parser.add_argument("--lambda_bmt", type=str, default="1",
-                        help="Back Parallel coefficient")
-    parser.add_argument("--lambda_pc", type=str, default="1",
-                        help="PC coefficient")
-    parser.add_argument("--lambda_ae", type=str, default="1",
-                        help="AE coefficient")
-    parser.add_argument("--lambda_mt", type=str, default="1",
-                        help="MT coefficient")
-    parser.add_argument("--lambda_bt", type=str, default="1",
-                        help="BT coefficient")
-    parser.add_argument("--lambda_mass", type=str, default="1",
-                        help="MASS coefficient")
-    parser.add_argument("--lambda_span", type=str, default="10000",
-                        help="Span coefficient")
-    parser.add_argument("--lambda_explicit_mass", type=str, default="1",
-                        help="MASS and combine coefficient")
-
-    # training steps
-    parser.add_argument("--clm_steps", type=str, default="",
-                        help="Causal prediction steps (CLM)")
-    parser.add_argument("--mlm_steps", type=str, default="",
-                        help="Masked prediction steps (MLM / TLM)")
-    parser.add_argument("--bmt_steps", type=str, default="",
-                        help="Back Machine Translation step")
-    parser.add_argument("--mass_steps", type=str, default="",
-                        help="MASS prediction steps")
-    parser.add_argument("--mt_steps", type=str, default="",
-                        help="Machine translation steps")
-    parser.add_argument("--ae_steps", type=str, default="",
-                        help="Denoising auto-encoder steps")
-    parser.add_argument("--bt_steps", type=str, default="",
-                        help="Back-translation steps")
-    parser.add_argument("--pc_steps", type=str, default="",
-                        help="Parallel classification steps")
-    parser.add_argument("--explicit_mass_steps", type=str, default="")
 
     # reload a pretrained model
     parser.add_argument("--reload_model", type=str, default="",
@@ -199,12 +81,7 @@ def get_parser():
                         help="Evaluate BLEU score during MT training")
     parser.add_argument("--eval_only", type=bool_flag, default=False,
                         help="Only run evaluations")
-
-    # debug
-    parser.add_argument("--debug_train", type=bool_flag, default=False,
-                        help="Use valid sets for train sets (faster loading)")
-    parser.add_argument("--debug_slurm", type=bool_flag, default=False,
-                        help="Debug multi-GPU / multi-node within a SLURM job")
+    parser.add_argument("--eval_loss_sentences", type=int, default=-1)
 
     # multi-gpu / multi-node
     parser.add_argument("--local_rank", type=int, default=-1,
@@ -212,10 +89,22 @@ def get_parser():
     parser.add_argument("--master_port", type=int, default=-1,
                         help="Master port (for multi-node SLURM jobs)")
 
-    # combiner
+    # model
     parser.add_argument("--combiner", type=str)
-    parser.add_argument("--n_combiner_layers", type=int, default=4)
-    parser.add_argument("--re_encode_rate", type=float, default=0.0)
+
+    if parser.parse_known_args()[0].combiner in ["last_token", "word_input"]:
+        parser.add_argument("--emb_dim", type=int, default=512,
+                            help="Embedding layer size")
+        parser.add_argument("--sinusoidal_embeddings", type=bool_flag)
+        parser.add_argument("--n_head", type=int)
+
+        if parser.parse_known_args()[0].combiner == "word_input":
+            parser.add_argument("--n_another_context_encoder_layer", type=int)
+            parser.add_argument("--n_word_combiner_layer", type=int)
+        elif parser.parse_known_args()[0].combiner == "last_token":
+            parser.add_argument("--n_layer", type=int)
+
+    # loss function
     parser.add_argument("--combiner_loss", type=str, default="MSE", choices=["MSE", "COS", "BNC"])
 
     # splitter
@@ -223,14 +112,10 @@ def get_parser():
     parser.add_argument("--codes_path", type=str)
 
     # combiner data
-    parser.add_argument("--combiner_train_vocab", type=str)
-    parser.add_argument("--combiner_dev_vocab", type=str)
-    parser.add_argument("--combiner_test_vocab", type=str)
-    parser.add_argument("--combiner_dev_sentences", type=str)
-    parser.add_argument("--combiner_test_sentences", type=str)
-
-    # evaluation params
-    parser.add_argument("--eval_loss_sentences", type=int, default=-1)
+    parser.add_argument("--combiner_train_data", type=str)
+    parser.add_argument("--combiner_dev_data", type=str)
+    parser.add_argument("--combiner_test_data", type=str)
+    parser.add_argument("--lang", type=str)
 
     # multi
     parser.add_argument("--optimize_batches", type=int, default=1)
@@ -238,9 +123,6 @@ def get_parser():
     return parser
 
 
-def load_mass_encoder(reload_model):
-    dico, mass_params, encoder, decoder = load_mass_model(reload_model)
-    return mass_params, encoder.cuda()
 
 def main(params):
     # initialize the multi-GPU / multi-node training
@@ -252,24 +134,25 @@ def main(params):
     # initialize SLURM signal handler for time limit / pre-emption
     init_signal_handler()
 
-    # load data
-    data = load_data(params)
+    dico, mass_params, encoder, _ = load_mass_model(params.reload_model)
+    encoder = encoder.cuda()
 
-    loss_fn = build_loss_function(params.loss_fn)
+    splitter = WholeWordSplitter.build_splitter(splitter=params.splitter, codes_path=params.codes_path, word_vocab=dico.word2id.keys())
 
-    # load encoder
-    mass_params, encoder = load_mass_encoder(params.reload_model)
+    data = dataloader.load_data(params=params, dico=dico, splitter=splitter)
 
-    # build combienr
-    combiner = build_combiner(params)
+    loss_fn = build_loss_function(params.combiner_loss)
 
+    combiner = build_combiner(params).cuda()
     # distributed
     if params.multi_gpu:
         logger.info("Using nn.parallel.DistributedDataParallel ...")
         combiner = torch.nn.parallel.distributed.DistributedDataParallel(combiner, device_ids=[params.local_rank], output_device=params.local_rank, find_unused_parameters=True)
 
     lang_id = mass_params.lang2id[params.lang]
+
     trainer = NewContextCombinerTrainer(encoder=encoder, combiner=combiner, data=data, params=params, loss_fn=loss_fn, lang_id=lang_id)
+
     evaluator = NewContextCombinerEvaluator(encoder=encoder, combiner=combiner, data=data, params=params, loss_fn=loss_fn, lang_id=lang_id)
 
     # evaluation
@@ -284,6 +167,7 @@ def main(params):
     writer = tensorboardX.SummaryWriter(os.path.join(params.dump_path, 'tensorboard'))
 
     optimize_count = 0
+
     # training
     for _ in range(params.max_epoch):
 
@@ -345,12 +229,6 @@ if __name__ == '__main__':
     # generate parser / parse parameters
     parser = get_parser()
     params = parser.parse_args()
-
-    # check parameters
-    check_data_params(params)
-    check_eval_params(params)
-
-    check_model_params(params)
 
     # run experiment
     main(params)

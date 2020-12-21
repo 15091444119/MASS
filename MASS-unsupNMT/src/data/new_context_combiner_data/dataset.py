@@ -1,52 +1,36 @@
 from logging import getLogger
 from torch.utils.data import Dataset
 import random
+import pdb
 
 logger = getLogger()
 
 
 class BaseContextCombinerDataset(Dataset):
 
-    def __init__(self, vocab_path, dico, splitter):
+    def __init__(self, dico, splitter):
         """
 
         Args:
-            vocab_path:
             labeled_data_path:
             dico:
             splitter:
         """
         self.dico = dico
         self.splitter = splitter
-        self.train_id2dic_id = read_index_vocab(vocab_path=vocab_path, dico=dico)
 
 
 class ContextCombinerTrainDataset(BaseContextCombinerDataset):
 
-    def __init__(self, vocab_path, data_path, dico, splitter, max_instance=100000):
+    def __init__(self, labeled_data_path, dico, splitter):
         """
-
-        Args:
-            vocab_path:
-                trained vocabulary
-            data_path:
-                all the training sentences
-            dico:
-                dictionary
-            splitter:
         """
-        super().__init__(vocab_path=vocab_path, dico=dico, splitter=splitter)
-        self.dic_id2train_id = {dic_id: train_id for train_id, dic_id in self.train_id2dic_id.items()}
-        self.data = read_index_data(data_path=data_path, dico=dico)    # all the training data
-        # shuffle data
-        random.shuffle(self.data)
-        self.train_id2data_ids = select_data_for_each_word(
-            data=self.data,
-            dic_id2train_id=self.dic_id2train_id,
-            max_instance=max_instance
-        )
+        super().__init__(dico=dico, splitter=splitter)
+        data = read_index_labeled_data(labeled_data_path=labeled_data_path, dico=dico)    # all the training data
 
-        self.data_id_iter = [0 for i in range(len(self.train_id2data_ids))]
+        self.splitted_word_id, self.data_grouped_by_word = group_word(data)
+
+        self.data_id_iter = [0 for i in range(len(self.splitted_word_id))]
 
     def next_instance(self, train_id):
         """
@@ -59,14 +43,14 @@ class ContextCombinerTrainDataset(BaseContextCombinerDataset):
         """
 
         iter_id = self.data_id_iter[train_id]
-        sentence = self.data[train_id][iter_id]
+        sentence = self.data_grouped_by_word[train_id][iter_id]
         iter_id += 1
-        self.data_id_iter[train_id] = iter_id % len(self.train_id2data_ids[train_id])
+        self.data_id_iter[train_id] = iter_id % len(self.data_grouped_by_word[train_id])
 
         return sentence
 
     def __len__(self):
-        return len(self.train_id2dic_id)
+        return len(self.splitted_word_id)
 
     def __getitem__(self, item):
         """
@@ -81,8 +65,7 @@ class ContextCombinerTrainDataset(BaseContextCombinerDataset):
                 mapper:   dict
                     map from original position to separated position
         """
-
-        trained_word_dic_id = self.train_id2dic_id[item]
+        trained_word_dic_id = self.splitted_word_id[item]
         original_sentence = self.next_instance(item)
 
         mapper, splitted_sentence = split(
@@ -103,9 +86,9 @@ class ContextCombinerTrainDataset(BaseContextCombinerDataset):
 
 class ContextCombinerTestDataset(BaseContextCombinerDataset):
 
-    def __init__(self, vocab_path, dico, splitter, labeled_dataset):
-        super().__init__(vocab_path=vocab_path, dico=dico, splitter=splitter)
-        self.labeled_sentences = read_index_labeled_data(labeled_dataset=labeled_dataset, vocab=set(self.train_id2dic_id.values()), dico=self.dico)
+    def __init__(self, dico, splitter, labeled_data_path):
+        super().__init__(dico=dico, splitter=splitter)
+        self.labeled_sentences = read_index_labeled_data(labeled_data_path=labeled_data_path, dico=self.dico)
 
     def __len__(self):
         return len(self.labeled_sentences)
@@ -129,16 +112,21 @@ class ContextCombinerTestDataset(BaseContextCombinerDataset):
         return sample
 
 
-def read_index_labeled_data(labeled_dataset, vocab, dico):
+def read_index_labeled_data(labeled_data_path, dico):
     data = []
-    with open(labeled_dataset, 'r') as f:
-        for line in f:
+
+    logger.info("Read from {}".format(labeled_data_path))
+    with open(labeled_data_path, 'r') as f:
+        for line_id, line in enumerate(f):
+            if line_id % 500000 == 0:
+                logger.info("{}".format(line_id))
             label, sentence = line.rstrip().split('\t', 1)
             assert label in dico.word2id
             label_id = dico.index(label)
-            assert label_id in vocab
             indexed_sentence = [dico.index(token) for token in sentence.split()]
             data.append((label_id, indexed_sentence))
+
+    logger.info("Done")
 
     return data
 
@@ -189,45 +177,16 @@ def read_index_vocab(vocab_path, dico):
     return train_id2dic_id
 
 
-def read_index_data(data_path, dico):
-    data = []
+def group_word(data):
+    splitted_word_id2instances = {}
 
-    empty_line = 0
-    with open(data_path, 'r') as f:
-        for line in f:
-            line = line.rstrip().split(' ')
+    for word_id, sentence in data:
+        if word_id not in splitted_word_id2instances:
+            splitted_word_id2instances[word_id] = [sentence]
+        else:
+            splitted_word_id2instances[word_id].append(sentence)
 
-            if len(line) == 0:
-                continue
-            else:
-                indexed_line = [dico.index(token) for token in line]
-                data.append(indexed_line)
+    word_ids = list(splitted_word_id2instances.keys())
+    instances = list(splitted_word_id2instances[key] for key in word_ids)
 
-    logger.info("Empty sentence number:{}".format(empty_line))
-    return data
-
-
-def select_data_for_each_word(data, dic_id2train_id, max_instance):
-    """
-
-    Args:
-        data:
-        dic_id2train_id:
-        max_instance: int
-            max training instance for each word
-
-    Returns:
-        a dictionary, key is train_id, data is index of the training instances
-
-    """
-    train_id2data_ids = {}
-    for sentence_id, sentence in enumerate(data):
-        for dic_idx in sentence:
-            train_id = dic_id2train_id[dic_idx]
-
-            if train_id not in train_id2data_ids:
-                train_id2data_ids[train_id] = [sentence_id]
-            elif len(train_id2data_ids) < max_instance:
-                train_id2data_ids[train_id].append(sentence_id)
-
-    return train_id2data_ids
+    return word_ids, instances
