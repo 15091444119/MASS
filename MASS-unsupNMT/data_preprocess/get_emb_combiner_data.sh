@@ -6,10 +6,10 @@ Src=zh
 Tgt=en
 
 
-python3 ./get_combiner_data.py \
+python3 ./get_emb_combiner_data.py \
   --src_lang $Src \
   --tgt_lang $Tgt \
-  --vocab $Vocab \
-  --train_src $SrcPath \
-  --train_tgt $TgtPath \
+  --bped_vocab $Vocab \
+  --raw_train_src $SrcPath \
+  --raw_train_tgt $TgtPath \
   --dest_dir $DestDir

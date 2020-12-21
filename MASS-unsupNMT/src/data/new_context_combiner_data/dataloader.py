@@ -1,7 +1,7 @@
 import torch
 from ..emb_combiner_data.emb_combiner_dataloader import batch_sentences
 from src.model.combiner.context_combiner.combine_utils import get_splitted_words_mask, get_new_splitted_combine_labels
-from .dataset import ContextCombinerDataset
+from .dataset import ContextCombinerTrainDataset
 from src.data.emb_combiner_data.emb_combiner_dataset import DataLoader
 
 
@@ -53,6 +53,7 @@ class ContextCombinerCollateFn(object):
 
         combine_lables = get_new_splitted_combine_labels(mappers, original_length, splitted_length)
 
+
         batch = {
             "original_batch": batch_original_sentence,
             "original_length": original_length,
@@ -66,7 +67,7 @@ class ContextCombinerCollateFn(object):
 
 
 def build_context_combiner_data_loader(vocab_path, data_path, dico, splitter, batch_size, shuffle=False):
-    data_set = ContextCombinerDataset(
+    data_set = ContextCombinerTrainDataset(
         vocab_path=vocab_path,
         data_path=data_path,
         dico=dico,

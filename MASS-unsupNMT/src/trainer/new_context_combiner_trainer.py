@@ -269,9 +269,9 @@ class Trainer(object):
         self.epoch += 1
 
 
-class ContextCombinerTrainer(Trainer):
+class NewContextCombinerTrainer(Trainer):
 
-    def __init__(self, encoder, combiner, data, params):
+    def __init__(self, encoder, combiner, data, loss_fn, params, lang_id):
 
         super().__init__(data, params)
         self.MODEL_NAMES = ['combiner']
@@ -280,7 +280,9 @@ class ContextCombinerTrainer(Trainer):
         self.combiner = combiner
         self.encoder = encoder
         self.data = data
+        self.loss_fn = loss_fn
         self.params = params
+        self.lang_id = lang_id
 
         self.optimizers = {
             'combiner': self.get_optimizer_fp(self.combiner.parameters()),
@@ -309,13 +311,20 @@ class ContextCombinerTrainer(Trainer):
 
         self.encoder.eval()
         self.combiner.train()
-        loss, trained_sentences, trained_words = combiner_step(self.encoder, self.combiner, params.lang, batch)
+        loss, trained_sentences, trained_words = combiner_step(
+            encoder=self.encoder,
+            combiner=self.combiner,
+            lang_id=self.params.trained_lang,
+            loss_fn=self.loss_fn,
+            batch=batch,
+        )
 
-
-
+        self.stats['combiner-loss'].append(loss.item())
+        self.backward(loss, "combiner")
+        self.stats['processed_s'] += trained_sentences
+        self.stats['processed_w'] += trained_words
 
     def init_stats(self):
-
         self.stats = OrderedDict(
             [('processed_s', 0), ('processed_w', 0)] +
             [('combiner-loss', [])]
@@ -323,29 +332,39 @@ class ContextCombinerTrainer(Trainer):
 
 
 def combiner_step(encoder, combiner, lang_id, batch, loss_fn):
-    original_batch = batch["original_batch"]
-    original_length = batch["original_length"]
-    splitted_batch = batch["splitted_batch"]
-    splitted_length = batch["splitted_length"]
-    trained_word_mask = batch["trained_word_mask"]
-    combine_labels = batch["combine_labels"]
+    original_batch = batch["original_batch"].cuda()
+    original_length = batch["original_length"].cuda()
+    splitted_batch = batch["splitted_batch"].cuda()
+    splitted_length = batch["splitted_length"].cuda()
+    trained_word_mask = batch["trained_word_mask"].cuda()
 
-    original_encoder_inputs = get_encoder_inputs(original_batch, original_length, lang_id)
+    combine_labels = batch["combine_labels"].cuda()
 
-    splitted_encoder_inputs = get_encoder_inputs(splitted_batch, splitted_length, lang_id)
+    original_batch_langs = original_batch.clone().fill_(lang_id).cuda()
+    splitted_batch_langs = splitted_batch.clone().fill_(lang_id).cuda()
 
     original_encoded = encoder(
+        "fwd",
+        x=original_batch,
+        lengths=original_length,
+        langs=original_batch_langs,
+        causal=False
+    ).transpose(0, 1) # [bs, len, dim]
 
-    )
+    splitted_encoded = encoder(
+        "fwd",
+        x=splitted_batch,
+        lengths=splitted_length,
+        langs=splitted_batch_langs,
+        causal=False
+    ).transpose(0, 1) # [bs, len, dim]
 
-    combined_rep = encoder_combiner(
-
-    )
+    combined_rep = combiner(splitted_encoded, splitted_length, combine_labels, lang_id)
 
     loss = loss_fn(original_encoded.mask_select(trained_word_mask), combined_rep)
 
     trained_sentences = original_batch.size(0)
 
-    trained_words = original_length.sum()
+    trained_words = trained_word_mask.long().sum()
 
     return loss, trained_sentences, trained_words

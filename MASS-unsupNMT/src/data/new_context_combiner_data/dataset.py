@@ -2,12 +2,28 @@ from logging import getLogger
 from torch.utils.data import Dataset
 import random
 
-logger  = getLogger()
+logger = getLogger()
 
 
-class ContextCombinerDataset(Dataset):
+class BaseContextCombinerDataset(Dataset):
 
-    def __init__(self, vocab_path, data_path, dico, splitter, max_instance=100):
+    def __init__(self, vocab_path, dico, splitter):
+        """
+
+        Args:
+            vocab_path:
+            labeled_data_path:
+            dico:
+            splitter:
+        """
+        self.dico = dico
+        self.splitter = splitter
+        self.train_id2dic_id = read_index_vocab(vocab_path=vocab_path, dico=dico)
+
+
+class ContextCombinerTrainDataset(BaseContextCombinerDataset):
+
+    def __init__(self, vocab_path, data_path, dico, splitter, max_instance=100000):
         """
 
         Args:
@@ -19,20 +35,15 @@ class ContextCombinerDataset(Dataset):
                 dictionary
             splitter:
         """
-        self.dico = dico
-        self.splitter = splitter
-        self.train_id2dic_id = read_index_vocab(vocab_path=vocab_path, dico=dico)     # index of each trained whole word
+        super().__init__(vocab_path=vocab_path, dico=dico, splitter=splitter)
         self.dic_id2train_id = {dic_id: train_id for train_id, dic_id in self.train_id2dic_id.items()}
-
         self.data = read_index_data(data_path=data_path, dico=dico)    # all the training data
-
         # shuffle data
         random.shuffle(self.data)
-
         self.train_id2data_ids = select_data_for_each_word(
             data=self.data,
             dic_id2train_id=self.dic_id2train_id,
-            max_instance=100
+            max_instance=max_instance
         )
 
         self.data_id_iter = [0 for i in range(len(self.train_id2data_ids))]
@@ -88,6 +99,48 @@ class ContextCombinerDataset(Dataset):
         }
 
         return sample
+
+
+class ContextCombinerTestDataset(BaseContextCombinerDataset):
+
+    def __init__(self, vocab_path, dico, splitter, labeled_dataset):
+        super().__init__(vocab_path=vocab_path, dico=dico, splitter=splitter)
+        self.labeled_sentences = read_index_labeled_data(labeled_dataset=labeled_dataset, vocab=set(self.train_id2dic_id.values()), dico=self.dico)
+
+    def __len__(self):
+        return len(self.labeled_sentences)
+
+    def __getitem__(self, item):
+        splitted_word_id, original_sentence = self.labeled_sentences[item]
+
+        mapper, splitted_sentence = split(
+            split_word_id=splitted_word_id,
+            sentence=original_sentence,
+            dico=self.dico,
+            splitter=self.splitter
+        )
+
+        sample = {
+            "original_sentence": original_sentence,
+            "splitted_sentence": splitted_sentence,
+            "mapper": mapper
+        }
+
+        return sample
+
+
+def read_index_labeled_data(labeled_dataset, vocab, dico):
+    data = []
+    with open(labeled_dataset, 'r') as f:
+        for line in f:
+            label, sentence = line.rstrip().split('\t', 1)
+            assert label in dico.word2id
+            label_id = dico.index(label)
+            assert label_id in vocab
+            indexed_sentence = [dico.index(token) for token in sentence.split()]
+            data.append((label_id, indexed_sentence))
+
+    return data
 
 
 def split(split_word_id, sentence, dico, splitter):

@@ -39,15 +39,13 @@ class AverageCombiner(Combiner):
     def __init__(self):
         super().__init__()
 
-    def combine(self, encoded, lengths, combine_labels, lang_id):
+    def combine(self, encoded, lengths, combine_labels):
         """
         Args:
             encoded: [bs, len, dim]
             lengths: [bs]
                 lengths of encoded tokens(not final length)
             combine_labels: [bs, len]
-            lang_id: int
-                language index
 
         Returns:
             representation: [splitted word number, dim]
@@ -79,9 +77,7 @@ class LastTokenCombiner(Combiner):
         transformer_layer = nn.TransformerEncoderLayer(d_model=params.emb_dim, nhead=params.n_heads,
                                                        dim_feedforward=params.emb_dim * 4)
 
-        self.encoder = torch.nn.ModuleList(
-            [nn.TransformerEncoder(transformer_layer, num_layers=params.n_combiner_layers) for _ in params.lang2id.keys()]
-        )
+        self.encoder = nn.TransformerEncoder(transformer_layer, num_layers=params.n_combiner_layers)
         self.output_dim = params.emb_dim
 
     def combine(self, encoded, lengths, combine_labels, lang_id):
@@ -100,7 +96,7 @@ class LastTokenCombiner(Combiner):
         """
         check_combiner_inputs(encoded, lengths, combine_labels)
 
-        transformer_encoder = self.encoder[lang_id]
+        transformer_encoder = self.encoder
         encoded = encoded.transpose(0, 1)  #[len, bs, dim]
         max_length = encoded.size(0)
 
@@ -139,7 +135,6 @@ def get_torch_transformer_encoder_mask(lengths):
 
 class WordInputCombiner(Combiner):
 
-
     def __init__(self, params):
         super().__init__()
         self.bos_id = 0
@@ -155,15 +150,11 @@ class WordInputCombiner(Combiner):
         transformer_layer = nn.TransformerEncoderLayer(d_model=params.emb_dim, nhead=params.n_heads,
                                                        dim_feedforward=params.emb_dim * 4)
 
-        self.another_context_encoders = torch.nn.ModuleList(
-            [nn.TransformerEncoder(transformer_layer, num_layers=params.n_combiner_layers) for _ in
-             params.lang2id.keys()]
-        )
+        self.another_context_encoder = \
+            nn.TransformerEncoder(transformer_layer, num_layers=params.n_combiner_layers)
 
-        self.word_combiners = torch.nn.ModuleList(
-            [nn.TransformerEncoder(transformer_layer, num_layers=params.n_combiner_layers) for _ in
-             params.lang2id.keys()]
-        )
+        self.word_combiner =  \
+            nn.TransformerEncoder(transformer_layer, num_layers=params.n_combiner_layers)
 
     def another_encode(self, encoded, lengths, lang_id):
         """
@@ -176,7 +167,7 @@ class WordInputCombiner(Combiner):
         Returns:
 
         """
-        another_context_encoder = self.another_context_encoders[lang_id]
+        another_context_encoder = self.another_context_encoder
         bs, slen, _ = encoded.size()
         positions = torch.arange(slen).to(encoded.device).long().unsqueeze(-1)  # [len, 1]
         encoded = encoded.transpose(0, 1)
@@ -200,7 +191,7 @@ class WordInputCombiner(Combiner):
         Returns:
 
         """
-        word_combiner = self.word_combiners[lang_id]
+        word_combiner = self.word_combiner
         slen = word_combiner_lengths.max()
         dim = word_combiner_inputs.size(-1)
 

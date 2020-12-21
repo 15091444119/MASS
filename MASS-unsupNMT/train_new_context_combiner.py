@@ -15,6 +15,10 @@ from src.model import check_model_params, build_model
 from src.trainer.trainer import  Seq2SeqTrainer
 from src.evaluation.evaluator import Seq2SeqEvaluator
 from src.evaluation.utils import load_mass_model
+from src.model.combiner.context_combiner.context_combiner import build_combiner
+from src.trainer.new_context_combiner_trainer import NewContextCombinerTrainer
+from src.evaluation.new_context_combiner_evaluator import NewContextCombinerEvaluator
+from src.model import build_loss_function
 
 
 def get_parser():
@@ -236,7 +240,7 @@ def get_parser():
 
 def load_mass_encoder(reload_model):
     dico, mass_params, encoder, decoder = load_mass_model(reload_model)
-    return encoder.cuda()
+    return mass_params, encoder.cuda()
 
 def main(params):
     # initialize the multi-GPU / multi-node training
@@ -251,22 +255,22 @@ def main(params):
     # load data
     data = load_data(params)
 
+    loss_fn = build_loss_function(params.loss_fn)
+
     # load encoder
-    encoder = load_mass_encoder(params.reload_model)
+    mass_params, encoder = load_mass_encoder(params.reload_model)
 
     # build combienr
-    combiner =
-
-
-    seq2seq_model = build_model(params, data['dico'])
+    combiner = build_combiner(params)
 
     # distributed
     if params.multi_gpu:
         logger.info("Using nn.parallel.DistributedDataParallel ...")
-        seq2seq_model = torch.nn.parallel.distributed.DistributedDataParallel(seq2seq_model, device_ids=[params.local_rank], output_device=params.local_rank, find_unused_parameters=True)
+        combiner = torch.nn.parallel.distributed.DistributedDataParallel(combiner, device_ids=[params.local_rank], output_device=params.local_rank, find_unused_parameters=True)
 
-    trainer = Seq2SeqTrainer(seq2seq_model, data, params)
-    evaluator = Seq2SeqEvaluator(trainer=trainer, data=data, params=params)
+    lang_id = mass_params.lang2id[params.lang]
+    trainer = NewContextCombinerTrainer(encoder=encoder, combiner=combiner, data=data, params=params, loss_fn=loss_fn, lang_id=lang_id)
+    evaluator = NewContextCombinerEvaluator(encoder=encoder, combiner=combiner, data=data, params=params, loss_fn=loss_fn, lang_id=lang_id)
 
     # evaluation
     if params.eval_only:
@@ -299,7 +303,7 @@ def main(params):
                 optimize_count = 0
             else:
                 if params.multi_gpu:
-                    with seq2seq_model.no_sync():
+                    with combiner.no_sync():
                         trainer.step()
                 else:
                     trainer.step()
