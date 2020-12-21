@@ -104,13 +104,15 @@ class Trainer(object):
         """
         self.n_iter += 1
         self.n_total_iter += 1
-        update_lambdas(self.params, self.n_total_iter)
         self.print_stats()
 
     def print_stats(self):
         """
         Print statistics about the training.
         """
+
+        if self.n_iter % 5 != 0:
+            return
 
         s_iter = "%7i - " % self.n_iter
         s_stat = ' || '.join([
@@ -134,11 +136,6 @@ class Trainer(object):
         )
         self.stats['processed_s'] = 0
         self.stats['processed_w'] = 0
-
-        # trained combiner words
-        for lang in self.params.explicit_mass_steps:
-            s_speed += "- combiner {} {} words/s ".format(lang, self.stats["trained_combiner_words-{}".format(lang)] * 1.0 / diff)
-            self.stats["trained_combiner_words-{}".format(lang)] = 0
 
         self.last_time = new_time
         # log speed + stats + learning rate
@@ -319,6 +316,7 @@ class NewContextCombinerTrainer(Trainer):
         self.backward(loss, "combiner")
         self.stats['processed_s'] += trained_sentences
         self.stats['processed_w'] += trained_words
+        self.n_sentences += trained_sentences
 
     def init_stats(self):
         self.stats = OrderedDict(
@@ -346,7 +344,7 @@ def combiner_step(encoder, combiner, lang_id, batch, loss_fn):
             lengths=original_length,
             langs=original_batch_langs,
             causal=False
-        ).transpose(0, 1) # [bs, len, dim]
+        ).transpose(0, 1)  # [bs, len, dim]
 
         splitted_encoded = encoder(
             "fwd",
@@ -354,14 +352,15 @@ def combiner_step(encoder, combiner, lang_id, batch, loss_fn):
             lengths=splitted_length,
             langs=splitted_batch_langs,
             causal=False
-        ).transpose(0, 1) # [bs, len, dim]
+        ).transpose(0, 1)  # [bs, len, dim]
 
     combined_rep = combiner(splitted_encoded, splitted_length, combine_labels)
 
-    loss = loss_fn(original_encoded.masked_select(trained_word_mask).view(combined_rep.size()), combined_rep)
+    loss = loss_fn(original_encoded.masked_select(trained_word_mask.unsqueeze(-1).expand_as(original_encoded)).view(combined_rep.size()), combined_rep)
 
-    trained_sentences = original_batch.size(0)
+    trained_sentences = original_batch.size(1)
 
     trained_words = trained_word_mask.long().sum()
+
 
     return loss, trained_sentences, trained_words

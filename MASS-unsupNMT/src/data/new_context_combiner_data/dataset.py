@@ -72,7 +72,8 @@ class ContextCombinerTrainDataset(BaseContextCombinerDataset):
             split_word_id=trained_word_dic_id,
             sentence=original_sentence,
             dico=self.dico,
-            splitter=self.splitter
+            splitter=self.splitter,
+            consider_bos_eos_in_mapper=True
         )
 
         sample = {
@@ -90,6 +91,7 @@ class ContextCombinerTestDataset(BaseContextCombinerDataset):
         super().__init__(dico=dico, splitter=splitter)
         self.labeled_sentences = read_index_labeled_data(labeled_data_path=labeled_data_path, dico=self.dico)
 
+
     def __len__(self):
         return len(self.labeled_sentences)
 
@@ -100,7 +102,8 @@ class ContextCombinerTestDataset(BaseContextCombinerDataset):
             split_word_id=splitted_word_id,
             sentence=original_sentence,
             dico=self.dico,
-            splitter=self.splitter
+            splitter=self.splitter,
+            consider_bos_eos_in_mapper=True
         )
 
         sample = {
@@ -124,6 +127,8 @@ def read_index_labeled_data(labeled_data_path, dico):
             assert label in dico.word2id
             label_id = dico.index(label)
             indexed_sentence = [dico.index(token) for token in sentence.split()]
+            if len(indexed_sentence) > 300:
+                print(len(indexed_sentence))
             data.append((label_id, indexed_sentence))
 
     logger.info("Done")
@@ -131,7 +136,7 @@ def read_index_labeled_data(labeled_data_path, dico):
     return data
 
 
-def split(split_word_id, sentence, dico, splitter):
+def split(split_word_id, sentence, dico, splitter, consider_bos_eos_in_mapper):
     """
     split the first word in the sentence
 
@@ -140,7 +145,8 @@ def split(split_word_id, sentence, dico, splitter):
         sentence:
         dico:
         splitter:
-
+        consider_bos_eos_in_mapper:
+            the sentnece don't have bos and eos, but we consider bos and eos in mapper
     Returns:
 
     """
@@ -150,7 +156,7 @@ def split(split_word_id, sentence, dico, splitter):
     splitted_word = splitter.split_word(dico.id2word[split_word_id])
     splitted_index = [dico.index(token) for token in splitted_word]
 
-    splitted_sentence = sentence[:position] + splitted_index + sentence[position:]
+    splitted_sentence = sentence[:position] + splitted_index + sentence[position + 1:]
 
     mapper = {}
 
@@ -159,8 +165,19 @@ def split(split_word_id, sentence, dico, splitter):
 
     mapper[position] = (position, position + len(splitted_index))
 
-    for i in range(position, len(splitted_sentence)):
+    for i in range(position + 1, len(sentence)):
         mapper[i] = (i + len(splitted_index) - 1, i + len(splitted_index))
+
+    if consider_bos_eos_in_mapper:
+        new_mapper = {}
+        new_mapper[0] = (0, 1)  # bos
+
+        # real words
+        for i in range(len(sentence)):
+            new_mapper[i + 1] = (mapper[i][0] + 1, mapper[i][1] + 1)
+
+        new_mapper[len(sentence) + 1] = (len(splitted_sentence) + 1, len(splitted_sentence) + 2)  # eos
+        mapper = new_mapper
 
     return mapper, splitted_sentence
 

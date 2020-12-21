@@ -76,6 +76,7 @@ class LastTokenCombiner(Combiner):
     def __init__(self, emb_dim, sinusoidal_embeddings, n_head, n_layer):
         super().__init__()
         self.encoder = TransformerEncoder(emb_dim=emb_dim, sinusoidal_embeddings=sinusoidal_embeddings, n_head=n_head, n_layer=n_layer)
+        self.emb_dim = emb_dim
 
     def combine(self, encoded, lengths, combine_labels):
         """
@@ -99,7 +100,7 @@ class LastTokenCombiner(Combiner):
 
         outputs = self.encoder(encoded, lengths)
 
-        representation = outputs.masked_select(subword_last_token_mask).view(-1, self.output_dim)
+        representation = outputs.masked_select(subword_last_token_mask).view(-1, self.emb_dim)
 
         return representation
 

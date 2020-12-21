@@ -37,7 +37,8 @@ def main(args):
     word2sentences = generate_word2sentences(
         vocab=vocab,
         data=data,
-        max_instance=args.max_instance
+        max_instance=args.max_instance,
+        max_len=100
     )
 
     write_instances(word2sentences=word2sentences, output_path=args.output)
@@ -60,9 +61,11 @@ def read_data(data_path):
     return data
 
 
-def generate_word2sentences(vocab, data, max_instance):
+def generate_word2sentences(vocab, data, max_instance, max_len):
     word2sentences = {}
     for sentence in data:
+        if len(sentence.split()) > max_len:
+            continue
         for token in sentence.split():
             if token in vocab:
                 if token in word2sentences:

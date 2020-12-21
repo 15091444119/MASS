@@ -177,6 +177,7 @@ def main(params):
         last_eval_loss_sentences = 0
 
         while trainer.n_sentences < trainer.epoch_size:
+            print(trainer.n_sentences, trainer.epoch_size)
 
             optimize_count += 1
 

@@ -8,8 +8,8 @@ export CUDA_VISIBLE_DEVICES="1"
 python3 train_new_context_combiner.py \
   --exp_name "test" \
   --batch_size 32 \
-  --epoch 10000 \
-  --max_epoch 200 \
+  --epoch_size 1000 \
+  --max_epoch 1 \
   --reload_model $Mass \
   --combiner "last_token" \
   --lang $Lang \
