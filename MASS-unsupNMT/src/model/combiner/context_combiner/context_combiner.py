@@ -167,7 +167,7 @@ class WordInputCombiner(Combiner):
 
         encoded = self.word_combiner(word_combiner_inputs, word_combiner_lengths)
 
-        representation = encoded[0].view(-1, dim)
+        representation = encoded[:, 0, :].view(-1, dim)
 
         return representation
 
@@ -180,7 +180,7 @@ class WordInputCombiner(Combiner):
         encoded, lengths = self.another_encode(encoded, lengths)
 
         word_combiner_inputs, word_combiner_lengths = self.get_word_combiner_inputs(
-            encoded=encoded,
+            encoded=encoded.transpose(0, 1),
             lengths=lengths,
             combine_labels=combine_labels
         )  # [bs, len, dim]

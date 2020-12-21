@@ -180,9 +180,6 @@ class Trainer(object):
             data[name] = getattr(self, name).state_dict()
             data[name + '_optimizer'] = self.optimizers[name].state_dict()
 
-        data['dico_id2word'] = self.data['dico'].id2word
-        data['dico_word2id'] = self.data['dico'].word2id
-        data['dico_counts'] = self.data['dico'].counts
         data['params'] = {k: v for k, v in self.params.__dict__.items()}
 
         checkpoint_path = os.path.join(self.params.dump_path, 'checkpoint.pth')
@@ -325,7 +322,7 @@ class NewContextCombinerTrainer(Trainer):
         )
 
 
-def combiner_step(encoder, combiner, lang_id, batch, loss_fn):
+def combiner_step(encoder, combiner, lang_id, batch, loss_fn, debug_dict=None):
     original_batch = batch["original_batch"].cuda()
     original_length = batch["original_length"].cuda()
     splitted_batch = batch["splitted_batch"].cuda()
@@ -354,13 +351,31 @@ def combiner_step(encoder, combiner, lang_id, batch, loss_fn):
             causal=False
         ).transpose(0, 1)  # [bs, len, dim]
 
+    if debug_dict is not None:
+        slen, bs = original_batch.size()
+        for i in range(bs):
+            for j in range(slen):
+                token = debug_dict.id2word[original_batch[j][i].item()]
+                if trained_word_mask[i][j] == True:
+                    token = '[[' + token + "]]"
+                print(token, end=" ")
+            print()
+
+        slen, bs = splitted_batch.size()
+        for i in range(bs):
+            for j in range(slen):
+                token = debug_dict.id2word[splitted_batch[j][i].item()]
+                if combine_labels[i][j].item() in [2, 3]:
+                    token = '[[' + token + "]]"
+                print(token, end=" ")
+
     combined_rep = combiner(splitted_encoded, splitted_length, combine_labels)
 
     loss = loss_fn(original_encoded.masked_select(trained_word_mask.unsqueeze(-1).expand_as(original_encoded)).view(combined_rep.size()), combined_rep)
 
     trained_sentences = original_batch.size(1)
 
-    trained_words = trained_word_mask.long().sum()
+    trained_words = trained_word_mask.long().sum().item()
 
 
     return loss, trained_sentences, trained_words

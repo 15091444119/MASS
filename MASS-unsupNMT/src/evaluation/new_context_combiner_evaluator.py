@@ -38,4 +38,4 @@ class NewContextCombinerEvaluator(object):
                     n_words += trained_words
                     loss_sum += loss.item() * trained_words
 
-                scores["combiner-loss".format(part)] = loss_sum / n_words
+                scores["{}-combiner-loss".format(part)] = loss_sum / n_words

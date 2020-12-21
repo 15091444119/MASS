@@ -125,7 +125,8 @@ def load_data(params, dico, splitter):
     data = {
         "train": train_data,
         "dev": dev_data,
-        "test": test_data
+        "test": test_data,
+        "dico": dico
     }
 
     return data
