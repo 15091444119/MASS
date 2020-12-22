@@ -6,9 +6,9 @@ Mass=/home/data_ti5_d/zhouzh/low-resource-mt/MASS/MASS-unsupNMT/dumped/cn-en-zh-
 
 export CUDA_VISIBLE_DEVICES="2"
 
-wordinput(){
+word_input(){
 python3 train_new_context_combiner.py \
-  --exp_name "word_input_zh" \
+  --exp_name "word_input_$Lang" \
   --batch_size 64 \
   --epoch_size 50000 \
   --max_epoch 200 \
@@ -25,7 +25,32 @@ python3 train_new_context_combiner.py \
   --codes_path $Codes \
   --combiner_train_data $DataPrefix.train.txt \
   --combiner_dev_data $DataPrefix.dev.txt \
-  --combiner_test_data $DataPrefix.test.txt
+  --combiner_test_data $DataPrefix.test.txt \
+  --stopping_criterion "_dev-combiner-word-average-loss,20" \
+  --validation_metrics "_dev-combiner-word-average-loss"
+}
+
+last_token(){
+python3 train_new_context_combiner.py \
+  --exp_name "last_token_$Lang" \
+  --batch_size 64 \
+  --epoch_size 50000 \
+  --max_epoch 200 \
+  --reload_model $Mass \
+  --combiner "last_token" \
+  --lang $Lang \
+  --emb_dim 1024 \
+  --sinusoidal_embeddings False \
+  --n_head 8 \
+  --n_layer 2 \
+  --splitter "ROB" \
+  --combiner_loss "COS" \
+  --codes_path $Codes \
+  --combiner_train_data $DataPrefix.train.txt \
+  --combiner_dev_data $DataPrefix.dev.txt \
+  --combiner_test_data $DataPrefix.test.txt \
+  --stopping_criterion "_dev-combiner-word-average-loss,20" \
+  --validation_metrics "_dev-combiner-word-average-loss"
 }
 
 eval_average(){
@@ -46,4 +71,4 @@ eval_average(){
   --combiner_test_data $DataPrefix.test.txt
 }
 
-eval_average
+last_token
