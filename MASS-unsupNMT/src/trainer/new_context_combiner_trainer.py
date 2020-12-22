@@ -309,6 +309,8 @@ class NewContextCombinerTrainer(Trainer):
             batch=batch,
         )
 
+        loss = loss.mean()
+
         self.stats['combiner-loss'].append(loss.item())
         self.backward(loss, "combiner")
         self.stats['processed_s'] += trained_sentences

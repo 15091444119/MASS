@@ -124,15 +124,35 @@ def build_model(params, dico):
     return seq2seq_model.cuda()
 
 
-def build_loss_function(loss):
-    if loss == "MSE":
-        return torch.nn.MSELoss()
-    elif loss == "COS":
-        def cos_loss(x, y):
-            return -torch.nn.CosineSimilarity(dim=1)(x, y).mean()
-        return cos_loss
-    else:
-        return NotImplementedError
+def build_loss_function(loss, reduction="average"):
+    """
+
+    Args:
+        loss:
+        reduction:
+            if "average": a batch averaged loss will be returned
+            if "batch": return a tensor of size [batch_size]
+
+    Returns:
+        loss_fn
+
+    """
+    def loss_fn(x, y):
+        if loss == "MSE":
+            batch_loss = torch.nn.MSELoss(reduction="none")(x, y).mean(dim=1)
+        elif loss == "COS":
+            batch_loss = -torch.nn.CosineSimilarity(dim=1)(x, y)
+        else:
+            raise NotImplementedError
+
+        if reduction == "average":
+            return batch_loss.mean()
+        elif reduction == "batch":
+            return batch_loss
+        else:
+            raise NotImplementedError
+
+    return loss_fn
 
 
 def build_combiner_encoder(encoder, params, dico):

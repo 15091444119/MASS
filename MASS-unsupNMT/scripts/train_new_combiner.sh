@@ -1,10 +1,12 @@
-Lang=zh
+Lang=en
 Codes=/home/data_ti5_d/zhouzh/low-resource-mt/XLM_MASS_preprocessed_data/pretrain/cn-split-sen-zh-en-pretrain/codes
 DataPrefix=/home/data_ti5_d/zhouzh/low-resource-mt/XLM_MASS_preprocessed_data/pretrain/cn-split-sen-zh-en-pretrain/mass_context_combiner_data/$Lang
 Mass=/home/data_ti5_d/zhouzh/low-resource-mt/MASS/MASS-unsupNMT/dumped/cn-en-zh-500w-checkpoint-pretrain/x363q5pus9/periodic-200.pth
 
 
-export CUDA_VISIBLE_DEVICES="4"
+export CUDA_VISIBLE_DEVICES="2"
+
+wordinput(){
 python3 train_new_context_combiner.py \
   --exp_name "word_input_zh" \
   --batch_size 64 \
@@ -21,6 +23,27 @@ python3 train_new_context_combiner.py \
   --splitter "ROB" \
   --combiner_loss "COS" \
   --codes_path $Codes \
+  --combiner_train_data $DataPrefix.train.txt \
+  --combiner_dev_data $DataPrefix.dev.txt \
+  --combiner_test_data $DataPrefix.test.txt
+}
+
+eval_average(){
+  python3 train_new_context_combiner.py \
+  --exp_name "average" \
+  --batch_size 64 \
+  --eval_only True \
+  --epoch_size 50000 \
+  --max_epoch 200 \
+  --reload_model $Mass \
+  --combiner "average" \
+  --lang $Lang \
+  --splitter "ROB" \
+  --combiner_loss "COS" \
+  --codes_path $Codes \
   --combiner_train_data $DataPrefix.dev.txt \
   --combiner_dev_data $DataPrefix.dev.txt \
   --combiner_test_data $DataPrefix.test.txt
+}
+
+eval_average

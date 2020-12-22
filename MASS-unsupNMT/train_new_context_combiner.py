@@ -141,7 +141,7 @@ def main(params):
 
     data = dataloader.load_data(params=params, dico=dico, splitter=splitter)
 
-    loss_fn = build_loss_function(params.combiner_loss)
+    loss_fn = build_loss_function(params.combiner_loss, reduction="batch")
 
     combiner = build_combiner(params).cuda()
     # distributed
@@ -151,17 +151,17 @@ def main(params):
 
     lang_id = mass_params.lang2id[params.lang]
 
-    trainer = NewContextCombinerTrainer(encoder=encoder, combiner=combiner, data=data, params=params, loss_fn=loss_fn, lang_id=lang_id)
-
     evaluator = NewContextCombinerEvaluator(encoder=encoder, combiner=combiner, data=data, params=params, loss_fn=loss_fn, lang_id=lang_id)
 
     # evaluation
     if params.eval_only:
-        scores = evaluator.run_all_evals(trainer.epoch)
+        scores = evaluator.run_all_evals(0)
         for k, v in scores.items():
             logger.info("%s -> %.6f" % (k, v))
         logger.info("__log__:%s" % json.dumps(scores))
         exit()
+
+    trainer = NewContextCombinerTrainer(encoder=encoder, combiner=combiner, data=data, params=params, loss_fn=loss_fn, lang_id=lang_id)
 
     # summary writer
     writer = tensorboardX.SummaryWriter(os.path.join(params.dump_path, 'tensorboard'))
