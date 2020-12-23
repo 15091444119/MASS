@@ -32,12 +32,13 @@ python3 train_new_context_combiner.py \
 
 last_token(){
 python3 train_new_context_combiner.py \
-  --exp_name "last_token_$Lang" \
+  --exp_name "last_token_combine_label_embedding_cos_sentence_sample_$Lang" \
   --batch_size 64 \
   --epoch_size 50000 \
   --max_epoch 200 \
   --reload_model $Mass \
   --combiner "last_token" \
+  --combine_label_embedding True \
   --lang $Lang \
   --emb_dim 1024 \
   --sinusoidal_embeddings False \
@@ -47,6 +48,7 @@ python3 train_new_context_combiner.py \
   --combiner_loss "COS" \
   --codes_path $Codes \
   --combiner_train_data $DataPrefix.train.txt \
+  --word_sample_for_train False \
   --combiner_dev_data $DataPrefix.dev.txt \
   --combiner_test_data $DataPrefix.test.txt \
   --stopping_criterion "_dev-combiner-word-average-loss,20" \

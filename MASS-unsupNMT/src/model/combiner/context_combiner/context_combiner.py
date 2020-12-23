@@ -77,6 +77,7 @@ class LastTokenCombiner(Combiner):
         super().__init__()
         self.encoder = TransformerEncoder(emb_dim=emb_dim, sinusoidal_embeddings=sinusoidal_embeddings, n_head=n_head, n_layer=n_layer)
         self.emb_dim = emb_dim
+        self.combine_label_embeddings = Embedding(5, embedding_dim=emb_dim)
 
     def combine(self, encoded, lengths, combine_labels):
         """
@@ -91,6 +92,8 @@ class LastTokenCombiner(Combiner):
 
         """
         check_combiner_inputs(encoded, lengths, combine_labels)
+
+        encoded = encoded + self.combine_label_embeddings(combine_labels + 1)
 
         subword_last_token_mask = self.word_end_mask(combine_labels).unsqueeze(-1) # [bs, len, 1]
 

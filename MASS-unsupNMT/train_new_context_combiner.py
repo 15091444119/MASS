@@ -95,8 +95,9 @@ def get_parser():
     if parser.parse_known_args()[0].combiner in ["last_token", "word_input"]:
         parser.add_argument("--emb_dim", type=int, default=512,
                             help="Embedding layer size")
-        parser.add_argument("--sinusoidal_embeddings", type=bool_flag)
+        parser.add_argument("--sinusoidal_embeddings", type=bool_flag, default=False)
         parser.add_argument("--n_head", type=int)
+        parser.add_argument("--combine_label_embedding", type=bool_flag, default=True)
 
         if parser.parse_known_args()[0].combiner == "word_input":
             parser.add_argument("--n_another_context_encoder_layer", type=int)
@@ -113,6 +114,7 @@ def get_parser():
 
     # combiner data
     parser.add_argument("--combiner_train_data", type=str)
+    parser.add_argument("--word_sample_for_train", type=bool_flag, default=True)
     parser.add_argument("--combiner_dev_data", type=str)
     parser.add_argument("--combiner_test_data", type=str)
     parser.add_argument("--lang", type=str)

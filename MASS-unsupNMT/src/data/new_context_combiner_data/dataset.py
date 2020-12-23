@@ -20,11 +20,9 @@ class BaseContextCombinerDataset(Dataset):
         self.splitter = splitter
 
 
-class ContextCombinerTrainDataset(BaseContextCombinerDataset):
+class WordSampleContextCombinerDataset(BaseContextCombinerDataset):
 
     def __init__(self, labeled_data_path, dico, splitter):
-        """
-        """
         super().__init__(dico=dico, splitter=splitter)
         data = read_index_labeled_data(labeled_data_path=labeled_data_path, dico=dico)    # all the training data
 
@@ -85,7 +83,10 @@ class ContextCombinerTrainDataset(BaseContextCombinerDataset):
         return sample
 
 
-class ContextCombinerTestDataset(BaseContextCombinerDataset):
+class SentenceSampleContextCombinerDataset(BaseContextCombinerDataset):
+    """
+    dataset length is all the data
+    """
 
     def __init__(self, dico, splitter, labeled_data_path):
         super().__init__(dico=dico, splitter=splitter)

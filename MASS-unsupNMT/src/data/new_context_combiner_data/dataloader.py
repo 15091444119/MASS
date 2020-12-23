@@ -2,7 +2,7 @@ import torch
 import pdb
 from ..emb_combiner_data.emb_combiner_dataloader import batch_sentences
 from src.model.combiner.context_combiner.combine_utils import get_splitted_words_mask, get_new_splitted_combine_labels
-from .dataset import ContextCombinerTrainDataset, ContextCombinerTestDataset
+from .dataset import WordSampleContextCombinerDataset, SentenceSampleContextCombinerDataset
 from src.data.emb_combiner_data.emb_combiner_dataset import DataLoader
 
 
@@ -66,12 +66,20 @@ class ContextCombinerCollateFn(object):
         return batch
 
 
-def build_context_combiner_train_data_loader(data_path, dico, splitter, batch_size):
-    data_set = ContextCombinerTrainDataset(
-        labeled_data_path=data_path,
-        dico=dico,
-        splitter=splitter
-    )
+def build_context_combiner_train_data_loader(data_path, dico, splitter, batch_size, word_sample_for_train):
+
+    if word_sample_for_train:
+        data_set = WordSampleContextCombinerDataset(
+            labeled_data_path=data_path,
+            dico=dico,
+            splitter=splitter
+        )
+    else:
+        data_set = SentenceSampleContextCombinerDataset(
+            labeled_data_path=data_path,
+            dico=dico,
+            splitter=splitter
+        )
 
     dataloader = DataLoader(
         dataset=data_set,
@@ -84,7 +92,7 @@ def build_context_combiner_train_data_loader(data_path, dico, splitter, batch_si
 
 
 def build_context_combiner_test_data_loader(data_path, dico, splitter, batch_size):
-    data_set = ContextCombinerTestDataset(
+    data_set = SentenceSampleContextCombinerDataset(
         labeled_data_path=data_path,
         dico=dico,
         splitter=splitter
@@ -105,7 +113,8 @@ def load_data(params, dico, splitter):
         data_path=params.combiner_train_data,
         dico=dico,
         splitter=splitter,
-        batch_size=params.batch_size
+        batch_size=params.batch_size,
+        word_sample_for_train=params.word_sample_for_train
     )
 
     dev_data = build_context_combiner_test_data_loader(
