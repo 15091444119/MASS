@@ -9,6 +9,7 @@ import torch
 import os
 
 from src.slurm import init_signal_handler, init_distributed_mode
+from src.modules.pred_layer import FixedPredLayer
 from src.data.loader import check_data_params, load_data, check_eval_params
 from src.utils import bool_flag, initialize_exp
 from src.model import check_model_params, build_model
@@ -138,6 +139,7 @@ def main(params):
 
     dico, mass_params, encoder, _ = load_mass_model(params.reload_model)
     encoder = encoder.cuda()
+    pred_layer = FixedPredLayer(encoder.embeddings).cuda()
 
     splitter = WholeWordSplitter.build_splitter(splitter=params.splitter, codes_path=params.codes_path, word_vocab=dico.word2id.keys())
 
@@ -153,7 +155,7 @@ def main(params):
 
     lang_id = mass_params.lang2id[params.lang]
 
-    evaluator = NewContextCombinerEvaluator(encoder=encoder, combiner=combiner, data=data, params=params, loss_fn=loss_fn, lang_id=lang_id)
+    evaluator = NewContextCombinerEvaluator(encoder=encoder, combiner=combiner, data=data, params=params, loss_fn=loss_fn, lang_id=lang_id, pred_layer=pred_layer)
 
     # evaluation
     if params.eval_only:
@@ -163,7 +165,7 @@ def main(params):
         logger.info("__log__:%s" % json.dumps(scores))
         exit()
 
-    trainer = NewContextCombinerTrainer(encoder=encoder, combiner=combiner, data=data, params=params, loss_fn=loss_fn, lang_id=lang_id)
+    trainer = NewContextCombinerTrainer(encoder=encoder, combiner=combiner, data=data, params=params, loss_fn=loss_fn, lang_id=lang_id, pred_layer=pred_layer)
 
     # summary writer
     writer = tensorboardX.SummaryWriter(os.path.join(params.dump_path, 'tensorboard'))

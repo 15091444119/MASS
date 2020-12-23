@@ -134,12 +134,15 @@ class Trainer(object):
             self.stats['processed_s'] * 1.0 / diff,
             self.stats['processed_w'] * 1.0 / diff,
         )
+
+        s_acc = " train_acc:{} ".format(self.stats['right_w'] / self.stats['processed_w'])
         self.stats['processed_s'] = 0
         self.stats['processed_w'] = 0
+        self.stats['right_w'] = 0
 
         self.last_time = new_time
         # log speed + stats + learning rate
-        logger.info(s_iter + s_speed + s_stat + s_lr)
+        logger.info(s_iter + s_speed + s_stat + s_lr + s_acc)
 
 
     def save_model(self, name):
@@ -261,7 +264,7 @@ class Trainer(object):
 
 class NewContextCombinerTrainer(Trainer):
 
-    def __init__(self, encoder, combiner, data, loss_fn, params, lang_id):
+    def __init__(self, encoder, combiner, pred_layer, data, loss_fn, params, lang_id):
 
         super().__init__(data, params)
         self.MODEL_NAMES = ['combiner']
@@ -269,6 +272,7 @@ class NewContextCombinerTrainer(Trainer):
         # model / data / params
         self.combiner = combiner
         self.encoder = encoder
+        self.pred_layer = pred_layer
         self.data = data
         self.loss_fn = loss_fn
         self.params = params
@@ -301,12 +305,14 @@ class NewContextCombinerTrainer(Trainer):
 
         self.encoder.eval()
         self.combiner.train()
-        loss, trained_sentences, trained_words = combiner_step(
+        self.pred_layer.eval()
+        loss, results, trained_sentences, trained_words = combiner_step(
             encoder=self.encoder,
             combiner=self.combiner,
             lang_id=self.lang_id,
             loss_fn=self.loss_fn,
             batch=batch,
+            pred_layer=self.pred_layer
         )
 
         loss = loss.mean()
@@ -314,17 +320,18 @@ class NewContextCombinerTrainer(Trainer):
         self.stats['combiner-loss'].append(loss.item())
         self.backward(loss, "combiner")
         self.stats['processed_s'] += trained_sentences
+        self.stats['right_w'] += results.long().sum().item()
         self.stats['processed_w'] += trained_words
         self.n_sentences += trained_sentences
 
     def init_stats(self):
         self.stats = OrderedDict(
-            [('processed_s', 0), ('processed_w', 0)] +
+            [('processed_s', 0), ('processed_w', 0), ('right_w', 0)] +
             [('combiner-loss', [])]
         )
 
 
-def combiner_step(encoder, combiner, lang_id, batch, loss_fn, debug_dict=None):
+def combiner_step(encoder, combiner, pred_layer, lang_id, batch, loss_fn, debug_dict=None):
     original_batch = batch["original_batch"].cuda()
     original_length = batch["original_length"].cuda()
     splitted_batch = batch["splitted_batch"].cuda()
@@ -337,14 +344,6 @@ def combiner_step(encoder, combiner, lang_id, batch, loss_fn, debug_dict=None):
     splitted_batch_langs = splitted_batch.clone().fill_(lang_id).cuda()
 
     with torch.no_grad():
-        original_encoded = encoder(
-            "fwd",
-            x=original_batch,
-            lengths=original_length,
-            langs=original_batch_langs,
-            causal=False
-        ).transpose(0, 1)  # [bs, len, dim]
-
         splitted_encoded = encoder(
             "fwd",
             x=splitted_batch,
@@ -373,11 +372,17 @@ def combiner_step(encoder, combiner, lang_id, batch, loss_fn, debug_dict=None):
 
     combined_rep = combiner(splitted_encoded, splitted_length, combine_labels)
 
-    loss = loss_fn(original_encoded.masked_select(trained_word_mask.unsqueeze(-1).expand_as(original_encoded)).view(combined_rep.size()), combined_rep)
+    y = original_batch.transpose(0, 1).masked_select(trained_word_mask)
+    scores, loss = pred_layer(combined_rep, y)
+
+    results = scores.argmax(dim=-1) == y
 
     trained_sentences = original_batch.size(1)
 
     trained_words = trained_word_mask.long().sum().item()
 
+    assert loss.size(0) == results.size(0)
+    assert loss.size(0) == trained_words
+    assert loss.size(0) == trained_sentences
 
-    return loss, trained_sentences, trained_words
+    return loss, results, trained_sentences, trained_words

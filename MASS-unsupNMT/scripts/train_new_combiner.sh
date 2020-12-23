@@ -26,7 +26,7 @@ python3 train_new_context_combiner.py \
   --combiner_train_data $DataPrefix.train.txt \
   --combiner_dev_data $DataPrefix.dev.txt \
   --combiner_test_data $DataPrefix.test.txt \
-  --stopping_criterion "_dev-combiner-word-average-loss,20" \
+  --stopping_criterion "_dev-word-average-loss,20" \
   --validation_metrics "_dev-combiner-word-average-loss"
 }
 
@@ -48,11 +48,11 @@ python3 train_new_context_combiner.py \
   --combiner_loss "COS" \
   --codes_path $Codes \
   --combiner_train_data $DataPrefix.train.txt \
-  --word_sample_for_train False \
+  --word_sample_for_train True \
   --combiner_dev_data $DataPrefix.dev.txt \
   --combiner_test_data $DataPrefix.test.txt \
-  --stopping_criterion "_dev-combiner-word-average-loss,20" \
-  --validation_metrics "_dev-combiner-word-average-loss"
+  --stopping_criterion "dev-word-average-acc,20" \
+  --validation_metrics "dev-word-average-acc"
 }
 
 eval_average(){

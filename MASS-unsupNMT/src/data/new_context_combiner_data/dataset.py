@@ -131,6 +131,7 @@ def read_index_labeled_data(labeled_data_path, dico):
             if len(indexed_sentence) > 300:
                 print(len(indexed_sentence))
             data.append((label_id, indexed_sentence))
+
     logger.info("Done")
 
     return data
