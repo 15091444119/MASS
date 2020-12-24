@@ -78,6 +78,8 @@ def translate_get_attention(
         src_sent.append(line)
 
     statistic = {"front": [], "end": [], "norm_rate": []}
+    word_count_sum = 0
+    bped_word_count_sum = 0
 
     for i in range(0, len(src_sent), 64):
         j = min(len(src_sent), i + 64)
@@ -113,14 +115,41 @@ def translate_get_attention(
                                                            causal=True, src_enc=encoded, src_len=x1_lens.cuda())
         debug_src = [[dico.id2word[x.item()] for x in x1[:, idx]] for idx in range(j - i)]
         debug_tgt = [[dico.id2word[x.item()] for x in x2[:, idx]] for idx in range(j - i)]
+        for sentence_id in range(x2_lens.size(0)):
+            word_count, bped_word_count = calculate_word_and_bped_word(debug_tgt[sentence_id], x2_lens[sentence_id].item())
+            word_count_sum += word_count
+            bped_word_count_sum += bped_word_count
+
         for k in range(i, j):
-            average_attention = cross_attention.averaged_attention(k-i)
+            average_attention = cross_attention.single_layer_attention(k-i, 2)
             src_average_attention = average_attention.mean(dim=0)
             update_subword_front_subword_end(statistic, src_average_attention, x1[:, k-i], x1_lens[k-i].item(), dico, encoded[k-i])
 
     print(sum(statistic["front"]) / len(statistic["front"]))
     print(sum(statistic["end"]) / len(statistic["end"]))
     print(sum(statistic["norm_rate"]) / len(statistic["norm_rate"]))
+    print(word_count_sum, bped_word_count_sum, bped_word_count_sum / word_count_sum)
+
+
+def calculate_word_and_bped_word(sent, slen):
+    sent = sent[1:slen - 1] # remove bos and eos
+    idx = 0
+    word_count = 0
+    bped_word_count = 0
+    while(idx < len(sent)):
+        if "@@" in sent[idx]:
+            while(idx < len(sent) and "@@" in sent[idx]):
+                idx += 1
+            if idx == len(sent):
+                break
+            word_count += 1
+            bped_word_count += 1
+        else:
+            word_count += 1
+
+        idx += 1
+
+    return word_count, bped_word_count
 
 
 def update_subword_front_subword_end(statistic, attention, x, slen, dico, encoded):
