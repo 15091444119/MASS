@@ -118,6 +118,7 @@ def get_parser():
     parser.add_argument("--combiner_dev_data", type=str)
     parser.add_argument("--combiner_test_data", type=str)
     parser.add_argument("--lang", type=str)
+    parser.add_argument("--reload_combiner", type=str, default="")
 
     # multi
     parser.add_argument("--optimize_batches", type=int, default=1)
@@ -146,6 +147,11 @@ def main(params):
     loss_fn = build_loss_function(params.combiner_loss, reduction="batch")
 
     combiner = build_combiner(params).cuda()
+
+    if params.reload_combiner != "":
+        reloaded = torch.load(params.reload_combiner)
+        combiner.load_state_dict(reloaded["combiner"])
+
     # distributed
     if params.multi_gpu:
         logger.info("Using nn.parallel.DistributedDataParallel ...")

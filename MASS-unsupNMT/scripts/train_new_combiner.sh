@@ -1,8 +1,8 @@
-Lang=en
+Lang=zh
 Codes=/home/data_ti5_d/zhouzh/low-resource-mt/XLM_MASS_preprocessed_data/pretrain/cn-split-sen-zh-en-pretrain/codes
 DataPrefix=/home/data_ti5_d/zhouzh/low-resource-mt/XLM_MASS_preprocessed_data/pretrain/cn-split-sen-zh-en-pretrain/mass_context_combiner_data/$Lang
 Mass=/home/data_ti5_d/zhouzh/low-resource-mt/MASS/MASS-unsupNMT/dumped/cn-en-zh-500w-checkpoint-pretrain/x363q5pus9/periodic-200.pth
-
+ReloadCombiner=/home/data_ti5_d/zhouzh/low-resource-mt/combiner/MASS-unsupNMT/dumped/last_token_combine_label_embedding_zh/dvjmx4ovmt/best-dev-combiner-word-average-loss.pth
 
 export CUDA_VISIBLE_DEVICES="2"
 
@@ -32,7 +32,7 @@ python3 train_new_context_combiner.py \
 
 last_token(){
 python3 train_new_context_combiner.py \
-  --exp_name "last_token_combine_label_embedding_cos_sentence_sample_$Lang" \
+  --exp_name "eval_$Lang" \
   --batch_size 64 \
   --epoch_size 50000 \
   --max_epoch 200 \
@@ -47,12 +47,14 @@ python3 train_new_context_combiner.py \
   --splitter "ROB" \
   --combiner_loss "COS" \
   --codes_path $Codes \
-  --combiner_train_data $DataPrefix.train.txt \
-  --word_sample_for_train False \
+  --combiner_train_data $DataPrefix.dev.txt \
+  --word_sample_for_train True \
   --combiner_dev_data $DataPrefix.dev.txt \
   --combiner_test_data $DataPrefix.test.txt \
   --stopping_criterion "_dev-combiner-word-average-loss,20" \
-  --validation_metrics "_dev-combiner-word-average-loss"
+  --validation_metrics "_dev-combiner-word-average-loss" \
+  --reload_combiner $ReloadCombiner \
+  --eval_only True
 }
 
 eval_average(){

@@ -1,3 +1,4 @@
+import os
 import torch
 from src.trainer.new_context_combiner_trainer import combiner_step
 
@@ -22,12 +23,11 @@ class NewContextCombinerEvaluator(object):
         self.eval_loss(scores)
         return scores
 
-    def eval_loss(self, scores, save_loss=None):
+    def eval_loss(self, scores):
         """
 
         Args:
             scores:
-            save_losses: save loss to a file
 
         Returns:
 
@@ -35,10 +35,10 @@ class NewContextCombinerEvaluator(object):
         self.combiner.eval()
         self.encoder.eval()
 
-        id2losses = {}
 
         with torch.no_grad():
-            for part in ["dev", "test"]:
+            for part in ["dev"]:
+                id2losses = {}
                 loss_sum = 0
                 n_words = 0
 
@@ -62,7 +62,9 @@ class NewContextCombinerEvaluator(object):
                         logger.info("{} words".format(n_words))
 
                 id2average_loss = {idx: sum(losses) / len(losses) for idx, losses in id2losses.items()}
-                if save_loss is not None:
+
+                if self.params.eval_only:
+                    save_loss = os.path.join(self.params.dump_path, "{}-loss".format(part))
                     save_id2average_loss(id2average_loss, self.data["dico"], save_loss)
 
                 scores["{}-combiner-word-average-loss".format(part)] = sum(id2average_loss.values()) / len(id2average_loss.values())
@@ -86,3 +88,14 @@ def save_id2average_loss(id2average_loss, dico, path):
     with open(path, 'w') as f:
         for idx, loss in sorted_id2average_loss:
             print(dico.id2word[idx], loss, file=f)
+
+        bins = {}
+        for idx, loss in sorted_id2average_loss:
+            bin_id = idx // (len(dico.id2word) // 10)
+            if bin_id in bins:
+                bins[bin_id].append(loss)
+            else:
+                bins[bin_id] = [loss]
+        for bin_id in sorted(bins.keys()):
+            losses = bins[bin_id]
+            print("{} {} {}".format(bin_id, len(losses), sum(losses) / len(losses)), file=f)
