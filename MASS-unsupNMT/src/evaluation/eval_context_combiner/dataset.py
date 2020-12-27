@@ -7,10 +7,13 @@ from enum import Enum
 
 
 class AlignmentTypes(Enum):
-    src_whole_tgt_sep = 0
-    src_whole_tgt_whole = 1
-    src_sep_tgt_sep = 2
-    src_sep_tgt_whole = 3
+    src_whole_tgt_sep_2 = 0
+    src_whole_tgt_sep_other = 1
+    src_whole_tgt_whole = 2
+    src_sep_tgt_sep_2 = 3
+    src_sep_tgt_sep_other = 4
+    src_sep_tgt_whole_2 = 5
+    src_sep_tgt_whole_other = 6
 
 
 def judge_alignment_type(len_src_word, len_tgt_word):
@@ -25,12 +28,18 @@ def judge_alignment_type(len_src_word, len_tgt_word):
     """
     if len_src_word == 1 and len_tgt_word == 1:
         return AlignmentTypes.src_whole_tgt_whole
-    elif len_src_word == 1 and len_tgt_word > 1:
-        return AlignmentTypes.src_whole_tgt_sep
-    elif len_src_word > 1 and len_tgt_word == 1:
-        return AlignmentTypes.src_sep_tgt_whole
-    elif len_src_word > 1 and len_tgt_word > 1:
-        return AlignmentTypes.src_sep_tgt_sep
+    elif len_src_word == 1 and len_tgt_word == 2:
+        return AlignmentTypes.src_whole_tgt_sep_2
+    elif len_src_word == 1 and len_tgt_word > 2:
+        return AlignmentTypes.src_whole_tgt_sep_other
+    elif len_src_word == 2 and len_tgt_word == 1:
+        return AlignmentTypes.src_sep_tgt_whole_2
+    elif len_src_word > 2 and len_tgt_word == 1:
+        return AlignmentTypes.src_sep_tgt_whole_other
+    elif len_src_word == 2 and len_tgt_word == 2:
+        return AlignmentTypes.src_sep_tgt_sep_2
+    else:
+        return AlignmentTypes.src_sep_tgt_sep_other
 
 
 class SentenceAlignment(object):

@@ -10,7 +10,7 @@ from src.model.transformer import Embedding
 def check_combiner_inputs(encoded, lengths, combiner_labels):
     bs, slen, dim = encoded.size()
     assert bs == lengths.size(0)
-    assert slen == lengths.max()
+    #assert slen == lengths.max()
     assert (bs, slen) == combiner_labels.size()
 
 

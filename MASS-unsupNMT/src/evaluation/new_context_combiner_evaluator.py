@@ -37,7 +37,7 @@ class NewContextCombinerEvaluator(object):
 
 
         with torch.no_grad():
-            for part in ["dev"]:
+            for part in ["dev", "test"]:
                 id2losses = {}
                 loss_sum = 0
                 n_words = 0

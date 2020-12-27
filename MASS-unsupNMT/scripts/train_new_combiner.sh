@@ -47,14 +47,12 @@ python3 train_new_context_combiner.py \
   --splitter "ROB" \
   --combiner_loss "COS" \
   --codes_path $Codes \
-  --combiner_train_data $DataPrefix.dev.txt \
+  --combiner_train_data $DataPrefix.train.txt \
   --word_sample_for_train True \
   --combiner_dev_data $DataPrefix.dev.txt \
   --combiner_test_data $DataPrefix.test.txt \
   --stopping_criterion "_dev-combiner-word-average-loss,20" \
-  --validation_metrics "_dev-combiner-word-average-loss" \
-  --reload_combiner $ReloadCombiner \
-  --eval_only True
+  --validation_metrics "_dev-combiner-word-average-loss"
 }
 
 eval_average(){
