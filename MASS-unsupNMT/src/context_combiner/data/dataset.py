@@ -3,6 +3,7 @@ from torch.utils.data import Dataset
 from src.data.data_utils import read_index_filter_data
 import random
 import pdb
+import pdb
 
 logger = getLogger()
 
@@ -117,9 +118,19 @@ class SentenceSampleContextCombinerDataset(BaseContextCombinerDataset):
 
 class MultiSplitContextCombinerDataset(BaseContextCombinerDataset):
 
-    def __init__(self, dico, splitter, data_path, max_split_num=3):
+    def __init__(self, dico, splitter, data_path, untouchable_path, max_split_num=3):
+        """
+
+        Args:
+            dico:
+            splitter:
+            data_path:
+            untouchable_path: we don't split these words
+            max_split_num:
+        """
         super().__init__(dico=dico, splitter=splitter)
-        self.sentences = read_index_filter_data(data_path=data_path, dico=self.dico)
+        self.untouchable_words = read_untouchable_words(untouchable_path)
+        self.sentences = read_index_filter_data(data_path=data_path, dico=self.dico, untouchable_words=self.untouchable_words)
         self.max_split_num = max_split_num
 
     def __len__(self):
@@ -131,7 +142,8 @@ class MultiSplitContextCombinerDataset(BaseContextCombinerDataset):
             sentence=original_sentence,
             splitter=self.splitter,
             dico=self.dico,
-            max_split_num=self.max_split_num
+            max_split_num=self.max_split_num,
+            untouchable_words=self.untouchable_words
         )
 
         return {
@@ -141,7 +153,16 @@ class MultiSplitContextCombinerDataset(BaseContextCombinerDataset):
         }
 
 
-def multi_split(sentence, splitter, dico, max_split_num):
+def read_untouchable_words(untouchable_path):
+    vocab = set()
+    with open(untouchable_path, 'r') as f:
+        for line in f:
+            word, context = line.rstrip().split('\t')
+            vocab.add(word)
+    return vocab
+
+
+def multi_split(sentence, splitter, dico, max_split_num, untouchable_words):
     """
 
     Args:
@@ -150,6 +171,7 @@ def multi_split(sentence, splitter, dico, max_split_num):
         dico:
         consider_bos_eos_in_mapper:
         max_split_num:
+        untouchable_words
 
     Returns:
 
@@ -161,7 +183,7 @@ def multi_split(sentence, splitter, dico, max_split_num):
         if dico.is_special(token_id):
             continue
         token = dico.id2word[token_id]
-        if "@@" not in token and len(token) >= 2:
+        if "@@" not in token and len(token) >= 2 and token not in untouchable_words:
             splittable_token_index.append(index)
 
     # choose tokens to be splitted
@@ -170,7 +192,7 @@ def multi_split(sentence, splitter, dico, max_split_num):
 
     # split and get new sentence
     splitted_sentence = []
-    mapper = []
+    mapper = {}
     for i in range(len(sentence)):
         if i in splitted_index:
             splitted_word = [dico.index(x) for x in splitter.split_word(dico.id2word[sentence[i]])]

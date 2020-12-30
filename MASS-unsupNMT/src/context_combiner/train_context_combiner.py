@@ -110,7 +110,7 @@ def get_parser():
 
     # combiner data
     parser.add_argument("--combiner_train_data", type=str)
-    parser.add_argument("--word_sample_for_train", type=bool_flag, default=True)
+    parser.add_argument("--train_dataset_type", type=str, choices=["one_word_word", "one_word_sentence", "multi_word_sentence"])
     parser.add_argument("--combiner_dev_data", type=str)
     parser.add_argument("--combiner_test_data", type=str)
     parser.add_argument("--lang", type=str)

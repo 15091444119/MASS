@@ -1,18 +1,19 @@
 import logging
 import torch
+import pdb
 
 logger = logging.getLogger()
 
 
-def read_index_filter_data(data_path, dico):
+def read_index_filter_data(data_path, dico, untouchable_words):
     """
     read, index, filter unsplittable data
     Args:
         data_path:
         dico:
+        untouchable_words: don't split these words
 
     Returns:
-
     """
 
     indexed_data = []
@@ -21,13 +22,17 @@ def read_index_filter_data(data_path, dico):
     with open(data_path, 'r') as f:
         for line in f:
             line = line.rstrip().split()
-            n_splittable_token = 0
 
+            if len(line) == 0:
+                discard += 1
+                continue
+
+            n_splittable_token = 0
             indexed_line = []
             for token in line:
                 index = dico.index(token)
                 if not dico.is_special(index):
-                    if "@@" not in token and len(token) >= 2:
+                    if "@@" not in token and len(token) >= 2 and token not in untouchable_words:
                         n_splittable_token += 1
                 indexed_line.append(index)
 

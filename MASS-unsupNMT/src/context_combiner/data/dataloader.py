@@ -1,6 +1,7 @@
-from src.emb_combiner.data import batch_sentences
+import pdb
+from src.data.data_utils import batch_sentences
 from src.model.context_combiner.combine_utils import get_splitted_words_mask, get_new_splitted_combine_labels
-from .dataset import WordSampleContextCombinerDataset, SentenceSampleContextCombinerDataset
+from .dataset import WordSampleContextCombinerDataset, SentenceSampleContextCombinerDataset, MultiSplitContextCombinerDataset
 from src.emb_combiner.data.emb_combiner_dataset import DataLoader
 
 
@@ -15,6 +16,7 @@ def wrap_special_word_for_mapper(mapper, original_length, final_length):
 
     # eos
     new_mapper[original_length + 1] = (final_length + 1, final_length + 2)
+
 
     return new_mapper
 
@@ -79,20 +81,29 @@ class ContextCombinerCollateFn(object):
         return batch
 
 
-def build_context_combiner_train_data_loader(data_path, dico, splitter, batch_size, word_sample_for_train):
+def build_context_combiner_train_data_loader(data_path, dico, splitter, batch_size, dataset_type, untouchable_words_path=""):
 
-    if word_sample_for_train:
+    if dataset_type == "one_word_word":
         data_set = WordSampleContextCombinerDataset(
             labeled_data_path=data_path,
             dico=dico,
             splitter=splitter
         )
-    else:
+    elif dataset_type == "one_word_sentence":
         data_set = SentenceSampleContextCombinerDataset(
             labeled_data_path=data_path,
             dico=dico,
             splitter=splitter
         )
+    elif dataset_type == "multi_word_sentence":
+        data_set = MultiSplitContextCombinerDataset(
+            dico=dico,
+            splitter=splitter,
+            data_path=data_path,
+            untouchable_path=untouchable_words_path
+        )
+    else:
+        raise NotImplementedError
 
     dataloader = DataLoader(
         dataset=data_set,
@@ -122,19 +133,30 @@ def build_context_combiner_test_data_loader(data_path, dico, splitter, batch_siz
 
 
 def load_data(params, dico, splitter):
-    train_data = build_context_combiner_train_data_loader(
-        data_path=params.combiner_train_data,
-        dico=dico,
-        splitter=splitter,
-        batch_size=params.batch_size,
-        word_sample_for_train=params.word_sample_for_train
-    )
+
+    if params.train_dataset_type == "multi_word_sentence":
+        train_data = build_context_combiner_train_data_loader(
+            data_path=params.combiner_train_data,
+            dico=dico,
+            splitter=splitter,
+            batch_size=params.batch_size,
+            dataset_type=params.train_dataset_type,
+            untouchable_words_path=params.combiner_dev_data
+        )
+    else:
+        train_data = build_context_combiner_train_data_loader(
+            data_path=params.combiner_train_data,
+            dico=dico,
+            splitter=splitter,
+            batch_size=params.batch_size,
+            dataset_type=params.train_dataset_type
+        )
 
     dev_data = build_context_combiner_test_data_loader(
         data_path=params.combiner_dev_data,
         dico=dico,
         splitter=splitter,
-        batch_size=params.batch_size
+        batch_size=params.batch_size,
     )
 
     test_data = build_context_combiner_test_data_loader(

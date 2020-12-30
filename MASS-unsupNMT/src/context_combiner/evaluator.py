@@ -1,6 +1,7 @@
 import os
 import torch
 from src.context_combiner.context_combiner_trainer import combiner_step
+from src.evaluation.eval_context_combiner.__init__ import AlignmentDataset, eval_alignment
 
 from logging import getLogger
 
@@ -16,12 +17,32 @@ class NewContextCombinerEvaluator(object):
         self.combiner = combiner
         self.loss_fn = loss_fn
         self.lang_id = lang_id
+        """
+        if params.eval_alignment:
+            alignment_data = AlignmentDataset(
+                src_bped_path=params.align_src_bped_path,
+                tgt_bped_path=params.align_tgt_bped_path,
+                alignment_path=params.align_path,
+                batch_size=params.batch_size,
+                dico=self.data["dico"],
+                src_lang=params.align_src_lang,
+                tgt_lang=params.align_tgt_lang,
+                pad_index=params.pad_index,
+                eos_index=params.eos_index
+            )
+        """
 
     def run_all_evals(self, epoch):
         scores = {}
         scores["epoch"] = epoch
         self.eval_loss(scores)
         return scores
+
+    def eval_cross_lingual_cos(self, scores):
+        self.combiner.eval()
+        self.encoder.eval()
+
+
 
     def eval_loss(self, scores):
         """

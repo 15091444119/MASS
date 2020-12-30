@@ -1,5 +1,5 @@
 from . import BaseEncoder, EncoderInputs
-from src.model.combiner.context_combiner.combine_utils import CombineTool, ExplicitSplitCombineTool
+from src.model.context_combiner.combine_utils import CombineTool, ExplicitSplitCombineTool
 import torch
 
 
