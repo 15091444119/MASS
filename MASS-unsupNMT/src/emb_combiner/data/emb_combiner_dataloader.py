@@ -1,8 +1,6 @@
 import torch
-import numpy as np
-import pdb
-from src.data.emb_combiner_data.emb_combiner_dataset import EmbCombinerDataset
-from src.data.emb_combiner_data.emb_combiner_dataset import DataLoader
+from src.emb_combiner.data.emb_combiner_dataset import EmbCombinerDataset
+from src.emb_combiner.data.emb_combiner_dataset import DataLoader
 
 
 class EmbCombinerCollateFn(object):

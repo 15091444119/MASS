@@ -5,16 +5,13 @@
 最终得到每个被切分词的表示。
 """
 import argparse
-import pdb
 import torch
 import numpy as np
-from src.model.encoder import EncoderInputs
 from src.utils import to_cuda
-from src.model.combiner.context_combiner.context_combiner import AverageCombiner
 from .dataset import AlignmentDataset, AlignmentTypes
-from src.model.combiner.context_combiner.combine_utils import CombineTool
-from src.model.combiner.context_combiner.context_combiner import build_combiner, AverageCombiner
-from src.model.combiner.context_combiner.constant import PAD, COMBINE_END, COMBINE_FRONT, NOT_COMBINE
+from src.context_combiner.model import CombineTool
+from src.context_combiner.model.context_combiner import AverageCombiner
+from src.context_combiner.model.constant import PAD, COMBINE_END, COMBINE_FRONT, NOT_COMBINE
 from src.evaluation.utils import load_mass_model
 from src.utils import AttrDict
 

@@ -2,8 +2,8 @@
 import argparse
 import torch
 import sys
-from .bli import BLI, read_dict
-from .utils import SenteceEmbedder, load_mass_model
+from src.evaluation.bli.bli import BLI, read_dict
+from src.evaluation.utils import SenteceEmbedder, load_mass_model
 from src.data.splitter import WholeWordSplitter
 
 

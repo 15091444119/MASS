@@ -5,9 +5,9 @@ evaluate bilingual combiner
 import argparse
 import sys
 import pdb
-from .utils import SenteceEmbedder, WordEmbedderWithCombiner, load_mass_model
-from .eval_context_bli import eval_whole_separated_bli, read_retokenize_words, generate_and_eval, BLI, encode_whole_word_separated_word
-from src.model.combiner.context_combiner.context_combiner import BiLingualCombiner, load_combiner_model
+from src.evaluation.utils import SenteceEmbedder, WordEmbedderWithCombiner, load_mass_model
+from src.evaluation.bli.eval_context_bli import eval_whole_separated_bli, read_retokenize_words, generate_and_eval, BLI, encode_whole_word_separated_word
+from src.context_combiner.model.context_combiner import BiLingualCombiner, load_combiner_model
 from src.data.splitter import WholeWordSplitter
 
 

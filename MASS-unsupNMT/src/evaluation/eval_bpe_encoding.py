@@ -119,9 +119,9 @@ class Statistics(object):
 
 
 def main(params):
-    splitter = ReduceOneBpeSplitter.from_code_path(args.codes_path)
 
     dico, model_params, encoder, _ = load_mass_model(args.model_path)
+    splitter = ReduceOneBpeSplitter.from_code_path(args.codes_path, dico.word2id.keys())
 
     sentences = read_corpus(params.corpus_path)
 
@@ -141,7 +141,7 @@ def main(params):
             original_sentence = sentences[k]
             try:
                 splitted_sentence, origin_pos, splitted_pos = split_word(original_sentence, train_vocab, splitter)
-            except ValueError:
+            except:
                 bad += 1
                 continue
             assert len(splitted_pos) == 2

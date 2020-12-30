@@ -9,16 +9,12 @@ import torch
 import os
 
 from src.slurm import init_signal_handler, init_distributed_mode
-from src.data.loader import check_data_params, load_data, check_eval_params
 from src.utils import bool_flag, initialize_exp
-from src.model import check_model_params, build_model
-from src.trainer.trainer import  Seq2SeqTrainer
-from src.evaluation.evaluator import Seq2SeqEvaluator
 from src.evaluation.utils import load_mass_model
-from src.model.combiner.context_combiner.context_combiner import build_combiner
-from src.trainer.new_context_combiner_trainer import NewContextCombinerTrainer
-from src.evaluation.new_context_combiner_evaluator import NewContextCombinerEvaluator
-import src.data.new_context_combiner_data.dataloader as dataloader
+from src.context_combiner.model.context_combiner import build_combiner
+from src.context_combiner.new_context_combiner_trainer import NewContextCombinerTrainer
+from src.context_combiner.new_context_combiner_evaluator import NewContextCombinerEvaluator
+import src.context_combiner.data.dataloader as dataloader
 from src.model import build_loss_function
 from src.data.splitter import WholeWordSplitter
 

@@ -1,9 +1,7 @@
-import torch
-import pdb
-from ..emb_combiner_data.emb_combiner_dataloader import batch_sentences
-from src.model.combiner.context_combiner.combine_utils import get_splitted_words_mask, get_new_splitted_combine_labels
+from src.emb_combiner.data import batch_sentences
+from src.context_combiner.model import get_splitted_words_mask, get_new_splitted_combine_labels
 from .dataset import WordSampleContextCombinerDataset, SentenceSampleContextCombinerDataset
-from src.data.emb_combiner_data.emb_combiner_dataset import DataLoader
+from src.emb_combiner.data.emb_combiner_dataset import DataLoader
 
 
 class ContextCombinerCollateFn(object):
