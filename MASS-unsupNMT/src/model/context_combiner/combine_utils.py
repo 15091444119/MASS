@@ -1,6 +1,6 @@
 import torch
 import pdb
-from src.context_combiner.model.constant import COMBINE_END, COMBINE_FRONT, NOT_COMBINE, PAD
+from src.model.context_combiner.constant import COMBINE_END, COMBINE_FRONT, NOT_COMBINE, PAD
 
 
 class BaseCombineTool(object):

@@ -1,6 +1,6 @@
 import os
 import torch
-from src.context_combiner.new_context_combiner_trainer import combiner_step
+from src.context_combiner.context_combiner_trainer import combiner_step
 
 from logging import getLogger
 

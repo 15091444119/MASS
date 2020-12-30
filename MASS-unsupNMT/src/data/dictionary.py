@@ -67,6 +67,10 @@ class Dictionary(object):
             return False
         return all(self.id2word[i] == y[i] for i in range(len(y)))
 
+    @staticmethod
+    def is_special(idx):
+        return idx < 4 + SPECIAL_WORDS
+
     def check_valid(self):
         """
         Check that the dictionary is valid.

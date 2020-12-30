@@ -11,9 +11,9 @@ import os
 from src.slurm import init_signal_handler, init_distributed_mode
 from src.utils import bool_flag, initialize_exp
 from src.evaluation.utils import load_mass_model
-from src.context_combiner.model.context_combiner import build_combiner
-from src.context_combiner.new_context_combiner_trainer import NewContextCombinerTrainer
-from src.context_combiner.new_context_combiner_evaluator import NewContextCombinerEvaluator
+from src.model.context_combiner.context_combiner import build_combiner
+from src.context_combiner.context_combiner_trainer import NewContextCombinerTrainer
+from src.context_combiner.evaluator import NewContextCombinerEvaluator
 import src.context_combiner.data.dataloader as dataloader
 from src.model import build_loss_function
 from src.data.splitter import WholeWordSplitter

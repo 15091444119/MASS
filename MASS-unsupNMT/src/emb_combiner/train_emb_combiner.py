@@ -13,13 +13,13 @@ import argparse
 import os
 import tensorboardX
 from src.utils import initialize_exp
-from src.emb_combiner.data import build_emb_combiner_dataloader
+from src.emb_combiner.data.emb_combiner_dataloader import build_emb_combiner_dataloader
 from src.model import build_loss_function
-from src.emb_combiner.emb_combiner_evaluator import EmbCombinerEvaluator
+from src.emb_combiner.evaluator import EmbCombinerEvaluator
 from src.data.splitter import WholeWordSplitter
 from src.evaluation.utils import load_mass_model
 import json
-from src.emb_combiner.model import build_emb_combiner_model
+from src.model.emb_combiner import build_emb_combiner_model
 from src.utils import bool_flag
 from src.emb_combiner.emb_combiner_trainer import EmbCombinerTrainer
 

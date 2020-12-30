@@ -2,7 +2,7 @@ import torch.nn as nn
 import torch
 from src.model.transformer import get_masks
 
-from src.context_combiner.model.constant import COMBINE_END, COMBINE_FRONT
+from src.model.context_combiner.constant import COMBINE_END, COMBINE_FRONT
 from src.modules.encoders import TransformerEncoder
 from src.model.transformer import Embedding
 

@@ -1,7 +1,22 @@
 from src.emb_combiner.data import batch_sentences
-from src.context_combiner.model import get_splitted_words_mask, get_new_splitted_combine_labels
+from src.model.context_combiner.combine_utils import get_splitted_words_mask, get_new_splitted_combine_labels
 from .dataset import WordSampleContextCombinerDataset, SentenceSampleContextCombinerDataset
 from src.emb_combiner.data.emb_combiner_dataset import DataLoader
+
+
+def wrap_special_word_for_mapper(mapper, original_length, final_length):
+    new_mapper = {}
+    # bos
+    new_mapper[0] = (0, 1)
+
+    # real words
+    for i in range(original_length):
+        new_mapper[i + 1] = (mapper[i][0] + 1, mapper[i][1] + 1)
+
+    # eos
+    new_mapper[original_length + 1] = (final_length + 1, final_length + 2)
+
+    return new_mapper
 
 
 class ContextCombinerCollateFn(object):
@@ -29,7 +44,7 @@ class ContextCombinerCollateFn(object):
         for sample in samples:
             batch_original_sentence.append(sample["original_sentence"])
             batch_splitted_sentence.append(sample["splitted_sentence"])
-            mappers.append(sample["mapper"])
+            mappers.append(wrap_special_word_for_mapper(sample["mapper"], len(sample["original_sentence"]), len(sample["splitted_sentence"])))
 
         batch_original_sentence, original_length = batch_sentences(
             sentences=batch_original_sentence,

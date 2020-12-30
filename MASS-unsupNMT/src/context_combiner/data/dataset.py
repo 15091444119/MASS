@@ -1,5 +1,6 @@
 from logging import getLogger
 from torch.utils.data import Dataset
+from src.data.data_utils import read_index_filter_data
 import random
 import pdb
 
@@ -71,7 +72,6 @@ class WordSampleContextCombinerDataset(BaseContextCombinerDataset):
             sentence=original_sentence,
             dico=self.dico,
             splitter=self.splitter,
-            consider_bos_eos_in_mapper=True
         )
 
         sample = {
@@ -104,7 +104,6 @@ class SentenceSampleContextCombinerDataset(BaseContextCombinerDataset):
             sentence=original_sentence,
             dico=self.dico,
             splitter=self.splitter,
-            consider_bos_eos_in_mapper=True
         )
 
         sample = {
@@ -114,6 +113,74 @@ class SentenceSampleContextCombinerDataset(BaseContextCombinerDataset):
         }
 
         return sample
+
+
+class MultiSplitContextCombinerDataset(BaseContextCombinerDataset):
+
+    def __init__(self, dico, splitter, data_path, max_split_num=3):
+        super().__init__(dico=dico, splitter=splitter)
+        self.sentences = read_index_filter_data(data_path=data_path, dico=self.dico)
+        self.max_split_num = max_split_num
+
+    def __len__(self):
+        return len(self.sentences)
+
+    def __getitem__(self, item):
+        original_sentence = self.sentences[item]
+        mapper, splitted_sentence = multi_split(
+            sentence=original_sentence,
+            splitter=self.splitter,
+            dico=self.dico,
+            max_split_num=self.max_split_num
+        )
+
+        return {
+            "original_sentence": original_sentence,
+            "splitted_sentence": splitted_sentence,
+            "mapper": mapper
+        }
+
+
+def multi_split(sentence, splitter, dico, max_split_num):
+    """
+
+    Args:
+        sentence:  indexed sentence without special words
+        splitter:
+        dico:
+        consider_bos_eos_in_mapper:
+        max_split_num:
+
+    Returns:
+
+    """
+
+    # get splittable tokens
+    splittable_token_index = []
+    for index, token_id in enumerate(sentence):
+        if dico.is_special(token_id):
+            continue
+        token = dico.id2word[token_id]
+        if "@@" not in token and len(token) >= 2:
+            splittable_token_index.append(index)
+
+    # choose tokens to be splitted
+    n_split = random.randint(1, min(len(splittable_token_index), max_split_num))
+    splitted_index = random.sample(splittable_token_index, k=n_split)
+
+    # split and get new sentence
+    splitted_sentence = []
+    mapper = []
+    for i in range(len(sentence)):
+        if i in splitted_index:
+            splitted_word = [dico.index(x) for x in splitter.split_word(dico.id2word[sentence[i]])]
+            mapper[i] = (len(splitted_sentence), len(splitted_sentence) + len(splitted_word))
+            splitted_sentence.extend(splitted_word)
+        else:
+            mapper[i] = (len(splitted_sentence), len(splitted_sentence) + 1)
+            splitted_sentence.append(sentence[i])
+
+    return mapper, splitted_sentence
 
 
 def read_index_labeled_data(labeled_data_path, dico):
@@ -136,7 +203,7 @@ def read_index_labeled_data(labeled_data_path, dico):
     return data
 
 
-def split(split_word_id, sentence, dico, splitter, consider_bos_eos_in_mapper):
+def split(split_word_id, sentence, dico, splitter):
     """
     split the first word in the sentence
 
@@ -145,8 +212,6 @@ def split(split_word_id, sentence, dico, splitter, consider_bos_eos_in_mapper):
         sentence:
         dico:
         splitter:
-        consider_bos_eos_in_mapper:
-            the sentnece don't have bos and eos, but we consider bos and eos in mapper
     Returns:
 
     """
@@ -168,16 +233,7 @@ def split(split_word_id, sentence, dico, splitter, consider_bos_eos_in_mapper):
     for i in range(position + 1, len(sentence)):
         mapper[i] = (i + len(splitted_index) - 1, i + len(splitted_index))
 
-    if consider_bos_eos_in_mapper:
-        new_mapper = {}
-        new_mapper[0] = (0, 1)  # bos
 
-        # real words
-        for i in range(len(sentence)):
-            new_mapper[i + 1] = (mapper[i][0] + 1, mapper[i][1] + 1)
-
-        new_mapper[len(sentence) + 1] = (len(splitted_sentence) + 1, len(splitted_sentence) + 2)  # eos
-        mapper = new_mapper
 
     return mapper, splitted_sentence
 

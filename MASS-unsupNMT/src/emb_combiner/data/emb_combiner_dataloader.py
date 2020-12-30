@@ -55,30 +55,3 @@ def build_emb_combiner_dataloader(whole_word_path, splitter, dico, batch_size, s
 
     return dataloader
 
-
-def batch_sentences(sentences, pad_index, bos_index, eos_index, batch_first=False):
-    """
-    Args:
-        sentences: list of sublist, each sublist contains several int
-        pad_index:
-        bos_index:
-        eos_index:
-        batch_first:
-    Returns:
-        tuple:
-            batch_sentences: torch.LongTensor [slen, bs]
-            lengths: torch.LongTensor [bs]
-    """
-    lengths = torch.LongTensor([len(s) + 2 for s in sentences])
-    sent = torch.LongTensor(lengths.max().item(), lengths.size(0)).fill_(pad_index)
-
-    sent[0] = bos_index
-    for i, s in enumerate(sentences):
-        if lengths[i] > 2:  # if sentence not empty
-            sent[1:lengths[i] - 1, i].copy_(torch.LongTensor(s))
-        sent[lengths[i] - 1, i] = eos_index
-
-    if batch_first:
-        sent = sent.transpose(0, 1)
-
-    return sent, lengths

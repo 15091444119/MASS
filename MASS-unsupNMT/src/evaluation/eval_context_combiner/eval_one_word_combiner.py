@@ -9,9 +9,9 @@ import torch
 import numpy as np
 from src.utils import to_cuda
 from .dataset import AlignmentDataset, AlignmentTypes
-from src.context_combiner.model import CombineTool
-from src.context_combiner.model.context_combiner import AverageCombiner
-from src.context_combiner.model.constant import PAD, COMBINE_END, COMBINE_FRONT, NOT_COMBINE
+from src.model.context_combiner.combine_utils import CombineTool
+from src.model.context_combiner.context_combiner import AverageCombiner
+from src.model.context_combiner.constant import PAD, COMBINE_END, COMBINE_FRONT, NOT_COMBINE
 from src.evaluation.utils import load_mass_model
 from src.utils import AttrDict
 
