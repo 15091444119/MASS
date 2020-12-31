@@ -23,10 +23,15 @@ import torch
 
 from src.utils import AttrDict
 from src.utils import bool_flag, initialize_exp
+from src.model.encoder import EncoderInputs
+from src.model.seq2seq import DecodingParams
+from src.model.context_combiner.context_combiner import load_combiner
+from src.model.seq2seq.common_seq2seq import BaseSeq2Seq
+from src.model.encoder.combiner_encoder import MultiCombinerEncoder
+from src.model.encoder.common_encoder import CommonEncoder
+from src.evaluation.utils import load_mass_model
 from src.data.dictionary import Dictionary
 from src.model.transformer import TransformerModel
-from src.evaluation.utils import package_module
-from src.data.splitter import ReduceOneBpeSplitter
 
 from src.fp16 import network_to_half
 
@@ -46,35 +51,60 @@ def get_parser():
     parser.add_argument("--batch_size", type=int, default=32, help="Number of sentences per batch")
 
     # model / output paths
-    parser.add_argument("--model_path", type=str, default="", help="Model path")
     parser.add_argument("--output_path", type=str, default="", help="Output path")
-    
+
     parser.add_argument("--beam", type=int, default=1, help="Beam size")
     parser.add_argument("--length_penalty", type=float, default=1, help="length penalty")
-
-    # parser.add_argument("--max_vocab", type=int, default=-1, help="Maximum vocabulary size (-1 to disable)")
-    # parser.add_argument("--min_count", type=int, default=0, help="Minimum vocabulary count")
 
     # source language / target language
     parser.add_argument("--src_lang", type=str, default="", help="Source language")
     parser.add_argument("--tgt_lang", type=str, default="", help="Target language")
 
-    parser.add_argument("--code_path", type=str)
-
-    # language mask
-    parser.add_argument("--language_mask", type=bool_flag, default=False)
-
-    # split whole words
-    parser.add_argument("--split_whole_words", type=bool_flag, default=False,help="split whole words using rob")
+    # for loading model
+    parser.add_argument("--model_type", type=str, choices=["mass_only", "mass_with_two_combiners"])
+    parser.add_argument("--mass", type=str, default="", required=True)
+    if parser.parse_known_args()[0].model_type == "mass_with_two_combiners":
+        parser.add_argument("--src_combiner", type=str, default="")
+        parser.add_argument("--tgt_combiner", type=str, default="")
 
     return parser
 
 
-def is_chinese(uchar):
-    if uchar >= u'\u4e00' and uchar <= u'\u9fa5':
-        return True
+def load_model(params):
+
+    if params.model_type == "mass_only":
+        dico, model_params, encoder, decoder = load_mass_model(params.mass)
+        encoder = CommonEncoder(encoder, mask_index=model_params.mask_index)
+        seq2seq_model = BaseSeq2Seq(encoder, decoder)
+    elif params.model_type == "mass_with_two_combiners":
+        dico, model_params, encoder, decoder = load_mass_model(params.mass)
+        src_combiner = load_combiner(params.src_combiner)
+        tgt_combiner = load_combiner(params.tgt_combiner)
+        encoder = MultiCombinerEncoder(encoder, {params.src_id: src_combiner, params.tgt_id:tgt_combiner}, dico, model_params.mask_index)
+        seq2seq_model = BaseSeq2Seq(encoder, decoder)
     else:
-        return False
+        raise ValueError
+
+    return dico, model_params, seq2seq_model
+
+
+def prepare_batch_input(dico, params, sents):
+    word_ids = [torch.LongTensor([dico.index(w) for w in s.strip().split()])
+                for s in sents]
+    lengths = torch.LongTensor([len(s) + 2 for s in word_ids])
+    batch = torch.LongTensor(lengths.max().item(), lengths.size(0)).fill_(params.pad_index)
+    batch[0] = params.eos_index
+    for j, s in enumerate(word_ids):
+        if lengths[j] > 2:  # if sentence not empty
+            batch[1:lengths[j] - 1, j].copy_(s)
+        batch[lengths[j] - 1, j] = params.eos_index
+    langs = batch.clone().fill_(params.src_id)
+
+    encoder_inputs = EncoderInputs(x1=batch.cuda(), len1=lengths.cuda(), lang_id=params.src_id, langs1=langs.cuda())
+    tgt_lang_id = params.tgt_id
+    decoding_params = DecodingParams(beam_size=params.beam, length_penalty=params.length_penalty, early_stopping=False)
+
+    return encoder_inputs, tgt_lang_id, decoding_params
 
 
 def main(params):
@@ -85,28 +115,16 @@ def main(params):
     # generate parser / parse parameters
     parser = get_parser()
     params = parser.parse_args()
-    reloaded = torch.load(params.model_path)
-    model_params = AttrDict(reloaded['params'])
-    logger.info("Supported languages: %s" % ", ".join(model_params.lang2id.keys()))
+    dico, model_params, seq2seq_model = load_model(params)
+    seq2seq_model = seq2seq_model.cuda()
+    seq2seq_model.eval()
 
-    # update dictionary parameters
+    # set params
     for name in ['n_words', 'bos_index', 'eos_index', 'pad_index', 'unk_index', 'mask_index']:
         setattr(params, name, getattr(model_params, name))
 
-    # build dictionary / build encoder / build decoder / reload weights
-    dico = Dictionary(reloaded['dico_id2word'], reloaded['dico_word2id'], reloaded['dico_counts'])
-    encoder = TransformerModel(model_params, dico, is_encoder=True, with_output=True).cuda().eval()
-    decoder = TransformerModel(model_params, dico, is_encoder=False, with_output=True).cuda().eval()
-    encoder.load_state_dict(package_module(reloaded['encoder']))
-    decoder.load_state_dict(package_module(reloaded['decoder']))
     params.src_id = model_params.lang2id[params.src_lang]
     params.tgt_id = model_params.lang2id[params.tgt_lang]
-
-    # float16
-    if params.fp16:
-        assert torch.backends.cudnn.enabled
-        encoder = network_to_half(encoder)
-        decoder = network_to_half(decoder)
 
     # read sentences from stdin
     src_sent = []
@@ -117,62 +135,15 @@ def main(params):
 
     f = io.open(params.output_path, 'w', encoding='utf-8')
 
-    splitter = ReduceOneBpeSplitter.from_code_path(params.code_path)
-
-    def maybe_split_whole_words(sentence, splitter, params):
-        if not params.split_whole_words:
-            return sentence
-
-        result_sentence = []
-        sentence = sentence.strip().split()
-
-        for idx, word in enumerate(sentence):
-            # unk
-            if word not in dico.word2id:
-                result_sentence.append(word)
-            # subword
-            elif "@@" in word or (idx > 0 and "@@" in sentence[idx - 1]):
-                result_sentence.append(word)
-            # whole word
-            else:
-                # length 1
-                if len(word) == 1:
-                    result_sentence.append(word)
-                else:
-                    result_sentence.extend(splitter.split_word(word))
-
-        return ' '.join(result_sentence)
-
-
     for i in range(0, len(src_sent), params.batch_size):
+
+        cur_sents = src_sent[i: i + params.batch_size]
+
         # prepare batch
-        word_ids = [torch.LongTensor([dico.index(w) for w in maybe_split_whole_words(s, splitter, params).strip().split()])
-                    for s in src_sent[i:i + params.batch_size]]
-        lengths = torch.LongTensor([len(s) + 2 for s in word_ids])
-        batch = torch.LongTensor(lengths.max().item(), lengths.size(0)).fill_(params.pad_index)
-        batch[0] = params.eos_index
-        for j, s in enumerate(word_ids):
-            if lengths[j] > 2:  # if sentence not empty
-                batch[1:lengths[j] - 1, j].copy_(s)
-            batch[lengths[j] - 1, j] = params.eos_index
-        langs = batch.clone().fill_(params.src_id)
+        encoder_inputs, tgt_lang_id, decoding_params = prepare_batch_input(dico, params, cur_sents)
 
         # encode source batch and translate it
-        encoded = encoder('fwd', x=batch.cuda(), lengths=lengths.cuda(), langs=langs.cuda(), causal=False)
-        encoded = encoded.transpose(0, 1)
-        if params.beam == 1:
-            if params.language_mask:
-                language_mask = torch.tensor(
-                [-1e9 if is_chinese(dico.id2word[idx]) else 0 for idx in range(len(dico.id2word))])
-            else:
-                language_mask = None
-            decoded, dec_lengths = decoder.generate(encoded, lengths.cuda(), params.tgt_id, max_len=int(1.5 * lengths.max().item() + 10), language_mask=language_mask)
-        else:
-            decoded, dec_lengths = decoder.generate_beam(
-                encoded, lengths.cuda(), params.tgt_id, beam_size=params.beam,
-                length_penalty=params.length_penalty,
-                early_stopping=False,
-                max_len=int(1.5 * lengths.max().item() + 10))
+        decoded, decoded_lengths = seq2seq_model.generate(encoder_inputs, tgt_lang_id, decoding_params)
 
         # convert sentences to words
         for j in range(decoded.size(1)):
@@ -198,10 +169,6 @@ if __name__ == '__main__':
     parser = get_parser()
     params = parser.parse_args()
 
-    # check parameters
-    assert os.path.isfile(params.model_path)
-    assert params.src_lang != '' and params.tgt_lang != '' and params.src_lang != params.tgt_lang
-    assert params.output_path and not os.path.isfile(params.output_path)
 
     # translate
     with torch.no_grad():

@@ -5,6 +5,7 @@ from src.model.transformer import get_masks
 from src.model.context_combiner.constant import COMBINE_END, COMBINE_FRONT
 from src.modules.encoders import TransformerEncoder
 from src.model.transformer import Embedding
+from src.utils import AttrDict
 
 
 def check_combiner_inputs(encoded, lengths, combiner_labels):
@@ -283,3 +284,14 @@ def build_combiner(params):
         )
     else:
         raise Exception("No combiner named: {}".format(params.combiner))
+
+
+def load_combiner(path):
+    reloaded = torch.load(path)
+
+    combiner_train_params = AttrDict(reloaded["params"])
+    combiner = build_combiner(combiner_train_params)
+
+    combiner.load_state_dict(reloaded["combiner"])
+
+    return combiner

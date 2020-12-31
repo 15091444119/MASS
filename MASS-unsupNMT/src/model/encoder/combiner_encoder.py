@@ -1,4 +1,4 @@
-from . import BaseEncoder, EncoderInputs
+from . import BaseEncoder, EncoderInputs, EncodedInfo
 from src.model.context_combiner.combine_utils import CombineTool, ExplicitSplitCombineTool
 import torch
 
@@ -14,9 +14,6 @@ class CombinerEncoder(BaseEncoder):
         self.splitter = splitter
         self.loss_fn = loss_fn
 
-    def get_combine_tool(self, encoder_inputs):
-        combine_tool = CombineTool(encoder_inputs.x1, length=encoder_inputs.len1, dico=self.dico, mask_index=self.params.mask_index)
-        return combine_tool
 
     def explicit_encode_combiner_loss(self, encoder_inputs):
 
@@ -73,10 +70,10 @@ class CombinerEncoder(BaseEncoder):
         else:
             combine_loss = None
 
-        return CombinerEncodedInfo(encoded=final_encoded, combine_tool=combine_tool), combine_loss, combine_tool.trained_combiner_words
+        return EncodedInfo(encoded=final_encoded, enc_mask=combine_tool.mask_for_decoder, enc_len=combine_tool.final_length), combine_loss, combine_tool.trained_combiner_words
 
-    def encode(self, encoder_inputs: EncoderInputs, combine_tool):
-        combine_tool = self.get_combine_tool(encoder_inputs)
+    def encode(self, encoder_inputs: EncoderInputs):
+        combine_tool = CombineTool(encoder_inputs.x1, length=encoder_inputs.len1, dico=self.dico, mask_index=self.params.mask_index)
 
         encoded = self.encoder(
             "fwd",
@@ -94,18 +91,39 @@ class CombinerEncoder(BaseEncoder):
         )
         final_encoded = combine_tool.gather(splitted_rep=encoded, combined_rep=combined_rep)
 
-        return CombinerEncodedInfo(encoded=final_encoded, combine_tool=combine_tool)
+        return EncodedInfo(encoded=final_encoded, enc_mask=combine_tool.mask_for_decoder, enc_len=combine_tool.final_length)
 
 
-class CombinerEncodedInfo(object):
+class MultiCombinerEncoder(BaseEncoder):
+    def __init__(self, encoder, lang_id2combiner, dico, mask_index):
+        super().__init__()
+        self.encoder = encoder
+        self.lang_id2combiner = torch.nn.ModuleDict(lang_id2combiner)
+        self.dico = dico
+        self.mask_index = mask_index
 
-    def __init__(self, encoded, combine_tool):
-        assert encoded.size(0) == combine_tool.final_length.size(0)
-        assert encoded.size(1) == combine_tool.final_length.max().item()
-        self.encoded = encoded
-        self.enc_len = combine_tool.final_length
-        self.enc_mask = combine_tool.mask_for_decoder
-        self.original_len = combine_tool.original_length
+    def encode(self, encoder_inputs: EncoderInputs):
+        encoder = self.encoder
+        combiner = self.lang_id2combiner[encoder_inputs.lang_id]
+
+        combine_tool = CombineTool(encoder_inputs.x1, length=encoder_inputs.len1, dico=self.dico, mask_index=self.mask_index)
+
+        encoded = encoder(
+            "fwd",
+            x=encoder_inputs.x1,
+            lengths=encoder_inputs.len1,
+            langs=encoder_inputs.langs1,
+            causal=False
+        ).transpose(0, 1)
+
+        combined_rep = combiner.combine(
+            encoded=encoded,
+            lengths=encoder_inputs.len1,
+            combine_labels=combine_tool.combine_labels,
+        )
+        final_encoded = combine_tool.gather(splitted_rep=encoded, combined_rep=combined_rep)
+
+        return EncodedInfo(encoded=final_encoded, enc_mask=combine_tool.mask_for_decoder, enc_len=combine_tool.final_length)
 
 
 class ExplicitSplitEncoderBatch(object):

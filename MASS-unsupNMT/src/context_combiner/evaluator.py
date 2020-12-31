@@ -24,7 +24,6 @@ class NewContextCombinerEvaluator(object):
         scores = {}
         scores["epoch"] = epoch
         self.eval_loss(scores)
-        self.eval_cross_lingual_cos(scores)
         return scores
 
     def eval_loss(self, scores):

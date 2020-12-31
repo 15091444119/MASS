@@ -1,4 +1,5 @@
 import torch
+from ..encoder import EncoderInputs
 
 
 class BaseSeq2Seq(torch.nn.Module):
@@ -18,9 +19,21 @@ class BaseSeq2Seq(torch.nn.Module):
             decoding_batch:  LossDecodingBatch
 
         """
-        raise NotImplementedError
+        loss_decoding_batch = LossDecodingBatch(
+            x=decoder_inputs.x2,
+            lengths=decoder_inputs.len2,
+            langs=decoder_inputs.langs2,
+            src_enc=encoded_info.encoded,
+            src_len=encoded_info.enc_len,
+            src_mask=encoded_info.enc_mask,
+            positions=decoder_inputs.positions,
+            pred_mask=decoder_inputs.pred_mask,
+            y=decoder_inputs.y,
+            lang_id=decoder_inputs.lang_id
+        )
+        return loss_decoding_batch
 
-    def get_generate_batch(self, encoded_info, tgt_lang_id):
+    def get_generate_batch(self, encoded_info, tgt_lang_id, max_generate_length):
         """
 
         Args:
@@ -31,9 +44,17 @@ class BaseSeq2Seq(torch.nn.Module):
         Returns:
             generate_decode_batch: GenerateDecodeBatch
         """
-        raise NotImplementedError
+        generate_batch = GenerateDecodeBatch(
+            src_enc=encoded_info.encoded,
+            src_len=encoded_info.enc_len,
+            tgt_lang_id=tgt_lang_id,
+            max_len=max_generate_length,
+            enc_mask=encoded_info.enc_mask
+        )
 
-    def generate_and_run_loss(self, encoder_inputs, decoder_inputs, tgt_lang_id, decoding_params):
+        return generate_batch
+
+    def generate_and_run_loss(self, encoder_inputs: EncoderInputs, decoder_inputs, tgt_lang_id, decoding_params):
         """
         This is for evaluation
         Args:
@@ -49,7 +70,9 @@ class BaseSeq2Seq(torch.nn.Module):
 
         scores, losses = self.run_decode_loss(decoding_batch, get_scores=True)
 
-        generate_batch = self.get_generate_batch(encoded_info=encoded_info, tgt_lang_id=tgt_lang_id)
+        max_generate_length = int(1.5 * encoder_inputs.len1.max().item() + 10)
+
+        generate_batch = self.get_generate_batch(encoded_info=encoded_info, tgt_lang_id=tgt_lang_id, max_generate_length=max_generate_length)
 
         generated, lengths = self.generate_decode(generate_decode_batch=generate_batch, decoding_params=decoding_params)
         return scores, losses, generated, lengths
@@ -82,7 +105,9 @@ class BaseSeq2Seq(torch.nn.Module):
     def generate(self, encoder_inputs, tgt_lang_id, decoding_params):
         encoded_info = self.encoder.encode(encoder_inputs)
 
-        generate_batch = self.get_generate_batch(encoded_info=encoded_info, tgt_lang_id=tgt_lang_id)
+        max_generate_length = int(1.5 * encoder_inputs.len1.max().item() + 10)
+
+        generate_batch = self.get_generate_batch(encoded_info=encoded_info, tgt_lang_id=tgt_lang_id, max_generate_length=max_generate_length)
 
         generated, lengths = self.generate_decode(generate_decode_batch=generate_batch, decoding_params=decoding_params)
         return generated, lengths
@@ -154,3 +179,10 @@ class LossDecodingBatch(object):
         self.y = y
         self.lang_id = lang_id
 
+
+class DecodingParams(object):
+
+    def __init__(self, beam_size, length_penalty, early_stopping):
+        self.beam_size = beam_size
+        self.length_penalty = length_penalty
+        self.early_stopping = early_stopping
