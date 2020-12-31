@@ -1,7 +1,7 @@
 Lang=zh
 Codes=/home/data_ti5_d/zhouzh/low-resource-mt/XLM_MASS_preprocessed_data/pretrain/cn-split-sen-zh-en-pretrain/codes
 DataPrefix=/home/data_ti5_d/zhouzh/low-resource-mt/XLM_MASS_preprocessed_data/pretrain/cn-split-sen-zh-en-pretrain/mass_context_combiner_data/$Lang
-Raw=/home/data_ti5_d/zhouzh/low-resource-mt/XLM_MASS_preprocessed_data/pretrain/cn-split-sen-zh-en-pretrain/valid.$Lang
+Raw=/home/data_ti5_d/zhouzh/low-resource-mt/XLM_MASS_preprocessed_data/pretrain/cn-split-sen-zh-en-pretrain/train.$Lang
 Mass=/home/data_ti5_d/zhouzh/low-resource-mt/MASS/MASS-unsupNMT/dumped/cn-en-zh-500w-checkpoint-pretrain/x363q5pus9/periodic-200.pth
 ReloadCombiner=/home/data_ti5_d/zhouzh/low-resource-mt/combiner/MASS-unsupNMT/dumped/last_token_combine_label_embedding_zh/dvjmx4ovmt/best-dev-combiner-word-average-loss.pth
 
@@ -33,7 +33,7 @@ python3 train_new_context_combiner.py \
 
 last_token(){
 python3 -m src.context_combiner.train_context_combiner \
-  --exp_name "eval_$Lang" \
+  --exp_name "train_$Lang" \
   --batch_size 64 \
   --epoch_size 50000 \
   --max_epoch 200 \

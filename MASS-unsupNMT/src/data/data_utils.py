@@ -5,13 +5,14 @@ import pdb
 logger = logging.getLogger()
 
 
-def read_index_filter_data(data_path, dico, untouchable_words):
+def read_index_filter_data(data_path, dico, untouchable_words, max_length=100):
     """
     read, index, filter unsplittable data
     Args:
         data_path:
         dico:
         untouchable_words: don't split these words
+        max_length: max sentence length
 
     Returns:
     """
@@ -25,6 +26,9 @@ def read_index_filter_data(data_path, dico, untouchable_words):
 
             if len(line) == 0:
                 discard += 1
+                continue
+
+            if len(line) > max_length:
                 continue
 
             n_splittable_token = 0
@@ -41,7 +45,7 @@ def read_index_filter_data(data_path, dico, untouchable_words):
             else:
                 discard += 1
 
-    logger.info("Read {} lines from {} discard {} unsplittable lines".format(len(indexed_data), data_path, discard))
+    logger.info("Read {} lines from {} discard {} lines".format(len(indexed_data), data_path, discard))
 
     return indexed_data
 

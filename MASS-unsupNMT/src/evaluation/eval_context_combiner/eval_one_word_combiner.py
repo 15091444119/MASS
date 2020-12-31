@@ -53,7 +53,44 @@ def build_metric_fn(metric):
         return mse
 
 
-def encode(combiner, encoder, lang_id, x, x_len, dico, mask_index):
+def encode_and_combine(combiner, encoder, lang_id, x, x_len, dico, mask_index):
+    langs = x.clone().fill_(lang_id)
+    x, x_len, langs = to_cuda(x, x_len, langs)
+
+    combine_tool = CombineTool(x, x_len, dico, mask_index)
+    encoded = encoder(
+        "fwd",
+        x=x,
+        lengths=x_len,
+        langs=langs,
+        causal=False
+    ).transpose(0, 1)  # [bs, len, dim]
+
+    combined_rep = combiner.combine(
+        encoded=encoded,
+        lengths=x_len,
+        combine_labels=combine_tool.combine_labels,
+    )
+    final_rep = combine_tool.gather(splitted_rep=encoded, combined_rep=combined_rep)
+
+    return final_rep
+
+
+def encode_and_wordbyword_combine(combiner, encoder, lang_id, x, x_len, dico, mask_index):
+    """
+    combine one word at one time
+    Args:
+        combiner:
+        encoder:
+        lang_id:
+        x:
+        x_len:
+        dico:
+        mask_index:
+
+    Returns:
+
+    """
 
     langs = x.clone().fill_(lang_id)
     x, x_len, langs = to_cuda(x, x_len, langs)
@@ -109,7 +146,7 @@ def encode(combiner, encoder, lang_id, x, x_len, dico, mask_index):
     return final_reps
 
 
-def eval_alignment(src_combiner, tgt_combiner, encoder, dataset, lang2id, mask_index, debug=False, metric="COS"):
+def eval_alignment(src_combiner, tgt_combiner, encoder, dataset, lang2id, mask_index, forward_function, debug=False, metric="COS"):
 
     metric_fn = build_metric_fn(metric)
 
@@ -128,8 +165,8 @@ def eval_alignment(src_combiner, tgt_combiner, encoder, dataset, lang2id, mask_i
                 show_alignments(src, tgt, dataset.dico, alignments)
 
             # extract specific words rep
-            src_encoded = encode(combiner=src_combiner, encoder=encoder, lang_id=lang2id[dataset.src_lang], x=src, x_len=src_len, dico=dataset.dico, mask_index=mask_index)
-            tgt_encoded = encode(combiner=tgt_combiner, encoder=encoder, lang_id=lang2id[dataset.tgt_lang], x=tgt, x_len=tgt_len, dico=dataset.dico, mask_index=mask_index)
+            src_encoded = forward_function(combiner=src_combiner, encoder=encoder, lang_id=lang2id[dataset.src_lang], x=src, x_len=src_len, dico=dataset.dico, mask_index=mask_index)
+            tgt_encoded = forward_function(combiner=tgt_combiner, encoder=encoder, lang_id=lang2id[dataset.tgt_lang], x=tgt, x_len=tgt_len, dico=dataset.dico, mask_index=mask_index)
 
             dim = src_encoded.size(-1)
             src_representations = src_encoded[alignments.src_batch_size_index, alignments.src_length_index + 1].view(-1, dim) # +1 because of bos
@@ -209,7 +246,16 @@ def main():
         eos_index=mass_params.eos_index
     )
 
-    type2ave_dis, type2var, type2num = eval_alignment(src_combiner=src_combiner, tgt_combiner=tgt_combiner, encoder=encoder, dataset=dataset, lang2id=mass_params.lang2id, metric=eval_args.metric, mask_index=mass_params.mask_index)
+    type2ave_dis, type2var, type2num = eval_alignment(
+        src_combiner=src_combiner,
+        tgt_combiner=tgt_combiner,
+        encoder=encoder,
+        dataset=dataset,
+        lang2id=mass_params.lang2id,
+        metric=eval_args.metric,
+        mask_index=mass_params.mask_index,
+        forward_function=encode_and_wordbyword_combine
+    )
 
     for alignment_type in AlignmentTypes:
         print("Type: {} Number: {} average dis: {} variance: {}".format(alignment_type, type2num[alignment_type], type2ave_dis[alignment_type], type2var[alignment_type]))
